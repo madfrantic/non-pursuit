@@ -12,7 +12,7 @@ from jinja2 import Environment, FileSystemLoader
 
 sys.path.append(os.path.join(os.path.dirname(__file__), "utils"))
 from mailto_builder import build_mailto_link, mailto_length, is_mailto_safe
-from tracker import add_request, get_all_requests, update_status, delete_request, STATUS_OPTIONS
+from tracker import add_request, get_all_requests, update_status, delete_request, purge_expired_notes, STATUS_OPTIONS
 from calendar_export import build_ics
 import spokeo_automation
 import config
@@ -975,7 +975,16 @@ elif mode == "4. Campaign Tracker":
                 add_request(config.TRACKER_DB_PATH, m_broker, m_channel, int(m_window), m_notes)
                 st.success(f"Logged {m_broker}.")
 
+    cleared_count = purge_expired_notes(config.TRACKER_DB_PATH, config.PII_RETENTION_DAYS)
+    if cleared_count:
+        st.toast(f"🗑️ Cleared notes on {cleared_count} request(s) completed over {config.PII_RETENTION_DAYS} days ago.")
+
     requests_list = get_all_requests(config.TRACKER_DB_PATH)
+
+    st.caption(
+        f"🔒 Notes on completed requests are cleared automatically after {config.PII_RETENTION_DAYS} days — "
+        "this app doesn't hold onto your data forever."
+    )
 
     if not requests_list:
         st.info("Nothing logged yet. Generate a letter in Mode 1 and click \"Log this request\", or add one manually above.")

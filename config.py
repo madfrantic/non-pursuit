@@ -54,6 +54,13 @@ CA_DROP_URL = "https://privacy.ca.gov"
 # to download + paste instead of the one-click mailto button.
 MAILTO_SAFE_LENGTH = 1800
 
+# A privacy tool that keeps user data forever is a bad look. The tracker's
+# only free-text field that could hold anything identifying is `notes` — once
+# a request has been Complete for this many days, its notes are cleared
+# automatically. Everything else (dates, status, broker, deadline) stays, so
+# your own history/metrics remain intact.
+PII_RETENTION_DAYS = 30
+
 # Privacy Dashboard settings
 PRIVACY_SCORE_CATEGORIES = {
     "social_security": {"weight": 25, "label": "Social Security Number", "icon": "🔑"},

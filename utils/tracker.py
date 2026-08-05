@@ -37,6 +37,15 @@ def _connect(db_path: str):
         )
         """
     )
+    # Migration: older databases predate this column. Needed to know when a
+    # request actually became Complete, so retention can count from that
+    # date rather than date_sent (those aren't the same event).
+    existing_columns = {row["name"] for row in conn.execute("PRAGMA table_info(requests)")}
+    if "status_updated_at" not in existing_columns:
+        conn.execute("ALTER TABLE requests ADD COLUMN status_updated_at TEXT")
+        conn.execute(
+            "UPDATE requests SET status_updated_at = date_sent WHERE status_updated_at IS NULL"
+        )
     conn.commit()
     try:
         yield conn
@@ -46,18 +55,20 @@ def _connect(db_path: str):
 
 def add_request(db_path: str, broker_name: str, channel: str,
                  response_window_days: int, notes: str = "") -> None:
+    today = datetime.now().strftime("%Y-%m-%d")
     with _connect(db_path) as conn:
         conn.execute(
             "INSERT INTO requests "
-            "(broker_name, channel, date_sent, response_window_days, status, notes) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
+            "(broker_name, channel, date_sent, response_window_days, status, notes, status_updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
             (
                 broker_name,
                 channel,
-                datetime.now().strftime("%Y-%m-%d"),
+                today,
                 response_window_days,
                 "Sent",
                 notes,
+                today,
             ),
         )
         conn.commit()
@@ -67,8 +78,29 @@ def update_status(db_path: str, request_id: int, status: str) -> None:
     if status not in STATUS_OPTIONS:
         raise ValueError(f"Unknown status: {status}")
     with _connect(db_path) as conn:
-        conn.execute("UPDATE requests SET status = ? WHERE id = ?", (status, request_id))
+        conn.execute(
+            "UPDATE requests SET status = ?, status_updated_at = ? WHERE id = ?",
+            (status, datetime.now().strftime("%Y-%m-%d"), request_id),
+        )
         conn.commit()
+
+
+def purge_expired_notes(db_path: str, retention_days: int) -> int:
+    """Clear `notes` on requests that have been Complete for longer than
+    retention_days. Everything else (dates, status, broker, deadline) is
+    left alone — this only touches the one free-text field that could hold
+    anything identifying. Returns how many rows were cleared.
+    """
+    cutoff = (datetime.now() - timedelta(days=retention_days)).strftime("%Y-%m-%d")
+    with _connect(db_path) as conn:
+        cursor = conn.execute(
+            "UPDATE requests SET notes = '' "
+            "WHERE status = 'Complete' AND status_updated_at < ? "
+            "AND notes IS NOT NULL AND notes != ''",
+            (cutoff,),
+        )
+        conn.commit()
+        return cursor.rowcount
 
 
 def delete_request(db_path: str, request_id: int) -> None:
