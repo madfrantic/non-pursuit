@@ -13,7 +13,7 @@ APP_LAYOUT = "wide"
 # small amount of custom CSS we still ship (for the link-button styling
 # Streamlit doesn't cover natively), so update both files together.
 THEME_BASE = "dark"
-PRIMARY_COLOR = "#0d9488"
+PRIMARY_COLOR = "#2563eb"
 BACKGROUND_COLOR = "#0b1120"
 SECONDARY_BACKGROUND_COLOR = "#16213a"
 TEXT_COLOR = "#e2e8f0"

@@ -196,12 +196,12 @@ st.sidebar.markdown("---")
 mode = st.sidebar.radio(
     "Select Tool",
     [
-        "🔍 Privacy Dashboard",
-        "🔍 Should I Worry? (Self-Search)",
-        "1. Data Broker Deletion Letters",
-        "2. NY Expungement Guidance",
-        "3. Google De-Indexing",
-        "4. Campaign Tracker",
+        ":material/security: Privacy Dashboard",
+        ":material/person_search: Should I Worry? (Self-Search)",
+        ":material/mail: 1. Data Broker Deletion Letters",
+        ":material/gavel: 2. NY Expungement Guidance",
+        ":material/search_off: 3. Google De-Indexing",
+        ":material/monitoring: 4. Campaign Tracker",
     ],
     label_visibility="visible",
 )
@@ -239,8 +239,8 @@ st.markdown("---")
 # ---------------------------------------------------------------------------
 # MODE: Privacy Dashboard
 # ---------------------------------------------------------------------------
-if mode == "🔍 Privacy Dashboard":
-    st.header("🛡️ Privacy Exposure Dashboard")
+if mode == ":material/security: Privacy Dashboard":
+    st.header(":material/security: Privacy Exposure Dashboard")
     st.markdown("See where your personal information is exposed online and what to do about it.")
     st.warning(
         "⚠️ **The scores and counts below are simulated for demonstration** — generated from a "
@@ -470,8 +470,8 @@ if mode == "🔍 Privacy Dashboard":
 # ---------------------------------------------------------------------------
 # MODE 0: Should I Worry? (Self-Search)
 # ---------------------------------------------------------------------------
-elif mode == "🔍 Should I Worry? (Self-Search)":
-    st.header("🔍 Should I worry?")
+elif mode == ":material/person_search: Should I Worry? (Self-Search)":
+    st.header(":material/person_search: Should I worry?")
     st.markdown(
         "Search each data broker's site for your own name **before** generating a deletion "
         "letter. There's no point demanding a broker delete a record you haven't confirmed exists."
@@ -591,8 +591,8 @@ elif mode == "🔍 Should I Worry? (Self-Search)":
 # ---------------------------------------------------------------------------
 # MODE 1: Data Broker Deletion Letters
 # ---------------------------------------------------------------------------
-elif mode == "1. Data Broker Deletion Letters":
-    st.header("📜 CCPA Data Deletion Demand Letters")
+elif mode == ":material/mail: 1. Data Broker Deletion Letters":
+    st.header(":material/mail: CCPA Data Deletion Demand Letters")
     st.markdown(
         "Generate formal deletion demand letters for data brokers under "
         "California Civil Code § 1798.105."
@@ -805,8 +805,8 @@ elif mode == "1. Data Broker Deletion Letters":
 # ---------------------------------------------------------------------------
 # MODE 2: NY Expungement Guidance
 # ---------------------------------------------------------------------------
-elif mode == "2. NY Expungement Guidance":
-    st.header("⚖️ New York Criminal Record Expungement Guidance")
+elif mode == ":material/gavel: 2. NY Expungement Guidance":
+    st.header(":material/gavel: New York Criminal Record Expungement Guidance")
     st.markdown("Navigate New York Criminal Procedure Law (CPL) pathways for record sealing and expungement.")
     st.markdown("---")
 
@@ -899,8 +899,8 @@ elif mode == "2. NY Expungement Guidance":
 # ---------------------------------------------------------------------------
 # MODE 3: Google De-Indexing
 # ---------------------------------------------------------------------------
-elif mode == "3. Google De-Indexing":
-    st.header("🔍 Google PII Removal Request")
+elif mode == ":material/search_off: 3. Google De-Indexing":
+    st.header(":material/search_off: Google PII Removal Request")
     st.markdown("Request removal of personally identifiable information from Google Search results.")
     st.markdown("---")
 
@@ -959,8 +959,8 @@ I have attached evidence of the search results containing this information and r
 # ---------------------------------------------------------------------------
 # MODE 4: Campaign Tracker
 # ---------------------------------------------------------------------------
-elif mode == "4. Campaign Tracker":
-    st.header("📊 Campaign Tracker")
+elif mode == ":material/monitoring: 4. Campaign Tracker":
+    st.header(":material/monitoring: Campaign Tracker")
     st.markdown("Every request logged from the other tools shows up here, with its response deadline tracked automatically.")
     st.markdown("---")
 

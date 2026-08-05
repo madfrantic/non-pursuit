@@ -1,11 +1,11 @@
 [theme]
 base = "dark"
-primaryColor = "#0d9488"
+primaryColor = "#2563eb"
 backgroundColor = "#0b1120"
 secondaryBackgroundColor = "#16213a"
 textColor = "#e2e8f0"
-linkColor = "#2dd4bf"
-borderColor = "#26344d"
+linkColor = "#60a5fa"
+borderColor = "#2d3f5f"
 
 greenColor = "#22c55e"
 redColor = "#ef4444"
@@ -13,8 +13,8 @@ orangeColor = "#f59e0b"
 
 showWidgetBorder = true
 showSidebarBorder = true
-baseRadius = "8px"
-buttonRadius = "8px"
+baseRadius = "4px"
+buttonRadius = "4px"
 
 font = "Inter:https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
 codeFont = "'JetBrains Mono':https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap"
@@ -24,4 +24,4 @@ backgroundColor = "#080d1a"
 secondaryBackgroundColor = "#121a2e"
 textColor = "#e2e8f0"
 borderColor = "#1c2740"
-primaryColor = "#0d9488"
+primaryColor = "#2563eb"
