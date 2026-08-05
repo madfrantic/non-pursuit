@@ -1,0 +1,7 @@
+streamlit>=1.37,<2.0
+pandas>=2.0,<3.0
+Jinja2>=3.1,<4.0
+# playwright drives your existing Google Chrome install (channel="chrome") for
+# the Spokeo auto-search — no `playwright install` browser download needed,
+# but Chrome itself must already be installed on the machine running this app.
+playwright>=1.62,<2.0

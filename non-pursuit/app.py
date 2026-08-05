@@ -1,0 +1,548 @@
+import io
+import re
+import sys
+import os
+import zipfile
+from datetime import datetime
+
+import streamlit as st
+import pandas as pd
+from jinja2 import Environment, FileSystemLoader
+
+sys.path.append(os.path.join(os.path.dirname(__file__), "utils"))
+from mailto_builder import build_mailto_link, mailto_length, is_mailto_safe
+from tracker import add_request, get_all_requests, update_status, delete_request, STATUS_OPTIONS
+import config
+
+
+# ---------------------------------------------------------------------------
+# Page setup
+# ---------------------------------------------------------------------------
+st.set_page_config(
+    page_title=config.APP_TITLE,
+    page_icon=config.APP_ICON,
+    layout=config.APP_LAYOUT,
+    initial_sidebar_state="expanded",
+)
+
+# Theming lives in .streamlit/config.toml. The only custom CSS left here is
+# for the "Broker Notes" info box and letter-preview box, which Streamlit's
+# theme doesn't reach on its own — kept in sync with config.py's palette so
+# changing one color in config.py and matching it in config.toml is the only
+# thing needed to re-theme the app.
+st.markdown(
+    f"""
+    <style>
+        .np-info-box {{
+            background-color: {config.SECONDARY_BACKGROUND_COLOR};
+            color: {config.TEXT_COLOR};
+            padding: 12px 16px;
+            border-left: 4px solid {config.PRIMARY_COLOR};
+            border-radius: 4px;
+            margin-bottom: 12px;
+        }}
+        .np-overdue {{
+            color: #ff6b6b;
+            font-weight: bold;
+        }}
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
+
+# ---------------------------------------------------------------------------
+# Validation helpers
+# ---------------------------------------------------------------------------
+EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+
+def is_valid_email(value: str) -> bool:
+    return bool(EMAIL_RE.match(value.strip())) if value else False
+
+
+def is_valid_url(value: str) -> bool:
+    return value.strip().lower().startswith(("http://", "https://")) if value else False
+
+
+# ---------------------------------------------------------------------------
+# Session state
+# ---------------------------------------------------------------------------
+for key, default in {
+    "user_name": "",
+    "user_email": "",
+    "user_location": "",
+    "record_url": "",
+}.items():
+    if key not in st.session_state:
+        st.session_state[key] = default
+
+
+# ---------------------------------------------------------------------------
+# Data loading
+# ---------------------------------------------------------------------------
+REQUIRED_BROKER_COLUMNS = {"broker_name", "compliance_email", "optout_url", "notes"}
+
+
+@st.cache_data
+def load_brokers():
+    try:
+        df = pd.read_csv(config.BROKERS_CSV_PATH)
+    except FileNotFoundError:
+        st.error(f"Broker data file not found at {config.BROKERS_CSV_PATH}")
+        return pd.DataFrame(columns=list(REQUIRED_BROKER_COLUMNS))
+
+    missing = REQUIRED_BROKER_COLUMNS - set(df.columns)
+    if missing:
+        st.error(
+            f"{config.BROKERS_CSV_PATH} is missing required column(s): {', '.join(sorted(missing))}. "
+            "Expected: broker_name, compliance_email, optout_url, notes."
+        )
+        return pd.DataFrame(columns=list(REQUIRED_BROKER_COLUMNS))
+
+    df["compliance_email"] = df["compliance_email"].fillna("")
+    df["notes"] = df["notes"].fillna("")
+    return df
+
+
+brokers_df = load_brokers()
+
+
+def render_letter(env, broker_name, user_name, user_location, user_email, record_url):
+    template = env.get_template("ccpa_deletion_demand.j2")
+    return template.render(
+        broker_name=broker_name,
+        user_name=user_name,
+        user_location=user_location,
+        user_email=user_email,
+        record_url=record_url,
+        current_date=datetime.now().strftime("%B %d, %Y"),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Sidebar
+# ---------------------------------------------------------------------------
+st.sidebar.title(f"{config.APP_ICON} {config.APP_TITLE}")
+st.sidebar.caption(config.APP_TAGLINE)
+st.sidebar.markdown("---")
+
+mode = st.sidebar.radio(
+    "Select Tool",
+    [
+        "1. Data Broker Deletion Letters",
+        "2. NY Expungement Guidance",
+        "3. Google De-Indexing",
+        "4. Campaign Tracker",
+    ],
+    label_visibility="visible",
+)
+
+st.sidebar.markdown("---")
+
+if st.sidebar.button("📋 Load Demo Profile"):
+    st.session_state.user_name = config.DEMO_PROFILE["name"]
+    st.session_state.user_email = config.DEMO_PROFILE["email"]
+    st.session_state.user_location = config.DEMO_PROFILE["location"]
+    st.session_state.record_url = config.DEMO_PROFILE["record_url"]
+    st.sidebar.success("Demo profile loaded!")
+
+st.sidebar.markdown("---")
+st.sidebar.markdown(
+    f"""
+    <div class="np-info-box" style="font-size: 0.85em;">
+    <strong>California resident?</strong><br>
+    The state's own deletion tool, <strong>DROP</strong>, reaches every
+    <em>registered</em> data broker with one request, and brokers have been
+    required to process DROP requests since Aug 1, 2026. Start there — use
+    Non-Pursuit for brokers that aren't registered, for other states, or to
+    escalate if a broker misses its window.
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
+st.sidebar.link_button("Open DROP (privacy.ca.gov)", config.CA_DROP_URL)
+
+st.title(f"{config.APP_ICON} {config.APP_TITLE}")
+st.caption(config.APP_TAGLINE)
+st.markdown("---")
+
+
+# ---------------------------------------------------------------------------
+# MODE 1: Data Broker Deletion Letters
+# ---------------------------------------------------------------------------
+if mode == "1. Data Broker Deletion Letters":
+    st.header("📜 CCPA Data Deletion Demand Letters")
+    st.markdown(
+        "Generate formal deletion demand letters for data brokers under "
+        "California Civil Code § 1798.105."
+    )
+
+    col1, col2 = st.columns(2)
+    with col1:
+        user_name = st.text_input("Full Name", value=st.session_state.user_name, placeholder="Enter your full legal name")
+        user_email = st.text_input("Email Address", value=st.session_state.user_email, placeholder="your.email@example.com")
+    with col2:
+        user_location = st.text_input("Location", value=st.session_state.user_location, placeholder="City, State")
+        record_url = st.text_input("Record URL", value=st.session_state.record_url, placeholder="https://broker.com/record/...")
+
+    st.session_state.user_name = user_name
+    st.session_state.user_email = user_email
+    st.session_state.user_location = user_location
+    st.session_state.record_url = record_url
+
+    errors = []
+    if user_name and len(user_name.strip()) < 2:
+        errors.append("Enter your full name.")
+    if user_email and not is_valid_email(user_email):
+        errors.append("That email address doesn't look valid.")
+    if record_url and not is_valid_url(record_url):
+        errors.append("Record URL should start with http:// or https://")
+
+    for e in errors:
+        st.warning(e)
+
+    ready = bool(user_name and user_email and user_location and record_url) and not errors
+
+    st.markdown("---")
+
+    if brokers_df.empty:
+        st.error("Unable to load broker data. Check data/brokers.csv.")
+    else:
+        batch_mode = st.toggle("Batch mode (select multiple brokers)", value=False)
+        env = Environment(loader=FileSystemLoader("templates"))
+
+        if not ready:
+            st.info("Fill in your name, email, location, and record URL above to generate letters.")
+
+        elif not batch_mode:
+            broker_options = brokers_df["broker_name"].tolist()
+            selected_broker = st.selectbox("Select Target Data Broker", broker_options)
+            broker_info = brokers_df[brokers_df["broker_name"] == selected_broker].iloc[0]
+            broker_email = broker_info["compliance_email"]
+            optout_url = broker_info["optout_url"]
+            broker_notes = broker_info["notes"]
+
+            if broker_notes:
+                st.markdown(f'<div class="np-info-box">📝 {broker_notes}</div>', unsafe_allow_html=True)
+
+            rendered_letter = render_letter(env, selected_broker, user_name, user_location, user_email, record_url)
+
+            st.subheader("📄 Generated Demand Letter")
+            st.code(rendered_letter, language=None)
+            st.caption("Use the copy icon in the corner above, or download below.")
+
+            st.markdown("---")
+            st.subheader("🚀 Actions")
+
+            col_a, col_b, col_c = st.columns(3)
+
+            with col_a:
+                if broker_email:
+                    subject = f"CCPA Data Deletion Demand - {user_name}"
+                    safe = is_mailto_safe(broker_email, subject, rendered_letter, config.MAILTO_SAFE_LENGTH)
+                    mailto_link = build_mailto_link(broker_email, subject, rendered_letter)
+                    st.link_button("📧 Open Email Client", mailto_link, disabled=not safe)
+                    st.caption(f"To: {broker_email}")
+                    if not safe:
+                        st.warning(
+                            f"This letter is long enough ({mailto_length(broker_email, subject, rendered_letter)} "
+                            "encoded characters) that some email clients will silently truncate it as a mailto "
+                            "link. Download it instead and paste it into a new email."
+                        )
+                else:
+                    st.caption("No compliance email on file for this broker — use the opt-out form instead.")
+
+            with col_b:
+                st.download_button(
+                    label="📥 Download as TXT",
+                    data=rendered_letter,
+                    file_name=f"ccpa_demand_{selected_broker.replace(' ', '_').lower()}_{datetime.now().strftime('%Y%m%d')}.txt",
+                    mime="text/plain",
+                )
+
+            with col_c:
+                if optout_url:
+                    st.link_button("🔗 Official Opt-Out Form", optout_url)
+                    st.caption("Opens in new tab")
+
+            st.markdown("---")
+            if st.button("➕ Log this request in the Campaign Tracker"):
+                add_request(
+                    config.TRACKER_DB_PATH,
+                    broker_name=selected_broker,
+                    channel="Email" if broker_email else "Opt-out form",
+                    response_window_days=config.CCPA_RESPONSE_WINDOW_DAYS,
+                )
+                st.success(f"Logged {selected_broker} in the tracker.")
+
+        else:
+            broker_options = brokers_df["broker_name"].tolist()
+            selected_brokers = st.multiselect("Select target brokers", broker_options, default=broker_options[:3])
+
+            if selected_brokers:
+                letters = {}
+                for broker_name in selected_brokers:
+                    letters[broker_name] = render_letter(env, broker_name, user_name, user_location, user_email, record_url)
+
+                with st.expander(f"Preview ({len(letters)} letters)"):
+                    for broker_name, letter_text in letters.items():
+                        st.markdown(f"**{broker_name}**")
+                        st.code(letter_text, language=None)
+
+                zip_buffer = io.BytesIO()
+                with zipfile.ZipFile(zip_buffer, "w") as zf:
+                    for broker_name, letter_text in letters.items():
+                        filename = f"ccpa_demand_{broker_name.replace(' ', '_').lower()}.txt"
+                        zf.writestr(filename, letter_text)
+                zip_buffer.seek(0)
+
+                col_a, col_b = st.columns(2)
+                with col_a:
+                    st.download_button(
+                        "📥 Download all as ZIP",
+                        data=zip_buffer,
+                        file_name=f"ccpa_demands_{datetime.now().strftime('%Y%m%d')}.zip",
+                        mime="application/zip",
+                    )
+                with col_b:
+                    if st.button(f"➕ Log all {len(letters)} in the Campaign Tracker"):
+                        for broker_name in selected_brokers:
+                            broker_info = brokers_df[brokers_df["broker_name"] == broker_name].iloc[0]
+                            channel = "Email" if broker_info["compliance_email"] else "Opt-out form"
+                            add_request(
+                                config.TRACKER_DB_PATH,
+                                broker_name=broker_name,
+                                channel=channel,
+                                response_window_days=config.CCPA_RESPONSE_WINDOW_DAYS,
+                            )
+                        st.success(f"Logged {len(letters)} requests in the tracker.")
+            else:
+                st.info("Select at least one broker.")
+
+
+# ---------------------------------------------------------------------------
+# MODE 2: NY Expungement Guidance
+# ---------------------------------------------------------------------------
+elif mode == "2. NY Expungement Guidance":
+    st.header("⚖️ New York Criminal Record Expungement Guidance")
+    st.markdown("Navigate New York Criminal Procedure Law (CPL) pathways for record sealing and expungement.")
+    st.markdown("---")
+
+    st.subheader("Step 1: Case Outcome")
+    case_outcome = st.selectbox(
+        "What was the outcome of your criminal case?",
+        ["Case was dismissed / acquitted", "Convicted of a crime", "Convicted of a violation / non-criminal offense"],
+    )
+
+    if case_outcome == "Case was dismissed / acquitted":
+        st.markdown("---")
+        st.success("### You may qualify under **NY CPL § 160.50**")
+        st.markdown(
+            """
+            **CPL 160.50** applies to cases where:
+            - The case was dismissed
+            - You were acquitted (found not guilty)
+            - The prosecution terminated the case
+
+            **Next Steps:**
+            1. Your records should be automatically sealed
+            2. If not sealed, file a motion with the court
+            3. Contact the court where your case was heard
+            """
+        )
+        st.link_button("📚 Official NY Courts Guide", config.NY_COURT_EXPUNGEMENT_URL)
+
+    elif case_outcome == "Convicted of a crime":
+        st.markdown("---")
+        st.subheader("Step 2: Waiting Period")
+        time_since_conviction = st.selectbox(
+            "How long has it been since your conviction?",
+            ["Less than 10 years", "10+ years"],
+        )
+
+        if time_since_conviction == "10+ years":
+            st.success("### You may qualify under **NY CPL § 160.59**")
+            st.markdown(
+                """
+                **CPL 160.59** allows for sealing of certain convictions after 10 years if:
+                - You have no more than 2 convictions
+                - You have no pending criminal charges
+                - You have satisfied all sentencing requirements
+                - The conviction was not for a sex offense or violent felony
+
+                **Next Steps:**
+                1. File a certificate of disposition
+                2. Submit motion to seal with the court
+                3. Attend court hearing if required
+                """
+            )
+            st.link_button("📚 Official NY Courts Guide", config.NY_COURT_EXPUNGEMENT_URL)
+        else:
+            st.warning("### You do not currently qualify for CPL 160.59")
+            st.markdown(
+                """
+                You must wait 10 years from the date of conviction before applying for sealing under CPL 160.59.
+
+                **Consider:**
+                - CPL 160.55 for certain marijuana convictions
+                - Certificate of Relief from Disabilities
+                - Consult with a criminal defense attorney
+                """
+            )
+
+    else:
+        st.markdown("---")
+        st.success("### Your record may already be sealed")
+        st.markdown(
+            """
+            Violations and non-criminal offenses (e.g., disorderly conduct, traffic violations) are typically:
+            - Automatically sealed after 1 year
+            - Not visible in standard background checks
+            - Not considered criminal convictions
+
+            **Verification:**
+            - Request your criminal history from the NY Division of Criminal Justice Services
+            - Check with the court where your case was heard
+            """
+        )
+        st.link_button("📚 Official NY Courts Guide", config.NY_COURT_EXPUNGEMENT_URL)
+
+    st.markdown("---")
+    st.info(
+        "⚠️ **Disclaimer:** This tool provides general guidance only. For legal advice regarding "
+        "your specific situation, consult with a qualified New York criminal defense attorney."
+    )
+
+
+# ---------------------------------------------------------------------------
+# MODE 3: Google De-Indexing
+# ---------------------------------------------------------------------------
+elif mode == "3. Google De-Indexing":
+    st.header("🔍 Google PII Removal Request")
+    st.markdown("Request removal of personally identifiable information from Google Search results.")
+    st.markdown("---")
+
+    st.subheader("Standardized PII Justification Statement")
+
+    justification_text = """I am requesting the removal of personally identifiable information (PII) from Google Search results because:
+
+1. The information contains my personal contact details (home address, phone number, email)
+2. This information is being exposed without my consent
+3. The information poses a risk to my personal safety and privacy
+4. The information is not of public interest and does not serve a newsworthy purpose
+5. I am the subject of this information and have not authorized its publication
+
+This request is made under Google's PII removal policies for:
+- Confidential government ID numbers
+- Bank account or credit card numbers
+- Images of handwritten signatures
+- Personal medical records
+- Private contact information
+
+I have attached evidence of the search results containing this information and request prompt removal to protect my privacy and security."""
+
+    st.code(justification_text, language=None)
+    st.caption("Use the copy icon in the corner above to copy this text.")
+
+    st.markdown("---")
+
+    st.subheader("🚀 Submit to Google")
+    st.link_button("🔗 Google PII Removal Portal", config.GOOGLE_PII_REMOVAL_URL)
+    st.caption("Opens Google's official removal request form")
+
+    st.markdown("---")
+
+    st.subheader("📝 Before Submitting")
+    st.markdown(
+        """
+        **Required Information:**
+        - URLs of the pages containing your PII
+        - Screenshots of the search results
+        - Your contact information for verification
+        - Specific type of PII (address, phone, SSN, etc.)
+
+        **Processing Time:**
+        - Google typically reviews requests within a few days
+        - You will receive email confirmation of the decision
+        - Approved removals take effect within 24-48 hours
+
+        **Important Notes:**
+        - This only removes content from Google Search, not the original website
+        - Contact the website hosting the information directly for complete removal
+        - Keep records of your submission for follow-up
+        """
+    )
+
+
+# ---------------------------------------------------------------------------
+# MODE 4: Campaign Tracker
+# ---------------------------------------------------------------------------
+elif mode == "4. Campaign Tracker":
+    st.header("📊 Campaign Tracker")
+    st.markdown("Every request logged from the other tools shows up here, with its response deadline tracked automatically.")
+    st.markdown("---")
+
+    with st.expander("➕ Log a request manually"):
+        with st.form("manual_log_form"):
+            m_broker = st.text_input("Broker / recipient name")
+            m_channel = st.selectbox("Channel", ["Email", "Opt-out form", "Mail", "Other"])
+            m_window = st.number_input("Response window (days)", min_value=1, value=config.CCPA_RESPONSE_WINDOW_DAYS)
+            m_notes = st.text_input("Notes (optional)")
+            submitted = st.form_submit_button("Log request")
+            if submitted and m_broker:
+                add_request(config.TRACKER_DB_PATH, m_broker, m_channel, int(m_window), m_notes)
+                st.success(f"Logged {m_broker}.")
+
+    requests_list = get_all_requests(config.TRACKER_DB_PATH)
+
+    if not requests_list:
+        st.info("Nothing logged yet. Generate a letter in Mode 1 and click \"Log this request\", or add one manually above.")
+    else:
+        overdue_count = sum(1 for r in requests_list if r["is_overdue"])
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Total tracked", len(requests_list))
+        c2.metric("Overdue", overdue_count)
+        c3.metric("Complete", sum(1 for r in requests_list if r["status"] == "Complete"))
+
+        st.markdown("---")
+
+        for r in requests_list:
+            cols = st.columns([3, 2, 2, 2, 2, 1])
+            cols[0].markdown(f"**{r['broker_name']}**  \n{r['channel']}")
+            cols[1].markdown(f"Sent: {r['date_sent']}")
+            deadline_label = f"Due: {r['deadline']}"
+            if r["is_overdue"]:
+                cols[2].markdown(f'<span class="np-overdue">⚠️ Overdue ({deadline_label})</span>', unsafe_allow_html=True)
+            else:
+                cols[2].markdown(f"{deadline_label} ({r['days_remaining']}d left)")
+
+            new_status = cols[3].selectbox(
+                "Status", STATUS_OPTIONS, index=STATUS_OPTIONS.index(r["status"]),
+                key=f"status_{r['id']}", label_visibility="collapsed",
+            )
+            if new_status != r["status"]:
+                update_status(config.TRACKER_DB_PATH, r["id"], new_status)
+                st.rerun()
+
+            if r["notes"]:
+                cols[4].caption(r["notes"])
+
+            if cols[5].button("🗑️", key=f"delete_{r['id']}"):
+                delete_request(config.TRACKER_DB_PATH, r["id"])
+                st.rerun()
+
+
+# ---------------------------------------------------------------------------
+# Footer
+# ---------------------------------------------------------------------------
+st.markdown("---")
+st.markdown(
+    f"""
+    <div style='text-align: center; color: #888; font-size: 12px;'>
+        <p>{config.APP_TITLE} — {config.APP_TAGLINE}</p>
+        <p>For educational purposes only. Not legal advice.</p>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
