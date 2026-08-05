@@ -14,6 +14,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), "utils"))
 from mailto_builder import build_mailto_link, mailto_length, is_mailto_safe
 from tracker import add_request, get_all_requests, update_status, delete_request, purge_expired_notes, STATUS_OPTIONS
 from calendar_export import build_ics
+from google_dork import domain_from_url, build_combined_dork_url, build_broker_dork_url
 import spokeo_automation
 import config
 
@@ -479,8 +480,8 @@ elif mode == ":material/person_search: Should I Worry? (Self-Search)":
     st.markdown("---")
 
     st.subheader("Your search terms")
-    st.caption("A name alone is rarely enough to find yourself on these sites — most also need a city/state to narrow it down.")
-    ss_col1, ss_col2 = st.columns(2)
+    st.caption("Enter this once — it's reused everywhere else in the app (letters, dashboard).")
+    ss_col1, ss_col2, ss_col3 = st.columns(3)
     with ss_col1:
         self_search_name = st.text_input(
             "Full Name", value=st.session_state.user_name, placeholder="Enter your full legal name"
@@ -489,18 +490,31 @@ elif mode == ":material/person_search: Should I Worry? (Self-Search)":
         self_search_location = st.text_input(
             "Location", value=st.session_state.user_location, placeholder="City, State"
         )
+    with ss_col3:
+        self_search_email = st.text_input(
+            "Email", value=st.session_state.user_email, placeholder="your.email@example.com"
+        )
     st.session_state.user_name = self_search_name
     st.session_state.user_location = self_search_location
-
-    if self_search_name or self_search_location:
-        st.info(
-            f"Type this into each broker's search box below: "
-            f"**{self_search_name or '(your name)'}**, **{self_search_location or '(your city/state)'}**"
-        )
+    st.session_state.user_email = self_search_email
 
     if brokers_df.empty:
         st.error("Unable to load broker data. Check data/brokers.csv.")
     else:
+        broker_domains = [domain_from_url(u) for u in brokers_df["search_url"] if u]
+
+        if self_search_name and broker_domains:
+            st.link_button(
+                ":material/travel_explore: Search for yourself across every broker at once",
+                build_combined_dork_url(self_search_name, self_search_location, broker_domains),
+            )
+            st.caption(
+                "A real, targeted Google search restricted to the broker sites below — not simulated. "
+                "Good for a quick overview; use each broker's own button below for a cleaner, one-at-a-time result."
+            )
+        elif not self_search_name:
+            st.caption("Enter your name above to unlock targeted search links for each broker below.")
+
         metric_placeholder = st.empty()
         st.markdown("---")
 
@@ -528,6 +542,10 @@ elif mode == ":material/person_search: Should I Worry? (Self-Search)":
                         if outcome == "timed_out":
                             wait_minutes = spokeo_automation.MAX_WAIT_SECONDS // 60
                             st.warning(f"Closed the {broker_name} window automatically after {wait_minutes} minutes of inactivity.")
+            elif broker["search_url"] and self_search_name:
+                broker_domain = domain_from_url(broker["search_url"])
+                dork_url = build_broker_dork_url(self_search_name, self_search_location, broker_domain)
+                row_cols[1].link_button(":material/travel_explore: Targeted search", dork_url, key=f"selfsearch_link_{broker_name}")
             elif broker["search_url"]:
                 row_cols[1].link_button("Search", broker["search_url"], key=f"selfsearch_link_{broker_name}")
             else:
@@ -545,6 +563,10 @@ elif mode == ":material/person_search: Should I Worry? (Self-Search)":
         if self_search_name:
             st.markdown("---")
             st.subheader("🌐 Online Search Presence")
+            st.warning(
+                "⚠️ The match counts below are simulated for demonstration, not from a real search API. "
+                "Use the targeted broker links above, or the manual search-engine links below, for an actual check."
+            )
 
             with st.spinner("Checking search engine presence..."):
                 from utils.check_exposure import check_online_exposure
