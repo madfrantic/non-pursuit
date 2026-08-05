@@ -9,7 +9,6 @@ from tracker import add_request, get_all_requests, update_status, delete_request
 from calendar_export import build_ics
 import config
 
-from components import self_search as self_search_component
 from components import letters as letters_component
 from components import dashboard as dashboard_component
 
@@ -118,7 +117,6 @@ mode = st.sidebar.radio(
     "Select Tool",
     [
         ":material/dashboard: Dashboard",
-        ":material/person_search: Should I Worry? (Self-Search)",
         ":material/mail: 1. Data Broker Deletion Letters",
         ":material/gavel: 2. NY Expungement Guidance",
         ":material/search_off: 3. Google De-Indexing",
@@ -159,17 +157,10 @@ st.markdown("---")
 
 
 # ---------------------------------------------------------------------------
-# MODE: Dashboard
+# MODE: Dashboard (also hosts the identity + broker-search section)
 # ---------------------------------------------------------------------------
 if mode == ":material/dashboard: Dashboard":
-    dashboard_component.render()
-
-
-# ---------------------------------------------------------------------------
-# MODE 0: Should I Worry? (Self-Search)
-# ---------------------------------------------------------------------------
-elif mode == ":material/person_search: Should I Worry? (Self-Search)":
-    self_search_component.render(brokers_df)
+    dashboard_component.render(brokers_df)
 
 elif mode == ":material/mail: 1. Data Broker Deletion Letters":
     letters_component.render(brokers_df)

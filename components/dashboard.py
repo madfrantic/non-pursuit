@@ -1,15 +1,20 @@
 """
-Single-pane dashboard: an at-a-glance overview of everything already
-tracked, plus quick links into the modes that do the actual work. Reuses
-tracker.py's get_all_requests — no new data model, just a different view
-over the same data already backing the Campaign Tracker.
+Dashboard: the single landing page. Enter your info once here, see your
+search results, and see your campaign's tracked progress — all on one
+page. Used to be split across a separate "Dashboard" (metrics only) and
+"Should I Worry? (Self-Search)" mode; merged because that split was
+redundant once both were meant to be the first thing you see.
+
+Reuses tracker.py's get_all_requests for the campaign metrics (no new data
+model) and self_search.py's render() for the identity + broker-search
+section (same logic, not a reimplementation).
 """
 import streamlit as st
 
 import config
 from tracker import get_all_requests
+from components import self_search as self_search_component
 
-_MODE_SELF_SEARCH = ":material/person_search: Should I Worry? (Self-Search)"
 _MODE_LETTERS = ":material/mail: 1. Data Broker Deletion Letters"
 _MODE_TRACKER = ":material/monitoring: 4. Campaign Tracker"
 
@@ -22,10 +27,15 @@ def _switch_to(mode_value):
     st.rerun()
 
 
-def render():
+def render(brokers_df):
     st.header(":material/dashboard: Dashboard")
-    st.markdown("Everything you've tracked, at a glance.")
+    st.markdown("Enter your info once, see everywhere you're exposed, and track your campaign — all in one place.")
     st.markdown("---")
+
+    self_search_component.render(brokers_df)
+
+    st.markdown("---")
+    st.subheader("Your campaign so far")
 
     requests = get_all_requests(config.TRACKER_DB_PATH)
     total = len(requests)
@@ -45,12 +55,9 @@ def render():
             "check the Campaign Tracker to follow up."
         )
 
-    st.markdown("---")
-    st.subheader("Deadlines")
-
     active_requests = [r for r in requests if r["status"] != "Complete"]
     if not active_requests:
-        st.info("Nothing active right now. Use the quick actions below to start your first request.")
+        st.info("Nothing active yet — confirm a broker above and generate a letter to start your first request.")
     else:
         for r in sorted(active_requests, key=lambda r: r["deadline"]):
             window = max(r["response_window_days"], 1)
@@ -65,10 +72,8 @@ def render():
 
     st.markdown("---")
     st.subheader("Quick actions")
-    qcol1, qcol2, qcol3 = st.columns(3)
-    if qcol1.button(":material/person_search: Search for myself", width="stretch"):
-        _switch_to(_MODE_SELF_SEARCH)
-    if qcol2.button(":material/mail: Generate a letter", width="stretch"):
+    qcol1, qcol2 = st.columns(2)
+    if qcol1.button(":material/mail: Generate a letter", width="stretch"):
         _switch_to(_MODE_LETTERS)
-    if qcol3.button(":material/monitoring: Open full tracker", width="stretch"):
+    if qcol2.button(":material/monitoring: Open full tracker", width="stretch"):
         _switch_to(_MODE_TRACKER)

@@ -1,6 +1,6 @@
 """
-Data Broker Deletion Letters — extracted from app.py so the Wizard can call
-the exact same, already-tested logic instead of reimplementing it.
+Data Broker Deletion Letters — its own module (extracted from app.py) so
+its logic lives in exactly one place regardless of what else calls it.
 """
 import io
 import zipfile
@@ -96,7 +96,7 @@ def render(brokers_df):
         st.subheader("🔍 Step 1: Confirm you're actually listed")
 
         if st.session_state.listed_confirmed.get(selected_broker, False):
-            st.success(f"✅ Already confirmed via Should I Worry? that you're listed on {selected_broker}.")
+            st.success(f"✅ Already confirmed via the Dashboard that you're listed on {selected_broker}.")
             confirmed_listed = True
         else:
             st.caption(
@@ -188,7 +188,7 @@ def render(brokers_df):
 
                 if st.session_state.listed_confirmed.get(broker_name, False):
                     row_cols[1].caption("—")
-                    row_cols[2].caption("✅ Confirmed via Should I Worry?")
+                    row_cols[2].caption("✅ Confirmed via the Dashboard")
                     confirmed_brokers.append(broker_name)
                     continue
 
