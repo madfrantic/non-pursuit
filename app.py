@@ -242,6 +242,12 @@ st.markdown("---")
 if mode == "🔍 Privacy Dashboard":
     st.header("🛡️ Privacy Exposure Dashboard")
     st.markdown("See where your personal information is exposed online and what to do about it.")
+    st.warning(
+        "⚠️ **The scores and counts below are simulated for demonstration** — generated from a "
+        "hash of your info, not real lookups against breach databases or broker sites. For an "
+        "actual check, use **Should I Worry? (Self-Search)** to search real broker sites yourself, "
+        "or the **Check Email Breaches** button below, which links to the real HaveIBeenPwned."
+    )
     st.markdown("---")
 
     has_info = any([
@@ -406,7 +412,7 @@ if mode == "🔍 Privacy Dashboard":
 
     if "breaches" in results and results["breaches"].get("found", False):
         breach_count = results["breaches"].get("exposure_count", 0)
-        st.error(f"🚨 Your email was found in {breach_count} known data breaches!")
+        st.error(f"🚨 Simulated result: {breach_count} known data breaches (not a real check — see warning above).")
         st.markdown("""
         **Recommended actions:**
         1. Change passwords for all accounts using this email
