@@ -53,3 +53,35 @@ CA_DROP_URL = "https://privacy.ca.gov"
 # bodies well under this. Above the threshold, the UI should steer the user
 # to download + paste instead of the one-click mailto button.
 MAILTO_SAFE_LENGTH = 1800
+
+# Privacy Dashboard settings
+PRIVACY_SCORE_CATEGORIES = {
+    "social_security": {"weight": 25, "label": "Social Security Number", "icon": "🔑"},
+    "email": {"weight": 20, "label": "Email Address", "icon": "📧"},
+    "phone": {"weight": 15, "label": "Phone Number", "icon": "📱"},
+    "address": {"weight": 20, "label": "Physical Address", "icon": "🏠"},
+    "social_media": {"weight": 10, "label": "Social Media Profiles", "icon": "👤"},
+    "data_brokers": {"weight": 10, "label": "Data Broker Listings", "icon": "🏢"},
+}
+
+# Known data breach databases (for dark web monitoring simulation)
+BREACH_CHECK_SERVICES = {
+    "haveibeenpwned": "https://haveibeenpwned.com",
+    "dehashed": "https://dehashed.com",
+    "firefox_monitor": "https://monitor.firefox.com",
+}
+
+# Search engines to check for PII exposure
+SEARCH_ENGINE_URLS = {
+    "google": "https://www.google.com/search?q=",
+    "bing": "https://www.bing.com/search?q=",
+    "duckduckgo": "https://duckduckgo.com/?q=",
+    "yahoo": "https://search.yahoo.com/search?p=",
+}
+
+PRIVACY_SCORE_THRESHOLDS = {
+    "excellent": 80,
+    "good": 60,
+    "poor": 40,
+    "critical": 20,
+}

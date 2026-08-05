@@ -3,6 +3,7 @@ import re
 import sys
 import os
 import zipfile
+import hashlib
 from datetime import datetime
 
 import streamlit as st
@@ -12,6 +13,7 @@ from jinja2 import Environment, FileSystemLoader
 sys.path.append(os.path.join(os.path.dirname(__file__), "utils"))
 from mailto_builder import build_mailto_link, mailto_length, is_mailto_safe
 from tracker import add_request, get_all_requests, update_status, delete_request, STATUS_OPTIONS
+from calendar_export import build_ics
 import spokeo_automation
 import config
 
@@ -86,7 +88,7 @@ for key, default in {
 REQUIRED_BROKER_COLUMNS = {"broker_name", "compliance_email", "optout_url", "notes"}
 
 
-@st.cache_data
+@st.cache_data(ttl=3600)
 def load_brokers():
     try:
         df = pd.read_csv(config.BROKERS_CSV_PATH)
@@ -128,6 +130,62 @@ def render_letter(env, broker_name, user_name, user_location, user_email, record
     )
 
 
+def generate_privacy_report(results):
+    """Generate a detailed privacy report for download."""
+    report = []
+    report.append("=" * 60)
+    report.append("NON-PURSUIT PRIVACY EXPOSURE REPORT")
+    report.append("Generated: " + datetime.now().strftime("%B %d, %Y at %I:%M %p"))
+    report.append("=" * 60)
+    report.append("")
+
+    score = results.get("privacy_score", {})
+    report.append(f"PRIVACY SCORE: {score.get('score', 'N/A')}%")
+    report.append(f"RATING: {score.get('level', 'Unknown')}")
+    report.append("")
+    report.append("-" * 60)
+
+    for category, data in results.items():
+        if category == "privacy_score":
+            continue
+
+        report.append(f"{category.upper().replace('_', ' ')}:")
+        report.append(f"  Found: {'YES' if data.get('found', False) else 'NO'}")
+        report.append(f"  Risk Level: {data.get('risk_level', 'Unknown').upper()}")
+        report.append(f"  Details: {data.get('description', 'N/A')}")
+        if data.get('recommendation'):
+            report.append(f"  Recommendation: {data.get('recommendation')}")
+        report.append("")
+
+    report.append("-" * 60)
+    report.append("NEXT STEPS:")
+    report.append("1. Use Non-Pursuit's Data Broker Deletion Letters to start removal")
+    report.append("2. Submit Google PII removal requests")
+    report.append("3. Set all social media accounts to private")
+    report.append("4. Change passwords for breached accounts")
+    report.append("5. Consider using a password manager")
+    report.append("")
+    report.append("=" * 60)
+
+    return "\n".join(report)
+
+
+def check_search_frequency(query: str) -> dict:
+    """
+    Simulate checking how many times a query appears in search results.
+    In production, you'd use a search API.
+    """
+    query_hash = hashlib.md5(query.encode()).hexdigest()
+    base_count = int(query_hash[:4], 16) % 100
+
+    return {
+        "google": base_count,
+        "bing": int(base_count * 0.8),
+        "duckduckgo": int(base_count * 0.6),
+        "yahoo": int(base_count * 0.7),
+    }
+
+
 # ---------------------------------------------------------------------------
 # Sidebar
 # ---------------------------------------------------------------------------
@@ -138,6 +196,7 @@ st.sidebar.markdown("---")
 mode = st.sidebar.radio(
     "Select Tool",
     [
+        "🔍 Privacy Dashboard",
         "🔍 Should I Worry? (Self-Search)",
         "1. Data Broker Deletion Letters",
         "2. NY Expungement Guidance",
@@ -178,9 +237,234 @@ st.markdown("---")
 
 
 # ---------------------------------------------------------------------------
+# MODE: Privacy Dashboard
+# ---------------------------------------------------------------------------
+if mode == "🔍 Privacy Dashboard":
+    st.header("🛡️ Privacy Exposure Dashboard")
+    st.markdown("See where your personal information is exposed online and what to do about it.")
+    st.markdown("---")
+
+    has_info = any([
+        st.session_state.user_name,
+        st.session_state.user_email,
+        st.session_state.user_location,
+    ])
+
+    if not has_info:
+        st.info("👤 Enter your personal information above to get a privacy score and see where your data is exposed.")
+        st.markdown("""
+        ### What we check:
+        - **Social Security Number** - Critical identity theft risk
+        - **Email Address** - Breach exposure and spam risk
+        - **Phone Number** - Telemarketing and SIM swapping risk
+        - **Physical Address** - Doxxing and mail fraud risk
+        - **Social Media** - Oversharing and stalking risk
+        - **Data Brokers** - Who's selling your information
+        """)
+        st.stop()
+
+    from utils.privacy_scanner import PrivacyScanner
+
+    user_data = {
+        "name": st.session_state.user_name,
+        "email": st.session_state.user_email,
+        "location": st.session_state.user_location,
+        "address": st.session_state.user_location,
+        "phone": st.session_state.get("user_phone", ""),
+        "ssn": st.session_state.get("user_ssn", ""),
+        "social_media": st.session_state.get("social_media_accounts", {}),
+        "has_taken_action": st.session_state.get("has_taken_action", False),
+    }
+
+    with st.expander("🔐 Enter additional information to scan (optional)", expanded=False):
+        col1, col2 = st.columns(2)
+        with col1:
+            user_phone = st.text_input("Phone Number", placeholder="(555) 555-5555")
+            if user_phone:
+                st.session_state.user_phone = user_phone
+
+        with col2:
+            user_ssn = st.text_input("Social Security Number (last 4 only)",
+                                    placeholder="XXX-XX-1234", type="password")
+            if user_ssn and len(user_ssn) > 4:
+                st.session_state.user_ssn = user_ssn
+
+    with st.expander("📱 Social Media Accounts to check", expanded=False):
+        st.caption("Enter your usernames to check if your social media profiles are publicly visible")
+        social_media = {}
+        col1, col2 = st.columns(2)
+        with col1:
+            instagram = st.text_input("Instagram username", placeholder="@username")
+            if instagram:
+                social_media["instagram"] = instagram
+            twitter = st.text_input("Twitter/X username", placeholder="@username")
+            if twitter:
+                social_media["twitter"] = twitter
+        with col2:
+            facebook = st.text_input("Facebook username", placeholder="username")
+            if facebook:
+                social_media["facebook"] = facebook
+            linkedin = st.text_input("LinkedIn username", placeholder="username")
+            if linkedin:
+                social_media["linkedin"] = linkedin
+
+        if social_media:
+            st.session_state.social_media_accounts = social_media
+
+    scanner = PrivacyScanner(user_data)
+    results = scanner.scan_all()
+
+    score_data = results.get("privacy_score", {"score": 0, "level": "Unknown"})
+    score = score_data["score"]
+    level = score_data["level"]
+
+    if score >= 80:
+        color = "#22c55e"
+        emoji = "🌟"
+    elif score >= 60:
+        color = "#eab308"
+        emoji = "👍"
+    elif score >= 40:
+        color = "#f97316"
+        emoji = "⚠️"
+    else:
+        color = "#ef4444"
+        emoji = "🚨"
+
+    st.markdown(f"""
+    <div style='text-align: center; padding: 20px; background: {config.SECONDARY_BACKGROUND_COLOR}; border-radius: 10px; margin: 20px 0;'>
+        <div style='font-size: 48px;'>{emoji}</div>
+        <h1 style='color: {color}; font-size: 72px; margin: 0;'>{score}%</h1>
+        <p style='font-size: 24px; color: {config.TEXT_COLOR};'>Privacy Score: <strong>{level}</strong></p>
+        <p style='color: #888;'>{score_data.get('description', 'Your privacy score based on information exposure')}</p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    st.markdown("---")
+
+    st.subheader("📊 Exposure Breakdown")
+
+    cols = st.columns(3)
+    category_metrics = {
+        "social_security": "🔑 SSN",
+        "email": "📧 Email",
+        "phone": "📱 Phone",
+        "address": "🏠 Address",
+        "social_media": "👤 Social Media",
+        "data_brokers": "🏢 Data Brokers",
+        "breaches": "💻 Data Breaches",
+    }
+
+    for idx, (key, label) in enumerate(category_metrics.items()):
+        if key in results:
+            result = results[key]
+            col = cols[idx % 3]
+            found = result.get("found", False)
+            count = result.get("exposure_count", 0)
+            risk = result.get("risk_level", "low")
+
+            risk_colors = {
+                "low": "#22c55e",
+                "medium": "#eab308",
+                "high": "#f97316",
+                "critical": "#ef4444",
+            }
+            color = risk_colors.get(risk, "#888")
+
+            status_emoji = "🟢" if risk == "low" else "🟡" if risk == "medium" else "🔴"
+
+            col.markdown(f"""
+            <div style='background: {config.SECONDARY_BACKGROUND_COLOR}; padding: 12px; border-radius: 8px; margin-bottom: 10px;'>
+                <div style='display: flex; justify-content: space-between;'>
+                    <span style='font-weight: bold;'>{label}</span>
+                    <span style='color: {color};'>{status_emoji} {risk.title()}</span>
+                </div>
+                <div style='font-size: 14px; color: #888;'>
+                    {result.get('description', 'Not scanned')}
+                </div>
+                {f"<div style='font-size: 12px; color: #666; margin-top: 4px;'>Found: {count} locations</div>" if count > 0 else ""}
+            </div>
+            """, unsafe_allow_html=True)
+
+    st.markdown("---")
+
+    st.subheader("🎯 Action Items")
+
+    for category, result in results.items():
+        if category == "privacy_score":
+            continue
+
+        if result.get("found", False) and result.get("risk_level") in ["high", "critical"]:
+            with st.container():
+                st.warning(f"**{category.replace('_', ' ').title()}**: {result.get('recommendation', 'Take action to protect your privacy.')}")
+
+    if "data_brokers" in results and results["data_brokers"].get("found", False):
+        brokers = results["data_brokers"].get("brokers", [])
+        if brokers:
+            st.info(f"📋 You're listed on {len(brokers)} data broker sites: {', '.join(brokers[:5])}")
+            st.markdown("Use the **Data Broker Deletion Letters** tool to start removing your information.")
+
+    if "breaches" in results and results["breaches"].get("found", False):
+        breach_count = results["breaches"].get("exposure_count", 0)
+        st.error(f"🚨 Your email was found in {breach_count} known data breaches!")
+        st.markdown("""
+        **Recommended actions:**
+        1. Change passwords for all accounts using this email
+        2. Enable 2-factor authentication everywhere
+        3. Consider using a password manager
+        4. Monitor your credit reports for suspicious activity
+        """)
+
+    st.markdown("---")
+    st.subheader("🔍 Check Search Engine Exposure")
+
+    search_col1, search_col2 = st.columns([2, 1])
+    with search_col1:
+        search_query = st.text_input(
+            "Search for your name or information",
+            value=st.session_state.user_name,
+            placeholder="John Doe"
+        )
+
+    if search_query:
+        from utils.check_exposure import generate_search_links
+
+        st.caption("🔗 Manually check these search engines for your information:")
+        search_links = generate_search_links(search_query)
+
+        cols = st.columns(len(search_links))
+        for idx, (engine, url) in enumerate(search_links.items()):
+            cols[idx].link_button(f"Search {engine.title()}", url)
+
+    st.markdown("---")
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        if st.button("📧 Check Email Breaches", use_container_width=True):
+            email = st.session_state.user_email
+            if email:
+                st.link_button("Check on HaveIBeenPwned", f"https://haveibeenpwned.com/account/{email}")
+            else:
+                st.warning("Enter your email above first")
+
+    with col2:
+        if st.button("🛡️ Get Data Removal Checklist", use_container_width=True):
+            st.session_state.show_checklist = True
+
+    with col3:
+        if st.button("📊 Download Privacy Report", use_container_width=True):
+            report = generate_privacy_report(results)
+            st.download_button(
+                "📥 Download Report",
+                data=report,
+                file_name=f"privacy_report_{datetime.now().strftime('%Y%m%d')}.txt",
+                mime="text/plain",
+            )
+
+
+# ---------------------------------------------------------------------------
 # MODE 0: Should I Worry? (Self-Search)
 # ---------------------------------------------------------------------------
-if mode == "🔍 Should I Worry? (Self-Search)":
+elif mode == "🔍 Should I Worry? (Self-Search)":
     st.header("🔍 Should I worry?")
     st.markdown(
         "Search each data broker's site for your own name **before** generating a deletion "
@@ -251,6 +535,42 @@ if mode == "🔍 Should I Worry? (Self-Search)":
 
         found_count = sum(1 for v in st.session_state.listed_confirmed.values() if v)
         metric_placeholder.metric("Brokers confirmed listed", f"{found_count} / {len(brokers_df)} checked")
+
+        if self_search_name:
+            st.markdown("---")
+            st.subheader("🌐 Online Search Presence")
+
+            with st.spinner("Checking search engine presence..."):
+                from utils.check_exposure import check_online_exposure
+
+                search_terms = {
+                    "name": self_search_name,
+                    "name_location": f"{self_search_name} {self_search_location}" if self_search_location else self_search_name,
+                    "email": st.session_state.user_email,
+                }
+
+                exposure_results = check_online_exposure(search_terms)
+
+                exp_cols = st.columns(3)
+                for idx, (term, result) in enumerate(exposure_results.items()):
+                    if result["found"]:
+                        exp_cols[idx % 3].metric(
+                            label=term.replace("_", " ").title(),
+                            value=f"{result['count']} matches",
+                            delta="Found" if result['count'] > 0 else "Not found",
+                            delta_color="inverse" if result['count'] > 5 else "normal",
+                        )
+
+            st.caption("🔗 Check these search engines manually:")
+            link_cols = st.columns(4)
+            search_engines = {
+                "Google": f"https://www.google.com/search?q={self_search_name.replace(' ', '+')}",
+                "Bing": f"https://www.bing.com/search?q={self_search_name.replace(' ', '+')}",
+                "DuckDuckGo": f"https://duckduckgo.com/?q={self_search_name.replace(' ', '+')}",
+                "Yahoo": f"https://search.yahoo.com/search?p={self_search_name.replace(' ', '+')}",
+            }
+            for idx, (engine_name, url) in enumerate(search_engines.items()):
+                link_cols[idx].link_button(f"🔍 {engine_name}", url)
 
         st.markdown("---")
         if found_count > 0:
@@ -460,7 +780,8 @@ elif mode == "1. Data Broker Deletion Letters":
                         )
                     with col_b:
                         if st.button(f"➕ Log all {len(letters)} in the Campaign Tracker"):
-                            for broker_name in confirmed_brokers:
+                            progress_bar = st.progress(0)
+                            for idx, broker_name in enumerate(confirmed_brokers):
                                 broker_info = brokers_df[brokers_df["broker_name"] == broker_name].iloc[0]
                                 channel = "Email" if broker_info["compliance_email"] else "Opt-out form"
                                 add_request(
@@ -469,6 +790,7 @@ elif mode == "1. Data Broker Deletion Letters":
                                     channel=channel,
                                     response_window_days=config.CCPA_RESPONSE_WINDOW_DAYS,
                                 )
+                                progress_bar.progress((idx + 1) / len(confirmed_brokers))
                             st.success(f"Logged {len(letters)} requests in the tracker.")
             else:
                 st.info("Select at least one broker.")
@@ -657,6 +979,15 @@ elif mode == "4. Campaign Tracker":
         c1.metric("Total tracked", len(requests_list))
         c2.metric("Overdue", overdue_count)
         c3.metric("Complete", sum(1 for r in requests_list if r["status"] == "Complete"))
+
+        open_requests = [r for r in requests_list if r["status"] != "Complete"]
+        if open_requests:
+            st.download_button(
+                "📅 Export deadlines to calendar (.ics)",
+                data=build_ics(requests_list),
+                file_name="non_pursuit_deadlines.ics",
+                mime="text/calendar",
+            )
 
         st.markdown("---")
 
