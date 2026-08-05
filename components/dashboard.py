@@ -1,20 +1,16 @@
 """
-Dashboard: the single landing page. Enter your info once here, see your
-search results, and see your campaign's tracked progress — all on one
-page. Used to be split across a separate "Dashboard" (metrics only) and
-"Should I Worry? (Self-Search)" mode; merged because that split was
-redundant once both were meant to be the first thing you see.
-
-Reuses tracker.py's get_all_requests for the campaign metrics (no new data
-model) and self_search.py's render() for the identity + broker-search
-section (same logic, not a reimplementation).
+Dashboard: enter your info once, then head to Results to see what
+searching for yourself actually found. Also shows your tracked campaign
+progress. Kept separate from Results on purpose — stacking the input
+form, the full broker-by-broker results, and campaign metrics on one long
+page made it too easy to miss that results were there at all.
 """
 import streamlit as st
 
 import config
 from tracker import get_all_requests
-from components import self_search as self_search_component
 
+_MODE_RESULTS = ":material/travel_explore: Results"
 _MODE_LETTERS = ":material/mail: 1. Data Broker Deletion Letters"
 _MODE_TRACKER = ":material/monitoring: 4. Campaign Tracker"
 
@@ -27,12 +23,28 @@ def _switch_to(mode_value):
     st.rerun()
 
 
-def render(brokers_df):
+def render():
     st.header(":material/dashboard: Dashboard")
-    st.markdown("Enter your info once, see everywhere you're exposed, and track your campaign — all in one place.")
+    st.markdown("Enter your info once — it's reused everywhere else in the app (results, letters, tracker).")
     st.markdown("---")
 
-    self_search_component.render(brokers_df)
+    st.subheader("Your info")
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        name = st.text_input("Full Name", value=st.session_state.user_name, placeholder="Enter your full legal name")
+    with col2:
+        location = st.text_input("Location", value=st.session_state.user_location, placeholder="City, State")
+    with col3:
+        email = st.text_input("Email", value=st.session_state.user_email, placeholder="your.email@example.com")
+    st.session_state.user_name = name
+    st.session_state.user_location = location
+    st.session_state.user_email = email
+
+    if name:
+        if st.button(":material/travel_explore: See my results", type="primary", width="stretch"):
+            _switch_to(_MODE_RESULTS)
+    else:
+        st.info("Enter your name above, then click through to see your results.")
 
     st.markdown("---")
     st.subheader("Your campaign so far")
@@ -57,7 +69,7 @@ def render(brokers_df):
 
     active_requests = [r for r in requests if r["status"] != "Complete"]
     if not active_requests:
-        st.info("Nothing active yet — confirm a broker above and generate a letter to start your first request.")
+        st.info("Nothing active yet — check your results above and generate a letter to start your first request.")
     else:
         for r in sorted(active_requests, key=lambda r: r["deadline"]):
             window = max(r["response_window_days"], 1)

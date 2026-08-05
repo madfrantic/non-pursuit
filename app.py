@@ -11,6 +11,7 @@ import config
 
 from components import letters as letters_component
 from components import dashboard as dashboard_component
+from components import results as results_component
 
 
 # ---------------------------------------------------------------------------
@@ -117,6 +118,7 @@ mode = st.sidebar.radio(
     "Select Tool",
     [
         ":material/dashboard: Dashboard",
+        ":material/travel_explore: Results",
         ":material/mail: 1. Data Broker Deletion Letters",
         ":material/gavel: 2. NY Expungement Guidance",
         ":material/search_off: 3. Google De-Indexing",
@@ -157,10 +159,13 @@ st.markdown("---")
 
 
 # ---------------------------------------------------------------------------
-# MODE: Dashboard (also hosts the identity + broker-search section)
+# MODE: Dashboard
 # ---------------------------------------------------------------------------
 if mode == ":material/dashboard: Dashboard":
-    dashboard_component.render(brokers_df)
+    dashboard_component.render()
+
+elif mode == ":material/travel_explore: Results":
+    results_component.render(brokers_df)
 
 elif mode == ":material/mail: 1. Data Broker Deletion Letters":
     letters_component.render(brokers_df)

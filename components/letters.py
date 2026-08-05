@@ -96,7 +96,7 @@ def render(brokers_df):
         st.subheader("🔍 Step 1: Confirm you're actually listed")
 
         if st.session_state.listed_confirmed.get(selected_broker, False):
-            st.success(f"✅ Already confirmed via the Dashboard that you're listed on {selected_broker}.")
+            st.success(f"✅ Already confirmed via Results that you're listed on {selected_broker}.")
             confirmed_listed = True
         else:
             st.caption(
@@ -188,7 +188,7 @@ def render(brokers_df):
 
                 if st.session_state.listed_confirmed.get(broker_name, False):
                     row_cols[1].caption("—")
-                    row_cols[2].caption("✅ Confirmed via the Dashboard")
+                    row_cols[2].caption("✅ Confirmed via Results")
                     confirmed_brokers.append(broker_name)
                     continue
 
