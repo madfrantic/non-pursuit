@@ -1,22 +1,20 @@
-import io
-import re
 import sys
 import os
-import zipfile
 import hashlib
 from datetime import datetime
 
 import streamlit as st
 import pandas as pd
-from jinja2 import Environment, FileSystemLoader
 
 sys.path.append(os.path.join(os.path.dirname(__file__), "utils"))
-from mailto_builder import build_mailto_link, mailto_length, is_mailto_safe
 from tracker import add_request, get_all_requests, update_status, delete_request, purge_expired_notes, STATUS_OPTIONS
 from calendar_export import build_ics
-from google_dork import domain_from_url, build_combined_dork_url, build_broker_dork_url
-import spokeo_automation
 import config
+
+from components import self_search as self_search_component
+from components import letters as letters_component
+from components import dashboard as dashboard_component
+from components import wizard as wizard_component
 
 
 # ---------------------------------------------------------------------------
@@ -53,20 +51,6 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
-
-
-# ---------------------------------------------------------------------------
-# Validation helpers
-# ---------------------------------------------------------------------------
-EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
-
-
-def is_valid_email(value: str) -> bool:
-    return bool(EMAIL_RE.match(value.strip())) if value else False
-
-
-def is_valid_url(value: str) -> bool:
-    return value.strip().lower().startswith(("http://", "https://")) if value else False
 
 
 # ---------------------------------------------------------------------------
@@ -117,18 +101,6 @@ def load_brokers():
 
 
 brokers_df = load_brokers()
-
-
-def render_letter(env, broker_name, user_name, user_location, user_email, record_url):
-    template = env.get_template("ccpa_deletion_demand.j2")
-    return template.render(
-        broker_name=broker_name,
-        user_name=user_name,
-        user_location=user_location,
-        user_email=user_email,
-        record_url=record_url,
-        current_date=datetime.now().strftime("%B %d, %Y"),
-    )
 
 
 def generate_privacy_report(results):
@@ -190,6 +162,13 @@ def check_search_frequency(query: str) -> dict:
 # ---------------------------------------------------------------------------
 # Sidebar
 # ---------------------------------------------------------------------------
+# A keyed widget's session_state value can't be changed after that widget has
+# rendered in the same run — so a "quick action" button can't set nav_mode
+# directly. It sets pending_nav instead, and we apply it here, before the
+# radio widget below is created.
+if "pending_nav" in st.session_state:
+    st.session_state.nav_mode = st.session_state.pop("pending_nav")
+
 st.sidebar.title(f"{config.APP_ICON} {config.APP_TITLE}")
 st.sidebar.caption(config.APP_TAGLINE)
 st.sidebar.markdown("---")
@@ -197,6 +176,8 @@ st.sidebar.markdown("---")
 mode = st.sidebar.radio(
     "Select Tool",
     [
+        ":material/dashboard: Dashboard",
+        ":material/rocket_launch: Guided Wizard",
         ":material/security: Privacy Dashboard",
         ":material/person_search: Should I Worry? (Self-Search)",
         ":material/mail: 1. Data Broker Deletion Letters",
@@ -204,6 +185,7 @@ mode = st.sidebar.radio(
         ":material/search_off: 3. Google De-Indexing",
         ":material/monitoring: 4. Campaign Tracker",
     ],
+    key="nav_mode",
     label_visibility="visible",
 )
 
@@ -238,9 +220,23 @@ st.markdown("---")
 
 
 # ---------------------------------------------------------------------------
+# MODE: Dashboard
+# ---------------------------------------------------------------------------
+if mode == ":material/dashboard: Dashboard":
+    dashboard_component.render()
+
+
+# ---------------------------------------------------------------------------
+# MODE: Guided Wizard
+# ---------------------------------------------------------------------------
+elif mode == ":material/rocket_launch: Guided Wizard":
+    wizard_component.render(brokers_df)
+
+
+# ---------------------------------------------------------------------------
 # MODE: Privacy Dashboard
 # ---------------------------------------------------------------------------
-if mode == ":material/security: Privacy Dashboard":
+elif mode == ":material/security: Privacy Dashboard":
     st.header(":material/security: Privacy Exposure Dashboard")
     st.markdown("See where your personal information is exposed online and what to do about it.")
     st.warning(
@@ -472,361 +468,11 @@ if mode == ":material/security: Privacy Dashboard":
 # MODE 0: Should I Worry? (Self-Search)
 # ---------------------------------------------------------------------------
 elif mode == ":material/person_search: Should I Worry? (Self-Search)":
-    st.header(":material/person_search: Should I worry?")
-    st.markdown(
-        "Search each data broker's site for your own name **before** generating a deletion "
-        "letter. There's no point demanding a broker delete a record you haven't confirmed exists."
-    )
-    st.markdown("---")
+    self_search_component.render(brokers_df)
 
-    st.subheader("Your search terms")
-    st.caption("Enter this once — it's reused everywhere else in the app (letters, dashboard).")
-    ss_col1, ss_col2, ss_col3 = st.columns(3)
-    with ss_col1:
-        self_search_name = st.text_input(
-            "Full Name", value=st.session_state.user_name, placeholder="Enter your full legal name"
-        )
-    with ss_col2:
-        self_search_location = st.text_input(
-            "Location", value=st.session_state.user_location, placeholder="City, State"
-        )
-    with ss_col3:
-        self_search_email = st.text_input(
-            "Email", value=st.session_state.user_email, placeholder="your.email@example.com"
-        )
-    st.session_state.user_name = self_search_name
-    st.session_state.user_location = self_search_location
-    st.session_state.user_email = self_search_email
-
-    if brokers_df.empty:
-        st.error("Unable to load broker data. Check data/brokers.csv.")
-    else:
-        broker_domains = [domain_from_url(u) for u in brokers_df["search_url"] if u]
-
-        if self_search_name and broker_domains:
-            st.link_button(
-                ":material/travel_explore: Search for yourself across every broker at once",
-                build_combined_dork_url(self_search_name, self_search_location, broker_domains),
-            )
-            st.caption(
-                "A real, targeted Google search restricted to the broker sites below — not simulated. "
-                "Good for a quick overview; use each broker's own button below for a cleaner, one-at-a-time result."
-            )
-        elif not self_search_name:
-            st.caption("Enter your name above to unlock targeted search links for each broker below.")
-
-        metric_placeholder = st.empty()
-        st.markdown("---")
-
-        for _, broker in brokers_df.iterrows():
-            broker_name = broker["broker_name"]
-            is_automated = bool(broker["automated_search"])
-
-            row_cols = st.columns([3, 2, 3])
-            row_cols[0].markdown(f"**{broker_name}**")
-            if broker["notes"]:
-                row_cols[0].caption(broker["notes"])
-
-            if is_automated:
-                if not self_search_name:
-                    row_cols[1].caption("Enter your name above first")
-                else:
-                    if row_cols[1].button("🤖 Auto-search", key=f"autosearch_{broker_name}"):
-                        with st.spinner(
-                            f"Chrome is open and searching {broker_name} — review the results there, "
-                            "then close that window to continue."
-                        ):
-                            outcome = spokeo_automation.run_search_and_wait(
-                                self_search_name, self_search_location
-                            )
-                        if outcome == "timed_out":
-                            wait_minutes = spokeo_automation.MAX_WAIT_SECONDS // 60
-                            st.warning(f"Closed the {broker_name} window automatically after {wait_minutes} minutes of inactivity.")
-            elif broker["search_url"] and self_search_name:
-                broker_domain = domain_from_url(broker["search_url"])
-                dork_url = build_broker_dork_url(self_search_name, self_search_location, broker_domain)
-                row_cols[1].link_button(":material/travel_explore: Targeted search", dork_url, key=f"selfsearch_link_{broker_name}")
-            elif broker["search_url"]:
-                row_cols[1].link_button("Search", broker["search_url"], key=f"selfsearch_link_{broker_name}")
-            else:
-                row_cols[1].caption("No search link on file")
-
-            checked = row_cols[2].checkbox(
-                "Found myself listed here",
-                key=f"selfsearch_check_{broker_name}",
-            )
-            st.session_state.listed_confirmed[broker_name] = checked
-
-        found_count = sum(1 for v in st.session_state.listed_confirmed.values() if v)
-        metric_placeholder.metric("Brokers confirmed listed", f"{found_count} / {len(brokers_df)} checked")
-
-        if self_search_name:
-            st.markdown("---")
-            st.subheader("🌐 Online Search Presence")
-            st.warning(
-                "⚠️ The match counts below are simulated for demonstration, not from a real search API. "
-                "Use the targeted broker links above, or the manual search-engine links below, for an actual check."
-            )
-
-            with st.spinner("Checking search engine presence..."):
-                from utils.check_exposure import check_online_exposure
-
-                search_terms = {
-                    "name": self_search_name,
-                    "name_location": f"{self_search_name} {self_search_location}" if self_search_location else self_search_name,
-                    "email": st.session_state.user_email,
-                }
-
-                exposure_results = check_online_exposure(search_terms)
-
-                exp_cols = st.columns(3)
-                for idx, (term, result) in enumerate(exposure_results.items()):
-                    if result["found"]:
-                        exp_cols[idx % 3].metric(
-                            label=term.replace("_", " ").title(),
-                            value=f"{result['count']} matches",
-                            delta="Found" if result['count'] > 0 else "Not found",
-                            delta_color="inverse" if result['count'] > 5 else "normal",
-                        )
-
-            st.caption("🔗 Check these search engines manually:")
-            link_cols = st.columns(4)
-            search_engines = {
-                "Google": f"https://www.google.com/search?q={self_search_name.replace(' ', '+')}",
-                "Bing": f"https://www.bing.com/search?q={self_search_name.replace(' ', '+')}",
-                "DuckDuckGo": f"https://duckduckgo.com/?q={self_search_name.replace(' ', '+')}",
-                "Yahoo": f"https://search.yahoo.com/search?p={self_search_name.replace(' ', '+')}",
-            }
-            for idx, (engine_name, url) in enumerate(search_engines.items()):
-                link_cols[idx].link_button(f"🔍 {engine_name}", url)
-
-        st.markdown("---")
-        if found_count > 0:
-            st.success(
-                f"You're listed on {found_count} broker(s). Head to **Data Broker Deletion Letters** "
-                "in the sidebar — it already knows which brokers you confirmed here."
-            )
-        else:
-            st.info("Check off any broker above where you found your own information.")
-
-
-# ---------------------------------------------------------------------------
-# MODE 1: Data Broker Deletion Letters
-# ---------------------------------------------------------------------------
 elif mode == ":material/mail: 1. Data Broker Deletion Letters":
-    st.header(":material/mail: CCPA Data Deletion Demand Letters")
-    st.markdown(
-        "Generate formal deletion demand letters for data brokers under "
-        "California Civil Code § 1798.105."
-    )
+    letters_component.render(brokers_df)
 
-    col1, col2 = st.columns(2)
-    with col1:
-        user_name = st.text_input("Full Name", value=st.session_state.user_name, placeholder="Enter your full legal name")
-        user_email = st.text_input("Email Address", value=st.session_state.user_email, placeholder="your.email@example.com")
-    with col2:
-        user_location = st.text_input("Location", value=st.session_state.user_location, placeholder="City, State")
-        record_url = st.text_input("Record URL", value=st.session_state.record_url, placeholder="https://broker.com/record/...")
-
-    st.session_state.user_name = user_name
-    st.session_state.user_email = user_email
-    st.session_state.user_location = user_location
-    st.session_state.record_url = record_url
-
-    errors = []
-    if user_name and len(user_name.strip()) < 2:
-        errors.append("Enter your full name.")
-    if user_email and not is_valid_email(user_email):
-        errors.append("That email address doesn't look valid.")
-    if record_url and not is_valid_url(record_url):
-        errors.append("Record URL should start with http:// or https://")
-
-    for e in errors:
-        st.warning(e)
-
-    ready = bool(user_name and user_email and user_location and record_url) and not errors
-
-    st.markdown("---")
-
-    if brokers_df.empty:
-        st.error("Unable to load broker data. Check data/brokers.csv.")
-    else:
-        batch_mode = st.toggle("Batch mode (select multiple brokers)", value=False)
-        env = Environment(loader=FileSystemLoader("templates"))
-
-        if not ready:
-            st.info("Fill in your name, email, location, and record URL above to generate letters.")
-
-        elif not batch_mode:
-            broker_options = brokers_df["broker_name"].tolist()
-            selected_broker = st.selectbox("Select Target Data Broker", broker_options)
-            broker_info = brokers_df[brokers_df["broker_name"] == selected_broker].iloc[0]
-            broker_email = broker_info["compliance_email"]
-            optout_url = broker_info["optout_url"]
-            broker_notes = broker_info["notes"]
-
-            if broker_notes:
-                st.markdown(f'<div class="np-info-box">📝 {broker_notes}</div>', unsafe_allow_html=True)
-
-            search_url = broker_info["search_url"]
-            st.markdown("---")
-            st.subheader("🔍 Step 1: Confirm you're actually listed")
-
-            if st.session_state.listed_confirmed.get(selected_broker, False):
-                st.success(f"✅ Already confirmed via Should I Worry? that you're listed on {selected_broker}.")
-                confirmed_listed = True
-            else:
-                st.caption(
-                    "Search the broker's site for your own name before sending a deletion demand — "
-                    "don't ask them to delete a record you haven't confirmed exists."
-                )
-                if search_url:
-                    st.link_button(f"Search {selected_broker}", search_url)
-                else:
-                    st.caption(f"No search link on file for {selected_broker} yet — search their site manually.")
-                confirmed_listed = st.checkbox(
-                    f"I searched {selected_broker} and found a listing with my information",
-                    key=f"confirmed_{selected_broker}",
-                )
-                if confirmed_listed:
-                    st.session_state.listed_confirmed[selected_broker] = True
-
-            if not confirmed_listed:
-                st.info("Check the box above once you've confirmed you're listed to generate the letter.")
-            else:
-                rendered_letter = render_letter(env, selected_broker, user_name, user_location, user_email, record_url)
-
-                st.markdown("---")
-                st.subheader("📄 Generated Demand Letter")
-                st.code(rendered_letter, language=None)
-                st.caption("Use the copy icon in the corner above, or download below.")
-
-                st.markdown("---")
-                st.subheader("🚀 Actions")
-
-                col_a, col_b, col_c = st.columns(3)
-
-                with col_a:
-                    if broker_email:
-                        subject = f"CCPA Data Deletion Demand - {user_name}"
-                        safe = is_mailto_safe(broker_email, subject, rendered_letter, config.MAILTO_SAFE_LENGTH)
-                        mailto_link = build_mailto_link(broker_email, subject, rendered_letter)
-                        st.link_button("📧 Open Email Client", mailto_link, disabled=not safe)
-                        st.caption(f"To: {broker_email}")
-                        if not safe:
-                            st.warning(
-                                f"This letter is long enough ({mailto_length(broker_email, subject, rendered_letter)} "
-                                "encoded characters) that some email clients will silently truncate it as a mailto "
-                                "link. Download it instead and paste it into a new email."
-                            )
-                    else:
-                        st.caption("No compliance email on file for this broker — use the opt-out form instead.")
-
-                with col_b:
-                    st.download_button(
-                        label="📥 Download as TXT",
-                        data=rendered_letter,
-                        file_name=f"ccpa_demand_{selected_broker.replace(' ', '_').lower()}_{datetime.now().strftime('%Y%m%d')}.txt",
-                        mime="text/plain",
-                    )
-
-                with col_c:
-                    if optout_url:
-                        st.link_button("🔗 Official Opt-Out Form", optout_url)
-                        st.caption("Opens in new tab")
-
-                st.markdown("---")
-                if st.button("➕ Log this request in the Campaign Tracker"):
-                    add_request(
-                        config.TRACKER_DB_PATH,
-                        broker_name=selected_broker,
-                        channel="Email" if broker_email else "Opt-out form",
-                        response_window_days=config.CCPA_RESPONSE_WINDOW_DAYS,
-                    )
-                    st.success(f"Logged {selected_broker} in the tracker.")
-
-        else:
-            broker_options = brokers_df["broker_name"].tolist()
-            selected_brokers = st.multiselect("Select target brokers", broker_options, default=broker_options[:3])
-
-            if selected_brokers:
-                st.markdown("---")
-                st.subheader("🔍 Step 1: Confirm you're actually listed on each broker")
-                st.caption(
-                    "Search each broker's site for your own name before including it in the batch — "
-                    "don't ask a broker to delete a record you haven't confirmed exists."
-                )
-                confirmed_brokers = []
-                for broker_name in selected_brokers:
-                    broker_info = brokers_df[brokers_df["broker_name"] == broker_name].iloc[0]
-                    search_url = broker_info["search_url"]
-                    row_cols = st.columns([3, 2, 3])
-                    row_cols[0].markdown(f"**{broker_name}**")
-
-                    if st.session_state.listed_confirmed.get(broker_name, False):
-                        row_cols[1].caption("—")
-                        row_cols[2].caption("✅ Confirmed via Should I Worry?")
-                        confirmed_brokers.append(broker_name)
-                        continue
-
-                    if search_url:
-                        row_cols[1].link_button("Search", search_url, key=f"batch_search_{broker_name}")
-                    else:
-                        row_cols[1].caption("No search link on file")
-                    if row_cols[2].checkbox("Confirmed listed", key=f"batch_confirmed_{broker_name}"):
-                        confirmed_brokers.append(broker_name)
-                        st.session_state.listed_confirmed[broker_name] = True
-
-                st.markdown("---")
-
-                if not confirmed_brokers:
-                    st.info("Check off at least one broker above once you've confirmed you're listed there.")
-                else:
-                    letters = {}
-                    for broker_name in confirmed_brokers:
-                        letters[broker_name] = render_letter(env, broker_name, user_name, user_location, user_email, record_url)
-
-                    with st.expander(f"Preview ({len(letters)} letters)"):
-                        for broker_name, letter_text in letters.items():
-                            st.markdown(f"**{broker_name}**")
-                            st.code(letter_text, language=None)
-
-                    zip_buffer = io.BytesIO()
-                    with zipfile.ZipFile(zip_buffer, "w") as zf:
-                        for broker_name, letter_text in letters.items():
-                            filename = f"ccpa_demand_{broker_name.replace(' ', '_').lower()}.txt"
-                            zf.writestr(filename, letter_text)
-                    zip_buffer.seek(0)
-
-                    col_a, col_b = st.columns(2)
-                    with col_a:
-                        st.download_button(
-                            "📥 Download all as ZIP",
-                            data=zip_buffer,
-                            file_name=f"ccpa_demands_{datetime.now().strftime('%Y%m%d')}.zip",
-                            mime="application/zip",
-                        )
-                    with col_b:
-                        if st.button(f"➕ Log all {len(letters)} in the Campaign Tracker"):
-                            progress_bar = st.progress(0)
-                            for idx, broker_name in enumerate(confirmed_brokers):
-                                broker_info = brokers_df[brokers_df["broker_name"] == broker_name].iloc[0]
-                                channel = "Email" if broker_info["compliance_email"] else "Opt-out form"
-                                add_request(
-                                    config.TRACKER_DB_PATH,
-                                    broker_name=broker_name,
-                                    channel=channel,
-                                    response_window_days=config.CCPA_RESPONSE_WINDOW_DAYS,
-                                )
-                                progress_bar.progress((idx + 1) / len(confirmed_brokers))
-                            st.success(f"Logged {len(letters)} requests in the tracker.")
-            else:
-                st.info("Select at least one broker.")
-
-
-# ---------------------------------------------------------------------------
-# MODE 2: NY Expungement Guidance
-# ---------------------------------------------------------------------------
 elif mode == ":material/gavel: 2. NY Expungement Guidance":
     st.header(":material/gavel: New York Criminal Record Expungement Guidance")
     st.markdown("Navigate New York Criminal Procedure Law (CPL) pathways for record sealing and expungement.")
