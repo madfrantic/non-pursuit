@@ -6,13 +6,18 @@ it easy to miss that results were there at all.
 
 Reads the identity info entered on the Dashboard; doesn't collect it
 again. The exposure-level readout below is real, derived from your own
-confirmed checkboxes — not the old simulated per-category risk cards
-(SSN/email/phone/etc.) that got removed for being fabricated data.
+confirmed checkboxes and self-reported checklist answers — not the old
+simulated per-category risk cards (SSN/email/phone/etc. scored from a
+hash of the input) that got removed for being fabricated data. Where a
+category has no free, safe way to check automatically (SSN), it's shown
+as informational only, with no invented risk level.
 """
 import streamlit as st
 
 import spokeo_automation
 from google_dork import domain_from_url, build_combined_dork_url, build_broker_dork_url
+
+SOCIAL_MEDIA_DOMAINS = ["instagram.com", "facebook.com", "twitter.com", "x.com", "linkedin.com", "tiktok.com"]
 
 
 def render(brokers_df):
@@ -21,6 +26,7 @@ def render(brokers_df):
     name = st.session_state.user_name
     location = st.session_state.user_location
     email = st.session_state.user_email
+    phone = st.session_state.user_phone
 
     if not name:
         st.warning("Enter your name on the **Dashboard** first, then come back here to see your results.")
@@ -47,6 +53,7 @@ def render(brokers_df):
     exposure_placeholder = st.empty()
     metric_placeholder = st.empty()
     st.markdown("---")
+    st.subheader(":material/apartment: Data broker listings")
 
     for _, broker in brokers_df.iterrows():
         broker_name = broker["broker_name"]
@@ -84,21 +91,75 @@ def render(brokers_df):
     total_count = len(brokers_df)
     metric_placeholder.metric("Brokers confirmed listed", f"{found_count} / {total_count} checked")
 
-    # A real exposure readout based on your own confirmations above — not a
-    # simulated score. Thresholds are simple and disclosed as such.
-    if found_count == 0:
-        exposure_placeholder.info(":material/check_circle: No confirmed listings yet — check off brokers below as you verify them.")
-    elif found_count / total_count < 0.34:
-        exposure_placeholder.success(f":material/check_circle: Confirmed on {found_count} of {total_count} brokers checked so far.")
-    elif found_count / total_count < 0.67:
-        exposure_placeholder.warning(f":material/warning: Confirmed on {found_count} of {total_count} brokers checked so far.")
+    st.markdown("---")
+    st.subheader(":material/checklist: Exposure checklist")
+    st.caption(
+        "Each item links to a real, free check — SSN aside, which has no safe way to check automatically. "
+        "Check the box if you find yourself exposed there; it feeds the overall readout above, same as the "
+        "broker confirmations do."
+    )
+    checklist = dict(st.session_state.exposure_checklist)
+
+    col_a, col_b, col_c = st.columns([2.5, 2.5, 2])
+    col_a.markdown("**📧 Email breaches**")
+    if email:
+        col_b.link_button("Check on HaveIBeenPwned", f"https://haveibeenpwned.com/account/{email}", key="hibp_link")
     else:
-        exposure_placeholder.error(f":material/error: Confirmed on {found_count} of {total_count} brokers checked so far — worth prioritizing deletion letters.")
+        col_b.caption("Add an email on the Dashboard to check this")
+    checklist["email_breach"] = col_c.checkbox(
+        "Found a breach", value=checklist.get("email_breach", False), key="check_email_breach", disabled=not email
+    )
+
+    col_a, col_b, col_c = st.columns([2.5, 2.5, 2])
+    col_a.markdown("**📱 Phone number**")
+    if phone and broker_domains:
+        phone_dork_url = build_combined_dork_url(phone, "", broker_domains)
+        col_b.link_button("Search for this number", phone_dork_url, key="phone_dork_link")
+    else:
+        col_b.caption("Add a phone number on the Dashboard to check this")
+    checklist["phone_exposure"] = col_c.checkbox(
+        "Found it listed", value=checklist.get("phone_exposure", False), key="check_phone_exposure", disabled=not phone
+    )
+
+    col_a, col_b, col_c = st.columns([2.5, 2.5, 2])
+    col_a.markdown("**👤 Social media**")
+    social_dork_url = build_combined_dork_url(name, location, SOCIAL_MEDIA_DOMAINS)
+    col_b.link_button("Search my name on social platforms", social_dork_url, key="social_dork_link")
+    checklist["social_media_public"] = col_c.checkbox(
+        "Found public profiles/posts", value=checklist.get("social_media_public", False), key="check_social_media"
+    )
+
+    st.session_state.exposure_checklist = checklist
+
+    st.markdown("**🔑 SSN / identity theft**")
+    st.caption(
+        "There's no free, safe way to automatically check if your SSN has been exposed — anything that "
+        "claims to is either paid or guessing. If you're concerned: check your credit report for free at "
+        "[annualcreditreport.com](https://www.annualcreditreport.com), or get real guidance at "
+        "[IdentityTheft.gov](https://www.identitytheft.gov). Not included in the readout above; there's "
+        "nothing real to feed it here."
+    )
+
+    # Combined real exposure readout: broker confirmations + self-reported
+    # checklist answers, weighted equally and disclosed as such — no
+    # invented per-category weights like the old simulated version had.
+    checklist_found = sum(1 for v in checklist.values() if v)
+    checklist_total = len(checklist)
+    combined_found = found_count + checklist_found
+    combined_total = total_count + checklist_total
+    ratio = combined_found / combined_total if combined_total else 0
+
+    if combined_found == 0:
+        exposure_placeholder.info(":material/check_circle: Nothing confirmed yet — check items off below as you verify them.")
+    elif ratio < 0.34:
+        exposure_placeholder.success(f":material/check_circle: Confirmed exposed in {combined_found} of {combined_total} checks so far.")
+    elif ratio < 0.67:
+        exposure_placeholder.warning(f":material/warning: Confirmed exposed in {combined_found} of {combined_total} checks so far.")
+    else:
+        exposure_placeholder.error(f":material/error: Confirmed exposed in {combined_found} of {combined_total} checks so far — worth prioritizing deletion letters.")
 
     st.markdown("---")
-    st.subheader("Other ways to check yourself")
-    st.caption("Broader web presence and email breach checks — both real, not simulated.")
-
+    st.subheader("Other real ways to check yourself")
     link_cols = st.columns(4)
     search_engines = {
         "Google": f"https://www.google.com/search?q={name.replace(' ', '+')}",
@@ -108,12 +169,6 @@ def render(brokers_df):
     }
     for idx, (engine_name, url) in enumerate(search_engines.items()):
         link_cols[idx].link_button(f"🔍 {engine_name}", url)
-
-    if email:
-        st.link_button(
-            ":material/lock_open: Check on HaveIBeenPwned",
-            f"https://haveibeenpwned.com/account/{email}",
-        )
 
     st.markdown("---")
     if found_count > 0:

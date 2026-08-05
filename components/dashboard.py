@@ -29,16 +29,19 @@ def render():
     st.markdown("---")
 
     st.subheader("Your info")
-    col1, col2, col3 = st.columns(3)
+    col1, col2, col3, col4 = st.columns(4)
     with col1:
         name = st.text_input("Full Name", value=st.session_state.user_name, placeholder="Enter your full legal name")
     with col2:
         location = st.text_input("Location", value=st.session_state.user_location, placeholder="City, State")
     with col3:
         email = st.text_input("Email", value=st.session_state.user_email, placeholder="your.email@example.com")
+    with col4:
+        phone = st.text_input("Phone (optional)", value=st.session_state.user_phone, placeholder="555-123-4567")
     st.session_state.user_name = name
     st.session_state.user_location = location
     st.session_state.user_email = email
+    st.session_state.user_phone = phone
 
     if name:
         if st.button(":material/travel_explore: See my results", type="primary", width="stretch"):
