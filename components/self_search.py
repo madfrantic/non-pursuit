@@ -138,6 +138,13 @@ def render(brokers_df):
         for idx, (engine_name, url) in enumerate(search_engines.items()):
             link_cols[idx].link_button(f"🔍 {engine_name}", url)
 
+        if self_search_email:
+            st.caption("🔓 Check your email against real, known data breaches (not simulated):")
+            st.link_button(
+                "Check on HaveIBeenPwned",
+                f"https://haveibeenpwned.com/account/{self_search_email}",
+            )
+
     st.markdown("---")
     if found_count > 0:
         st.success(

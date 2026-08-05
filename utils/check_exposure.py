@@ -36,15 +36,3 @@ def check_online_exposure(search_terms: Dict[str, str]) -> Dict:
         }
 
     return results
-
-
-def generate_search_links(query: str) -> Dict[str, str]:
-    """Generate search engine links for manual checking."""
-    from config import SEARCH_ENGINE_URLS
-
-    links = {}
-    for engine, base_url in SEARCH_ENGINE_URLS.items():
-        encoded_query = query.replace(' ', '+')
-        links[engine] = f"{base_url}{encoded_query}"
-
-    return links
