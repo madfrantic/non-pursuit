@@ -12,7 +12,6 @@ import config
 from components import self_search as self_search_component
 from components import letters as letters_component
 from components import dashboard as dashboard_component
-from components import wizard as wizard_component
 
 
 # ---------------------------------------------------------------------------
@@ -119,7 +118,6 @@ mode = st.sidebar.radio(
     "Select Tool",
     [
         ":material/dashboard: Dashboard",
-        ":material/rocket_launch: Guided Wizard",
         ":material/person_search: Should I Worry? (Self-Search)",
         ":material/mail: 1. Data Broker Deletion Letters",
         ":material/gavel: 2. NY Expungement Guidance",
@@ -165,13 +163,6 @@ st.markdown("---")
 # ---------------------------------------------------------------------------
 if mode == ":material/dashboard: Dashboard":
     dashboard_component.render()
-
-
-# ---------------------------------------------------------------------------
-# MODE: Guided Wizard
-# ---------------------------------------------------------------------------
-elif mode == ":material/rocket_launch: Guided Wizard":
-    wizard_component.render(brokers_df)
 
 
 # ---------------------------------------------------------------------------

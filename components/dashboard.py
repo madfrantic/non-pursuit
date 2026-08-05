@@ -12,7 +12,6 @@ from tracker import get_all_requests
 _MODE_SELF_SEARCH = ":material/person_search: Should I Worry? (Self-Search)"
 _MODE_LETTERS = ":material/mail: 1. Data Broker Deletion Letters"
 _MODE_TRACKER = ":material/monitoring: 4. Campaign Tracker"
-_MODE_WIZARD = ":material/rocket_launch: Guided Wizard"
 
 
 def _switch_to(mode_value):
@@ -51,7 +50,7 @@ def render():
 
     active_requests = [r for r in requests if r["status"] != "Complete"]
     if not active_requests:
-        st.info("Nothing active right now. Use the Guided Wizard below to start your first request.")
+        st.info("Nothing active right now. Use the quick actions below to start your first request.")
     else:
         for r in sorted(active_requests, key=lambda r: r["deadline"]):
             window = max(r["response_window_days"], 1)
@@ -66,12 +65,10 @@ def render():
 
     st.markdown("---")
     st.subheader("Quick actions")
-    qcol1, qcol2, qcol3, qcol4 = st.columns(4)
-    if qcol1.button(":material/rocket_launch: Start guided wizard", width="stretch"):
-        _switch_to(_MODE_WIZARD)
-    if qcol2.button(":material/person_search: Search for myself", width="stretch"):
+    qcol1, qcol2, qcol3 = st.columns(3)
+    if qcol1.button(":material/person_search: Search for myself", width="stretch"):
         _switch_to(_MODE_SELF_SEARCH)
-    if qcol3.button(":material/mail: Generate a letter", width="stretch"):
+    if qcol2.button(":material/mail: Generate a letter", width="stretch"):
         _switch_to(_MODE_LETTERS)
-    if qcol4.button(":material/monitoring: Open full tracker", width="stretch"):
+    if qcol3.button(":material/monitoring: Open full tracker", width="stretch"):
         _switch_to(_MODE_TRACKER)
