@@ -22,6 +22,7 @@ or six months stale.
 from datetime import datetime
 
 import streamlit as st
+import requests
 
 import config
 import exposure_store
@@ -79,8 +80,45 @@ def _staleness_note(entry):
     return "Checked today" if days == 0 else f"Last checked {days} {day_word} ago"
 
 
+def _get_client_context():
+    """Best-effort lookup of IP and ISP metadata for the current user."""
+    try:
+        response = requests.get("https://ipinfo.io/json", timeout=4)
+        if response.ok:
+            payload = response.json()
+            return {
+                "ip": payload.get("ip", "Unknown"),
+                "city": payload.get("city", "Unknown"),
+                "region": payload.get("region", "Unknown"),
+                "country": payload.get("country", "Unknown"),
+                "org": payload.get("org", "Unknown ISP"),
+            }
+    except Exception:
+        pass
+    return {"ip": "Unavailable", "city": "Unknown", "region": "Unknown", "country": "Unknown", "org": "Unknown ISP"}
+
+
+def _flag_emoji(country_code):
+    """ISO 3166-1 alpha-2 code -> flag emoji, via the regional-indicator
+    trick (each letter maps to a Unicode regional-indicator symbol)."""
+    if not country_code or len(country_code) != 2 or not country_code.isalpha():
+        return ""
+    return "".join(chr(0x1F1E6 + ord(c) - ord("A")) for c in country_code.upper())
+
+
 def render(brokers_df):
-    st.header(":material/travel_explore: Your Results")
+    st.markdown(
+        """
+        <div class="np-hero">
+            <div class="np-card-label">Results</div>
+            <h3 style="margin: 0 0 0.4rem 0;">Review your exposure and decide what deserves action first</h3>
+            <p class="np-quiet" style="margin: 0;">
+                Confirm the listings you find, keep track of stale checks, and move from research into a clear removal plan.
+            </p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
     name = st.session_state.user_name
     location = st.session_state.user_location
@@ -96,9 +134,42 @@ def render(brokers_df):
         return
 
     persisted = exposure_store.get_all_checks(config.EXPOSURE_DB_PATH)
+    client_context = _get_client_context()
 
-    st.markdown(f"Showing results for **{name}**" + (f", {location}" if location else "") + ".")
+    with st.container(border=True):
+        first_name = name.split()[0] if name else "friend"
+        flag = _flag_emoji(client_context["country"])
+        st.markdown(f"## Hello, {first_name}")
+        st.markdown(
+            f"**This is what any site can see about you right now: "
+            f"{flag} {client_context['city']}, {client_context['region']}, {client_context['country']}**"
+        )
+        st.caption(f"IP address: {client_context['ip']}")
+        st.caption(f"ISP / provider: {client_context['org']}")
+        with st.expander(":material/visibility: How does a site learn this from a single visit?"):
+            st.markdown(
+                "No login, no cookies, no permission prompt needed — this is available to *any* site "
+                "you visit, including every data broker in this app:\n\n"
+                "📨 **Your IP address** is sent automatically with every web request, the same way a "
+                "return address is on an envelope.\n\n"
+                "🌍 **Location and ISP** get derived by looking that IP up in a public registry that maps "
+                "IP address ranges to the internet provider they were issued to, and roughly where that "
+                "provider operates — same technique this page just used against `ipinfo.io`.\n\n"
+                "🎯 It's usually accurate to your **city/region**, not your exact address — precision "
+                "depends on your ISP, not the site doing the looking.\n\n"
+                "🛡️ A VPN (or your ISP's carrier-grade NAT) is what actually hides this — it swaps your "
+                "real IP for the VPN provider's, so sites see the VPN server's location instead of yours."
+            )
+
     st.markdown("---")
+
+    action_col, next_col = st.columns([2, 1])
+    with action_col.container(border=True):
+        st.subheader(":material/flag: What to do next")
+        st.caption("Use the evidence you confirm here to prioritize deletion letters, follow-up searches, or alerts.")
+    with next_col.container(border=True):
+        st.subheader(":material/bolt: Suggested path")
+        st.caption("1. Confirm listings\n2. Check the risk cards\n3. Send a deletion request")
 
     exposure_placeholder = st.empty()
     st.markdown("---")
@@ -136,7 +207,8 @@ def render(brokers_df):
         alert_cols[1].caption(f'Google Alerts — search `"{name}"` and save it as an alert.')
 
     st.markdown("---")
-    st.subheader("Exposure by category")
+    with st.container(border=True):
+        st.subheader(":material/analytics: Exposure by category")
     st.caption(
         "Each card is a real signal, not a computed score: broker listings come from your confirmations "
         "below, the rest from what you report after checking the real link — same honest data, brought "
@@ -286,9 +358,23 @@ def render(brokers_df):
 
     found_count = sum(1 for v in st.session_state.listed_confirmed.values() if v)
     total_count = len(brokers_df)
+    check_count = sum(1 for v in [email_answer, phone_answer, social_answer] if v is not None)
     metric_placeholder.metric("Brokers confirmed listed", f"{found_count} / {total_count} checked")
     broker_label, broker_color, broker_icon = _broker_risk_badge(found_count, total_count)
     broker_badge_placeholder.badge(broker_label, icon=broker_icon, color=broker_color)
+
+    st.markdown("---")
+    summary_cols = st.columns(3)
+    with summary_cols[0]:
+        st.metric("Brokers confirmed", f"{found_count} / {total_count}", help="How many broker listings you have confirmed so far.")
+    with summary_cols[1]:
+        st.metric("Checks reviewed", f"{check_count} / 3", help="How many of the core exposure checks you have filled in.")
+    with summary_cols[2]:
+        stale_count = sum(
+            1 for entry in persisted.values()
+            if exposure_store.is_stale(entry["checked_at"], config.RECHECK_STALE_DAYS)
+        )
+        st.metric("Needs recheck", stale_count, help="Items that have gone stale and may need a fresh look.")
 
     # Combined real exposure readout: broker ratio + the three tri-state
     # answers, equally weighted and disclosed as such — no invented

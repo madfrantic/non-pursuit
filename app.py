@@ -4,7 +4,11 @@ import os
 import streamlit as st
 import pandas as pd
 
-sys.path.append(os.path.join(os.path.dirname(__file__), "utils"))
+ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
+UTILS_DIR = os.path.join(ROOT_DIR, "utils")
+if UTILS_DIR not in sys.path:
+    sys.path.append(UTILS_DIR)
+
 from tracker import add_request, get_all_requests, update_status, delete_request, purge_expired_notes, STATUS_OPTIONS
 from calendar_export import build_ics
 import config
@@ -32,6 +36,9 @@ st.set_page_config(
 st.markdown(
     f"""
     <style>
+        .stApp {{
+            padding-top: 0.5rem;
+        }}
         .np-info-box {{
             background-color: {config.SECONDARY_BACKGROUND_COLOR};
             color: {config.TEXT_COLOR};
@@ -43,6 +50,36 @@ st.markdown(
         .np-overdue {{
             color: {config.ERROR_COLOR};
             font-weight: bold;
+        }}
+        .np-hero {{
+            background: linear-gradient(135deg, rgba(37, 99, 235, 0.16), rgba(96, 165, 250, 0.06));
+            border: 1px solid rgba(96, 165, 250, 0.24);
+            border-radius: 18px;
+            padding: 1.15rem 1.25rem;
+            margin-bottom: 1rem;
+        }}
+        .np-card-label {{
+            display: inline-block;
+            padding: 0.2rem 0.55rem;
+            border-radius: 999px;
+            background: rgba(37, 99, 235, 0.16);
+            color: #bfdbfe;
+            font-size: 0.78rem;
+            font-weight: 600;
+            margin-bottom: 0.45rem;
+        }}
+        .np-step-pill {{
+            display: inline-block;
+            padding: 0.35rem 0.7rem;
+            border-radius: 999px;
+            background: rgba(15, 23, 42, 0.7);
+            border: 1px solid rgba(148, 163, 184, 0.22);
+            margin-right: 0.45rem;
+            margin-top: 0.35rem;
+            font-size: 0.82rem;
+        }}
+        .np-quiet {{
+            color: #94a3b8;
         }}
     </style>
     """,
@@ -60,6 +97,7 @@ for key, default in {
     "user_phone": "",
     "record_url": "",
     "listed_confirmed": {},
+    "pending_nav": None,
 }.items():
     if key not in st.session_state:
         st.session_state[key] = default
@@ -108,7 +146,7 @@ brokers_df = load_brokers()
 # rendered in the same run — so a "quick action" button can't set nav_mode
 # directly. It sets pending_nav instead, and we apply it here, before the
 # radio widget below is created.
-if "pending_nav" in st.session_state:
+if st.session_state.get("pending_nav") is not None:
     st.session_state.nav_mode = st.session_state.pop("pending_nav")
 
 st.sidebar.title(f"{config.APP_ICON} {config.APP_TITLE}")
@@ -138,25 +176,21 @@ if st.sidebar.button("📋 Load Demo Profile"):
     st.session_state.record_url = config.DEMO_PROFILE["record_url"]
     st.sidebar.success("Demo profile loaded!")
 
-st.sidebar.markdown("---")
-st.sidebar.markdown(
+st.markdown(
     f"""
-    <div class="np-info-box" style="font-size: 0.85em;">
-    <strong>California resident?</strong><br>
-    The state's own deletion tool, <strong>DROP</strong>, reaches every
-    <em>registered</em> data broker with one request, and brokers have been
-    required to process DROP requests since Aug 1, 2026. Start there — use
-    Non-Pursuit for brokers that aren't registered, for other states, or to
-    escalate if a broker misses its window.
+    <div class="np-hero">
+        <div class="np-card-label">Privacy workflow</div>
+        <h2 style="margin: 0 0 0.35rem 0;">{config.APP_ICON} {config.APP_TITLE}</h2>
+        <p class="np-quiet" style="margin: 0 0 0.6rem 0;">{config.APP_TAGLINE}</p>
+        <div>
+            <span class="np-step-pill">1. Gather your profile</span>
+            <span class="np-step-pill">2. Review exposure</span>
+            <span class="np-step-pill">3. Act on what matters</span>
+        </div>
     </div>
     """,
     unsafe_allow_html=True,
 )
-st.sidebar.link_button("Open DROP (privacy.ca.gov)", config.CA_DROP_URL)
-
-st.title(f"{config.APP_ICON} {config.APP_TITLE}")
-st.caption(config.APP_TAGLINE)
-st.markdown("---")
 
 
 # ---------------------------------------------------------------------------

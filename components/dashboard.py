@@ -25,11 +25,56 @@ def _switch_to(mode_value):
 
 
 def render():
-    st.header(":material/dashboard: Dashboard")
-    st.markdown("Enter your info once — it's reused everywhere else in the app (results, letters, tracker).")
-    st.markdown("---")
+    st.markdown(
+        """
+        <div class="np-hero">
+            <div class="np-card-label">Workflow</div>
+            <h3 style="margin: 0 0 0.4rem 0;">Take control of your digital footprint</h3>
+            <p class="np-quiet" style="margin: 0;">
+                Start with your profile, confirm what appears in search results, and then use the built-in tools to act on what you find.
+            </p>
+            <div style="margin-top: 0.7rem;">
+                <span class="np-step-pill">1. Profile</span>
+                <span class="np-step-pill">2. Review</span>
+                <span class="np-step-pill">3. Act</span>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
-    st.subheader("Your info")
+    with st.expander(":material/emoji_flags: California resident? Check DROP first"):
+        st.markdown(
+            f"""
+            <div class="np-info-box" style="font-size: 0.85em;">
+            The state's own deletion tool, <strong>DROP</strong>, reaches every
+            <em>registered</em> data broker with one request, and brokers have been
+            required to process DROP requests since Aug 1, 2026. Start there — use
+            Non-Pursuit for brokers that aren't registered, for other states, or to
+            escalate if a broker misses its window.
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        st.link_button("Open DROP (privacy.ca.gov)", config.CA_DROP_URL)
+
+    with st.container(border=True):
+        st.subheader(":material/person: Your info")
+        st.caption("Enter your details once so the results, letters, and tracker stay aligned.")
+
+    workflow_cols = st.columns(3)
+    with workflow_cols[0]:
+        with st.container(border=True):
+            st.markdown("### 1. Profile")
+            st.caption("Add your name, location, and contact details so the app can tailor the search flow.")
+    with workflow_cols[1]:
+        with st.container(border=True):
+            st.markdown("### 2. Review")
+            st.caption("Check what appears in search results and confirm any broker listings you find.")
+    with workflow_cols[2]:
+        with st.container(border=True):
+            st.markdown("### 3. Act")
+            st.caption("Move from evidence to letters, tracker follow-up, and other removal steps.")
     col1, col2, col3, col4 = st.columns(4)
     with col1:
         name = st.text_input("Full Name", value=st.session_state.user_name, placeholder="Enter your full legal name")
@@ -48,7 +93,7 @@ def render():
         if st.button(":material/travel_explore: See my results", type="primary", width="stretch"):
             _switch_to(_MODE_RESULTS)
     else:
-        st.info("Enter your name above, then click through to see your results.")
+        st.caption("Enter your name above, then click through to see your results.")
 
     stale_count = sum(
         1 for entry in exposure_store.get_all_checks(config.EXPOSURE_DB_PATH).values()
@@ -60,7 +105,9 @@ def render():
         st.warning(f":material/schedule: {stale_count} items on your Results page haven't been rechecked in {config.RECHECK_STALE_DAYS}+ days.")
 
     st.markdown("---")
-    st.subheader("Your campaign so far")
+    with st.container(border=True):
+        st.subheader(":material/monitoring: Your campaign so far")
+        st.caption("A simple snapshot of what is still active, overdue, or already complete.")
 
     requests = get_all_requests(config.TRACKER_DB_PATH)
     total = len(requests)
@@ -96,7 +143,9 @@ def render():
             st.progress(progress, text=label)
 
     st.markdown("---")
-    st.subheader("Quick actions")
+    with st.container(border=True):
+        st.subheader(":material/bolt: Quick actions")
+        st.caption("Jump straight to the next task once you have enough evidence to act.")
     qcol1, qcol2 = st.columns(2)
     if qcol1.button(":material/mail: Generate a letter", width="stretch"):
         _switch_to(_MODE_LETTERS)
