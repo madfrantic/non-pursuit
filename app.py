@@ -177,9 +177,8 @@ if st.session_state.get("pending_nav") is not None:
 
 st.sidebar.markdown(
     f"""
-    <div style="display: flex; align-items: center; gap: 0.3rem; margin-bottom: 0.25rem;">
-        <img src="{_image_data_uri(config.APP_LOGO_PATH)}" style="height: 40px;" alt="">
-        <img src="{_image_data_uri(config.APP_WORDMARK_PATH)}" style="height: 24px;" alt="{config.APP_TITLE}">
+    <div style="width: 100%; display: flex; align-items: center; justify-content: center; margin-bottom: 0.25rem;">
+        <img src="{_image_data_uri(config.APP_WORDMARK_PATH)}" style="height: 48px;" alt="{config.APP_TITLE}">
     </div>
     """,
     unsafe_allow_html=True,
