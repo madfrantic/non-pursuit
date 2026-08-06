@@ -173,9 +173,15 @@ brokers_df = load_brokers()
 if st.session_state.get("pending_nav") is not None:
     st.session_state.nav_mode = st.session_state.pop("pending_nav")
 
-sidebar_logo_col, sidebar_title_col = st.sidebar.columns([1, 3])
-sidebar_logo_col.image(config.APP_LOGO_PATH, width=40)
-sidebar_title_col.image(config.APP_WORDMARK_PATH, width=120)
+st.sidebar.markdown(
+    f"""
+    <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.25rem;">
+        <img src="{_image_data_uri(config.APP_LOGO_PATH)}" style="height: 40px;" alt="">
+        <img src="{_image_data_uri(config.APP_WORDMARK_PATH)}" style="height: 26px;" alt="{config.APP_TITLE}">
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
 st.sidebar.caption(config.APP_TAGLINE)
 st.sidebar.markdown("---")
 
@@ -184,10 +190,10 @@ mode = st.sidebar.radio(
     [
         "📊 Dashboard",
         "🔍 Results",
-        "✉️ 1. Data Broker Deletion Letters",
-        "⚖️ 2. NY Expungement Guidance",
-        "🚫 3. Google De-Indexing",
-        "📈 4. Campaign Tracker",
+        "✉️ Data Broker Deletion Letters",
+        "⚖️ NY Expungement Guidance",
+        "🚫 Google De-Indexing",
+        "📈 Campaign Tracker",
     ],
     key="nav_mode",
     label_visibility="visible",
@@ -195,12 +201,19 @@ mode = st.sidebar.radio(
 
 st.markdown(
     f"""
+    <div style="width: 100%; display: flex; align-items: center; justify-content: center;
+                gap: 0.4rem; padding: 0.5rem 0 1rem 0;">
+        <img src="{_image_data_uri(config.APP_LOGO_PATH)}" style="height: 130px;" alt="">
+        <img src="{_image_data_uri(config.APP_WORDMARK_PATH)}" style="height: 92px;" alt="{config.APP_TITLE}">
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
+
+st.markdown(
+    f"""
     <div class="np-hero">
         <div class="np-card-label">Privacy workflow</div>
-        <div style="margin: 0 0 0.35rem 0; display: flex; align-items: center; gap: 0.3rem;">
-            <img src="{_image_data_uri(config.APP_LOGO_PATH)}" style="height: 112px;" alt="">
-            <img src="{_image_data_uri(config.APP_WORDMARK_PATH)}" style="height: 80px;" alt="{config.APP_TITLE}">
-        </div>
         <p class="np-quiet" style="margin: 0 0 0.6rem 0;">{config.APP_TAGLINE}</p>
         <div>
             <span class="np-step-pill">1. Gather your profile</span>
@@ -222,10 +235,10 @@ if mode == "📊 Dashboard":
 elif mode == "🔍 Results":
     results_component.render(brokers_df)
 
-elif mode == "✉️ 1. Data Broker Deletion Letters":
+elif mode == "✉️ Data Broker Deletion Letters":
     letters_component.render(brokers_df)
 
-elif mode == "⚖️ 2. NY Expungement Guidance":
+elif mode == "⚖️ NY Expungement Guidance":
     st.header(":material/gavel: New York Criminal Record Expungement Guidance")
     st.markdown("Navigate New York Criminal Procedure Law (CPL) pathways for record sealing and expungement.")
     st.markdown("---")
@@ -319,7 +332,7 @@ elif mode == "⚖️ 2. NY Expungement Guidance":
 # ---------------------------------------------------------------------------
 # MODE 3: Google De-Indexing
 # ---------------------------------------------------------------------------
-elif mode == "🚫 3. Google De-Indexing":
+elif mode == "🚫 Google De-Indexing":
     st.header(":material/search_off: Google PII Removal Request")
     st.markdown("Request removal of personally identifiable information from Google Search results.")
     st.markdown("---")
@@ -404,7 +417,7 @@ I have attached evidence of the search results containing this information and r
 # ---------------------------------------------------------------------------
 # MODE 4: Campaign Tracker
 # ---------------------------------------------------------------------------
-elif mode == "📈 4. Campaign Tracker":
+elif mode == "📈 Campaign Tracker":
     st.header(":material/monitoring: Campaign Tracker")
     st.markdown("Every request logged from the other tools shows up here, with its response deadline tracked automatically.")
     st.markdown("---")

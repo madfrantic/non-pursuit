@@ -12,8 +12,8 @@ import exposure_store
 from tracker import get_all_requests
 
 _MODE_RESULTS = "🔍 Results"
-_MODE_LETTERS = "✉️ 1. Data Broker Deletion Letters"
-_MODE_TRACKER = "📈 4. Campaign Tracker"
+_MODE_LETTERS = "✉️ Data Broker Deletion Letters"
+_MODE_TRACKER = "📈 Campaign Tracker"
 
 
 def _switch_to(mode_value):
