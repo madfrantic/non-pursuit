@@ -11,9 +11,9 @@ import config
 import exposure_store
 from tracker import get_all_requests
 
-_MODE_RESULTS = ":material/travel_explore: Results"
-_MODE_LETTERS = ":material/mail: 1. Data Broker Deletion Letters"
-_MODE_TRACKER = ":material/monitoring: 4. Campaign Tracker"
+_MODE_RESULTS = "🔍 Results"
+_MODE_LETTERS = "✉️ 1. Data Broker Deletion Letters"
+_MODE_TRACKER = "📈 4. Campaign Tracker"
 
 
 def _switch_to(mode_value):
@@ -59,8 +59,18 @@ def render():
         st.link_button("Open DROP (privacy.ca.gov)", config.CA_DROP_URL)
 
     with st.container(border=True):
-        st.subheader(":material/person: Your info")
-        st.caption("Enter your details once so the results, letters, and tracker stay aligned.")
+        info_header_col, info_demo_col = st.columns([4, 1.3])
+        with info_header_col:
+            st.subheader(":material/person: Your info")
+            st.caption("Enter your details once so the results, letters, and tracker stay aligned.")
+        with info_demo_col:
+            st.write("")
+            if st.button("🧪 Try a demo profile", width="stretch"):
+                st.session_state.user_name = config.DEMO_PROFILE["name"]
+                st.session_state.user_email = config.DEMO_PROFILE["email"]
+                st.session_state.user_location = config.DEMO_PROFILE["location"]
+                st.session_state.record_url = config.DEMO_PROFILE["record_url"]
+                st.toast("Demo profile loaded!")
 
     workflow_cols = st.columns(3)
     with workflow_cols[0]:

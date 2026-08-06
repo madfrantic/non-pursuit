@@ -98,6 +98,13 @@ st.markdown(
         .np-quiet {{
             color: #94a3b8;
         }}
+        /* Real emoji render as plain characters (unlike Material Symbols,
+        which Streamlit wraps in their own styled span) -- they scale with
+        the label's own font-size, so bumping that is what makes them pop. */
+        [data-testid="stSidebar"] [data-testid="stRadioOption"] [data-testid="stMarkdownContainer"] p {{
+            font-size: 1.2rem;
+            line-height: 1.8;
+        }}
     </style>
     """,
     unsafe_allow_html=True,
@@ -167,41 +174,32 @@ if st.session_state.get("pending_nav") is not None:
     st.session_state.nav_mode = st.session_state.pop("pending_nav")
 
 sidebar_logo_col, sidebar_title_col = st.sidebar.columns([1, 3])
-sidebar_logo_col.image(config.APP_LOGO_PATH, width=44)
-sidebar_title_col.markdown(f"### {config.APP_TITLE}")
+sidebar_logo_col.image(config.APP_LOGO_PATH, width=40)
+sidebar_title_col.image(config.APP_WORDMARK_PATH, width=120)
 st.sidebar.caption(config.APP_TAGLINE)
 st.sidebar.markdown("---")
 
 mode = st.sidebar.radio(
     "Select Tool",
     [
-        ":material/dashboard: Dashboard",
-        ":material/travel_explore: Results",
-        ":material/mail: 1. Data Broker Deletion Letters",
-        ":material/gavel: 2. NY Expungement Guidance",
-        ":material/search_off: 3. Google De-Indexing",
-        ":material/monitoring: 4. Campaign Tracker",
+        "📊 Dashboard",
+        "🔍 Results",
+        "✉️ 1. Data Broker Deletion Letters",
+        "⚖️ 2. NY Expungement Guidance",
+        "🚫 3. Google De-Indexing",
+        "📈 4. Campaign Tracker",
     ],
     key="nav_mode",
     label_visibility="visible",
 )
 
-st.sidebar.markdown("---")
-
-if st.sidebar.button("📋 Load Demo Profile"):
-    st.session_state.user_name = config.DEMO_PROFILE["name"]
-    st.session_state.user_email = config.DEMO_PROFILE["email"]
-    st.session_state.user_location = config.DEMO_PROFILE["location"]
-    st.session_state.record_url = config.DEMO_PROFILE["record_url"]
-    st.sidebar.success("Demo profile loaded!")
-
 st.markdown(
     f"""
     <div class="np-hero">
         <div class="np-card-label">Privacy workflow</div>
-        <div style="margin: 0 0 0.35rem 0; display: flex; align-items: center; gap: 0.75rem;">
-            <img src="{_image_data_uri(config.APP_LOGO_PATH)}" style="height: 56px;" alt="">
-            <img src="{_image_data_uri(config.APP_WORDMARK_PATH)}" style="height: 40px;" alt="{config.APP_TITLE}">
+        <div style="margin: 0 0 0.35rem 0; display: flex; align-items: center; gap: 0.3rem;">
+            <img src="{_image_data_uri(config.APP_LOGO_PATH)}" style="height: 112px;" alt="">
+            <img src="{_image_data_uri(config.APP_WORDMARK_PATH)}" style="height: 80px;" alt="{config.APP_TITLE}">
         </div>
         <p class="np-quiet" style="margin: 0 0 0.6rem 0;">{config.APP_TAGLINE}</p>
         <div>
@@ -218,16 +216,16 @@ st.markdown(
 # ---------------------------------------------------------------------------
 # MODE: Dashboard
 # ---------------------------------------------------------------------------
-if mode == ":material/dashboard: Dashboard":
+if mode == "📊 Dashboard":
     dashboard_component.render()
 
-elif mode == ":material/travel_explore: Results":
+elif mode == "🔍 Results":
     results_component.render(brokers_df)
 
-elif mode == ":material/mail: 1. Data Broker Deletion Letters":
+elif mode == "✉️ 1. Data Broker Deletion Letters":
     letters_component.render(brokers_df)
 
-elif mode == ":material/gavel: 2. NY Expungement Guidance":
+elif mode == "⚖️ 2. NY Expungement Guidance":
     st.header(":material/gavel: New York Criminal Record Expungement Guidance")
     st.markdown("Navigate New York Criminal Procedure Law (CPL) pathways for record sealing and expungement.")
     st.markdown("---")
@@ -321,7 +319,7 @@ elif mode == ":material/gavel: 2. NY Expungement Guidance":
 # ---------------------------------------------------------------------------
 # MODE 3: Google De-Indexing
 # ---------------------------------------------------------------------------
-elif mode == ":material/search_off: 3. Google De-Indexing":
+elif mode == "🚫 3. Google De-Indexing":
     st.header(":material/search_off: Google PII Removal Request")
     st.markdown("Request removal of personally identifiable information from Google Search results.")
     st.markdown("---")
@@ -406,7 +404,7 @@ I have attached evidence of the search results containing this information and r
 # ---------------------------------------------------------------------------
 # MODE 4: Campaign Tracker
 # ---------------------------------------------------------------------------
-elif mode == ":material/monitoring: 4. Campaign Tracker":
+elif mode == "📈 4. Campaign Tracker":
     st.header(":material/monitoring: Campaign Tracker")
     st.markdown("Every request logged from the other tools shows up here, with its response deadline tracked automatically.")
     st.markdown("---")
