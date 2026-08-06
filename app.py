@@ -175,9 +175,9 @@ if st.session_state.get("pending_nav") is not None:
 
 st.sidebar.markdown(
     f"""
-    <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.25rem;">
+    <div style="display: flex; align-items: center; gap: 0.3rem; margin-bottom: 0.25rem;">
         <img src="{_image_data_uri(config.APP_LOGO_PATH)}" style="height: 40px;" alt="">
-        <img src="{_image_data_uri(config.APP_WORDMARK_PATH)}" style="height: 26px;" alt="{config.APP_TITLE}">
+        <img src="{_image_data_uri(config.APP_WORDMARK_PATH)}" style="height: 24px;" alt="{config.APP_TITLE}">
     </div>
     """,
     unsafe_allow_html=True,
@@ -201,10 +201,10 @@ mode = st.sidebar.radio(
 
 st.markdown(
     f"""
-    <div style="width: 100%; display: flex; align-items: center; justify-content: center;
-                gap: 0; padding: 0.5rem 0 1rem 0;">
+    <div style="width: 100%; display: flex; align-items: center; justify-content: flex-start;
+                gap: 0.4rem; padding: 0.5rem 0 1rem 0;">
         <img src="{_image_data_uri(config.APP_LOGO_PATH)}" style="height: 170px;" alt="">
-        <img src="{_image_data_uri(config.APP_WORDMARK_PATH)}" style="height: 195px; margin-left: -0.3rem;" alt="{config.APP_TITLE}">
+        <img src="{_image_data_uri(config.APP_WORDMARK_PATH)}" style="height: 150px;" alt="{config.APP_TITLE}">
     </div>
     """,
     unsafe_allow_html=True,
