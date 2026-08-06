@@ -60,7 +60,6 @@ for key, default in {
     "user_phone": "",
     "record_url": "",
     "listed_confirmed": {},
-    "exposure_checklist": {},
 }.items():
     if key not in st.session_state:
         st.session_state[key] = default

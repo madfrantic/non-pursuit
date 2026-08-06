@@ -8,6 +8,7 @@ page made it too easy to miss that results were there at all.
 import streamlit as st
 
 import config
+import exposure_store
 from tracker import get_all_requests
 
 _MODE_RESULTS = ":material/travel_explore: Results"
@@ -48,6 +49,15 @@ def render():
             _switch_to(_MODE_RESULTS)
     else:
         st.info("Enter your name above, then click through to see your results.")
+
+    stale_count = sum(
+        1 for entry in exposure_store.get_all_checks(config.EXPOSURE_DB_PATH).values()
+        if exposure_store.is_stale(entry["checked_at"], config.RECHECK_STALE_DAYS)
+    )
+    if stale_count == 1:
+        st.warning(f":material/schedule: 1 item on your Results page hasn't been rechecked in {config.RECHECK_STALE_DAYS}+ days.")
+    elif stale_count > 1:
+        st.warning(f":material/schedule: {stale_count} items on your Results page haven't been rechecked in {config.RECHECK_STALE_DAYS}+ days.")
 
     st.markdown("---")
     st.subheader("Your campaign so far")

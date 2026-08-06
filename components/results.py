@@ -12,9 +12,19 @@ broker listings and self-reported tri-state answers (haven't checked /
 checked clear / found exposure), not a hash of your input. Where a
 category has no free, safe way to check automatically (SSN), the badge
 says so plainly instead of inventing a level.
+
+Every answer is stamped with the date it was given (via exposure_store,
+backed by the same SQLite file as the campaign tracker) so it survives
+closing the browser -- previously this only lived in session state and
+reset every session, making it impossible to know if an answer was fresh
+or six months stale.
 """
+from datetime import datetime
+
 import streamlit as st
 
+import config
+import exposure_store
 import spokeo_automation
 from google_dork import domain_from_url, build_combined_dork_url, build_broker_dork_url
 
@@ -48,6 +58,27 @@ def _tristate_badge(value):
         return "Not checked", "gray", "⚪"
 
 
+def _record_if_changed(category, value, persisted):
+    """Persist a real answer if it's new, updating the in-memory snapshot
+    too so the staleness caption reflects it on this same run."""
+    current = persisted.get(category)
+    if not current or current["value"] != value:
+        exposure_store.record_check(config.EXPOSURE_DB_PATH, category, value)
+        persisted[category] = {"value": value, "checked_at": datetime.now().strftime("%Y-%m-%d")}
+    return persisted[category]
+
+
+def _staleness_note(entry):
+    """entry is exposure_store's {"value", "checked_at"} dict, or None."""
+    if not entry:
+        return None
+    days = exposure_store.days_since_checked(entry["checked_at"])
+    day_word = "day" if days == 1 else "days"
+    if exposure_store.is_stale(entry["checked_at"], config.RECHECK_STALE_DAYS):
+        return f":material/schedule: Recheck due — last checked {days} {day_word} ago"
+    return "Checked today" if days == 0 else f"Last checked {days} {day_word} ago"
+
+
 def render(brokers_df):
     st.header(":material/travel_explore: Your Results")
 
@@ -63,6 +94,8 @@ def render(brokers_df):
     if brokers_df.empty:
         st.error("Unable to load broker data. Check data/brokers.csv.")
         return
+
+    persisted = exposure_store.get_all_checks(config.EXPOSURE_DB_PATH)
 
     st.markdown(f"Showing results for **{name}**" + (f", {location}" if location else "") + ".")
     st.markdown("---")
@@ -85,6 +118,22 @@ def render(brokers_df):
                 "(Google blocks showing its results inside another site, so this can't be embedded here). "
                 "Good for a quick overview; use each broker's own button below for a cleaner, one-at-a-time result."
             )
+
+    with st.container(border=True):
+        st.subheader(":material/notifications_active: Stay alerted automatically")
+        st.caption(
+            "Two free services that watch for you continuously, instead of waiting for your next manual "
+            "check here — worth setting up once."
+        )
+        alert_cols = st.columns(2)
+        alert_cols[0].link_button(
+            ":material/mail: Get emailed on future breaches", config.HIBP_NOTIFY_URL, width="stretch",
+        )
+        alert_cols[0].caption("HaveIBeenPwned's own free notify-me — register your email once.")
+        alert_cols[1].link_button(
+            ":material/search: Get alerted on new web mentions", config.GOOGLE_ALERTS_URL, width="stretch",
+        )
+        alert_cols[1].caption(f'Google Alerts — search `"{name}"` and save it as an alert.')
 
     st.markdown("---")
     st.subheader("Exposure by category")
@@ -110,9 +159,15 @@ def render(brokers_df):
             email_state = card_cols[1].empty()
             st.link_button("Check on HaveIBeenPwned", f"https://haveibeenpwned.com/account/{email}", key="hibp_link")
             email_answer = st.segmented_control(
-                "Result", TRISTATE_OPTIONS, default=st.session_state.exposure_checklist.get("email_breach"),
+                "Result", TRISTATE_OPTIONS, default=persisted.get("email_breach", {}).get("value"),
                 key="check_email_breach", label_visibility="collapsed",
             )
+            email_entry = persisted.get("email_breach")
+            if email_answer in ("Checked — clear", "Found exposure"):
+                email_entry = _record_if_changed("email_breach", email_answer, persisted)
+            email_note = _staleness_note(email_entry)
+            if email_note:
+                st.caption(email_note)
         else:
             card_cols[1].empty()
             st.caption("Add an email on the Dashboard to check this")
@@ -127,9 +182,15 @@ def render(brokers_df):
             phone_dork_url = build_combined_dork_url(phone, "", broker_domains)
             st.link_button("Search for this number", phone_dork_url, key="phone_dork_link")
             phone_answer = st.segmented_control(
-                "Result", TRISTATE_OPTIONS, default=st.session_state.exposure_checklist.get("phone_exposure"),
+                "Result", TRISTATE_OPTIONS, default=persisted.get("phone_exposure", {}).get("value"),
                 key="check_phone_exposure", label_visibility="collapsed",
             )
+            phone_entry = persisted.get("phone_exposure")
+            if phone_answer in ("Checked — clear", "Found exposure"):
+                phone_entry = _record_if_changed("phone_exposure", phone_answer, persisted)
+            phone_note = _staleness_note(phone_entry)
+            if phone_note:
+                st.caption(phone_note)
         else:
             card_cols[1].empty()
             st.caption("Add a phone number on the Dashboard to check this")
@@ -143,9 +204,15 @@ def render(brokers_df):
         social_dork_url = build_combined_dork_url(name, location, SOCIAL_MEDIA_DOMAINS)
         st.link_button("Search my name on social platforms", social_dork_url, key="social_dork_link")
         social_answer = st.segmented_control(
-            "Result", TRISTATE_OPTIONS, default=st.session_state.exposure_checklist.get("social_media_public"),
+            "Result", TRISTATE_OPTIONS, default=persisted.get("social_media_public", {}).get("value"),
             key="check_social_media", label_visibility="collapsed",
         )
+        social_entry = persisted.get("social_media_public")
+        if social_answer in ("Checked — clear", "Found exposure"):
+            social_entry = _record_if_changed("social_media_public", social_answer, persisted)
+        social_note = _staleness_note(social_entry)
+        if social_note:
+            st.caption(social_note)
 
     # --- SSN card: informational only, no risk level ---
     with st.container(border=True):
@@ -158,13 +225,6 @@ def render(brokers_df):
             "[annualcreditreport.com](https://www.annualcreditreport.com), or get real guidance at "
             "[IdentityTheft.gov](https://www.identitytheft.gov)."
         )
-
-    # Persist the tri-state answers
-    st.session_state.exposure_checklist = {
-        "email_breach": email_answer,
-        "phone_exposure": phone_answer,
-        "social_media_public": social_answer,
-    }
 
     # Fill in the badges now that we know the answers
     email_label, email_color, email_icon = _tristate_badge(email_answer)
@@ -205,11 +265,24 @@ def render(brokers_df):
         else:
             row_cols[1].caption("No search link on file")
 
+        broker_category = f"broker:{broker_name}"
+        stored_broker_entry = persisted.get(broker_category)
         checked = row_cols[2].checkbox(
             "Found myself listed here",
+            value=stored_broker_entry["value"] == "true" if stored_broker_entry else False,
             key=f"selfsearch_check_{broker_name}",
         )
         st.session_state.listed_confirmed[broker_name] = checked
+
+        # Only record a check the first time there's an actual interaction --
+        # an untouched, still-default-unchecked box isn't a "checked, clear"
+        # answer, it's just nobody having looked yet.
+        broker_entry = stored_broker_entry
+        if stored_broker_entry or checked:
+            broker_entry = _record_if_changed(broker_category, "true" if checked else "false", persisted)
+        broker_note = _staleness_note(broker_entry)
+        if broker_note:
+            row_cols[2].caption(broker_note)
 
     found_count = sum(1 for v in st.session_state.listed_confirmed.values() if v)
     total_count = len(brokers_df)
@@ -225,6 +298,10 @@ def render(brokers_df):
     combined_found = found_count + checklist_found
     combined_total = total_count + checklist_checked
     ratio = combined_found / combined_total if combined_total else 0
+    stale_count = sum(
+        1 for entry in persisted.values()
+        if exposure_store.is_stale(entry["checked_at"], config.RECHECK_STALE_DAYS)
+    )
 
     with exposure_placeholder.container():
         if combined_total == total_count and found_count == 0:
@@ -242,6 +319,13 @@ def render(brokers_df):
         else:
             st.markdown(f"## 🚨 High exposure — {combined_found} of {combined_total}")
             st.error(f"Confirmed exposed in {combined_found} of {combined_total} checks so far — worth prioritizing deletion letters.")
+
+        if stale_count:
+            item_word = "item" if stale_count == 1 else "items"
+            st.caption(
+                f":material/schedule: {stale_count} {item_word} haven't been rechecked in "
+                f"{config.RECHECK_STALE_DAYS}+ days — worth a fresh look below."
+            )
 
     st.markdown("---")
     st.subheader("Other real ways to check yourself")

@@ -60,3 +60,16 @@ MAILTO_SAFE_LENGTH = 1800
 # automatically. Everything else (dates, status, broker, deadline) stays, so
 # your own history/metrics remain intact.
 PII_RETENTION_DAYS = 30
+
+# Self-search results (broker listings, breach/phone/social answers) used to
+# live only in st.session_state and reset every time the browser tab closed
+# -- there was no way to know how long ago something was actually checked.
+# Once a check is older than this many days, Results/Dashboard flag it as
+# due for a recheck instead of silently trusting a stale answer.
+RECHECK_STALE_DAYS = 30
+EXPOSURE_DB_PATH = "data/tracker.db"
+
+# Free, already-built alerting services -- rather than reinventing breach or
+# web-mention monitoring, point users at the real ones.
+GOOGLE_ALERTS_URL = "https://www.google.com/alerts"
+HIBP_NOTIFY_URL = "https://haveibeenpwned.com/NotifyMe"
