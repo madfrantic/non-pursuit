@@ -37,11 +37,11 @@ st.set_page_config(
 
 
 @st.cache_data
-def _logo_data_uri():
+def _image_data_uri(path):
     """Raw <img> tags inside a custom-HTML block can't reference a local
     file path directly -- base64-embedding it is the standard way to get a
     local image into markdown(unsafe_allow_html=True)."""
-    with open(config.APP_LOGO_PATH, "rb") as f:
+    with open(path, "rb") as f:
         encoded = base64.b64encode(f.read()).decode("ascii")
     return f"data:image/png;base64,{encoded}"
 
@@ -199,10 +199,10 @@ st.markdown(
     f"""
     <div class="np-hero">
         <div class="np-card-label">Privacy workflow</div>
-        <h2 style="margin: 0 0 0.35rem 0; display: flex; align-items: center; gap: 0.5rem;">
-            <img src="{_logo_data_uri()}" style="height: 1.4em;" alt="">
-            {config.APP_TITLE}
-        </h2>
+        <div style="margin: 0 0 0.35rem 0; display: flex; align-items: center; gap: 0.75rem;">
+            <img src="{_image_data_uri(config.APP_LOGO_PATH)}" style="height: 56px;" alt="">
+            <img src="{_image_data_uri(config.APP_WORDMARK_PATH)}" style="height: 40px;" alt="{config.APP_TITLE}">
+        </div>
         <p class="np-quiet" style="margin: 0 0 0.6rem 0;">{config.APP_TAGLINE}</p>
         <div>
             <span class="np-step-pill">1. Gather your profile</span>
