@@ -201,25 +201,10 @@ mode = st.sidebar.radio(
 
 st.markdown(
     f"""
-    <div style="width: 100%; display: flex; align-items: center; justify-content: center;
-                gap: 0.4rem; padding: 0.5rem 0 1rem 0;">
+    <div style="width: 100%; display: flex; align-items: center; justify-content: flex-start;
+                gap: 0.15rem; padding: 0.5rem 0 1rem 0;">
         <img src="{_image_data_uri(config.APP_LOGO_PATH)}" style="height: 130px;" alt="">
-        <img src="{_image_data_uri(config.APP_WORDMARK_PATH)}" style="height: 92px;" alt="{config.APP_TITLE}">
-    </div>
-    """,
-    unsafe_allow_html=True,
-)
-
-st.markdown(
-    f"""
-    <div class="np-hero">
-        <div class="np-card-label">Privacy workflow</div>
-        <p class="np-quiet" style="margin: 0 0 0.6rem 0;">{config.APP_TAGLINE}</p>
-        <div>
-            <span class="np-step-pill">1. Gather your profile</span>
-            <span class="np-step-pill">2. Review exposure</span>
-            <span class="np-step-pill">3. Act on what matters</span>
-        </div>
+        <img src="{_image_data_uri(config.APP_WORDMARK_PATH)}" style="height: 120px;" alt="{config.APP_TITLE}">
     </div>
     """,
     unsafe_allow_html=True,

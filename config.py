@@ -4,7 +4,7 @@ Configuration for Non-Pursuit.
 
 # Application settings
 APP_TITLE = "Non-Pursuit"
-APP_TAGLINE = "Take yourself off the market."
+APP_TAGLINE = "They chase. You enforce."
 APP_ICON = "🛡️"  # fallback emoji, kept for any spot the real logo doesn't fit
 APP_LOGO_PATH = "assets/logo_shield.png"
 APP_WORDMARK_PATH = "assets/logo_wordmark.png"
