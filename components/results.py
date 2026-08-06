@@ -34,6 +34,13 @@ SOCIAL_MEDIA_DOMAINS = ["instagram.com", "facebook.com", "twitter.com", "x.com",
 TRISTATE_OPTIONS = ["Haven't checked", "Checked — clear", "Found exposure"]
 
 
+def _switch_to(mode_value):
+    # Same pending_nav indirection dashboard.py uses -- the sidebar radio
+    # (key="nav_mode") has already rendered by the time a button here runs.
+    st.session_state.pending_nav = mode_value
+    st.rerun()
+
+
 def _broker_risk_badge(found_count, checked_count, total_count):
     # st.badge strips a leading emoji from the label itself -- it has to go
     # through the dedicated icon= argument instead, so return it separately.
@@ -163,6 +170,25 @@ def render(brokers_df):
                 "🛡️ A VPN (or your ISP's carrier-grade NAT) is what actually hides this — it swaps your "
                 "real IP for the VPN provider's, so sites see the VPN server's location instead of yours."
             )
+
+    with st.expander(":material/emoji_flags: Check your state's resources first"):
+        st.caption(
+            "A real, state-specific starting point where one exists — more states get added here as "
+            "their own resources are verified, never guessed ahead of time."
+        )
+        state_choice = st.selectbox(
+            "Your state", list(config.STATE_RESOURCES.keys()), key="results_state_choice", label_visibility="collapsed",
+        )
+        resource = config.STATE_RESOURCES[state_choice]
+        st.markdown(
+            f'<div class="np-info-box" style="font-size: 0.85em;">{resource["blurb"]}</div>',
+            unsafe_allow_html=True,
+        )
+        if "action_url" in resource:
+            st.link_button(resource["action_label"], resource["action_url"])
+        elif "action_mode" in resource:
+            if st.button(resource["action_label"], key="state_resource_action"):
+                _switch_to(resource["action_mode"])
 
     st.markdown("---")
 

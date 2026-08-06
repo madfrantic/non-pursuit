@@ -43,21 +43,6 @@ def render():
         unsafe_allow_html=True,
     )
 
-    with st.expander(":material/emoji_flags: California resident? Check DROP first"):
-        st.markdown(
-            f"""
-            <div class="np-info-box" style="font-size: 0.85em;">
-            The state's own deletion tool, <strong>DROP</strong>, reaches every
-            <em>registered</em> data broker with one request, and brokers have been
-            required to process DROP requests since Aug 1, 2026. Start there — use
-            Non-Pursuit for brokers that aren't registered, for other states, or to
-            escalate if a broker misses its window.
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-        st.link_button("Open DROP (privacy.ca.gov)", config.CA_DROP_URL)
-
     with st.container(border=True):
         info_header_col, info_demo_col = st.columns([4, 1.3])
         with info_header_col:

@@ -50,6 +50,44 @@ NY_COURT_EXPUNGEMENT_URL = "https://www.nycourts.gov/courthelp/criminal/expungem
 # brokers, non-CA residents, and escalation when a broker misses its window.
 CA_DROP_URL = "https://privacy.ca.gov"
 
+# State-specific starting points, shown on Results before the broker-by-
+# broker work. Each entry points at something real -- either an external
+# resource (action_url) or an in-app mode already built for that state
+# (action_mode, must exactly match a sidebar nav label in app.py). New
+# York doesn't have its own DROP-equivalent yet (S9088/A9642 registration
+# bill still in committee as of 2026, not law) so it points at the
+# closest real, already-built thing instead: this app's own expungement
+# guidance, which is a different kind of resource (criminal record
+# sealing, not data-broker deletion) and is described as such rather than
+# implied to be equivalent. Add more states here only once their resource
+# has been verified to actually exist -- never a placeholder guess.
+STATE_RESOURCES = {
+    "California": {
+        "blurb": (
+            "The state's own deletion tool, <strong>DROP</strong>, reaches every "
+            "<em>registered</em> data broker with one request, and brokers have been "
+            "required to process DROP requests since Aug 1, 2026. Start there — use "
+            "Non-Pursuit for brokers that aren't registered, or to escalate if a "
+            "broker misses its window."
+        ),
+        "action_label": "Open DROP (privacy.ca.gov)",
+        "action_url": CA_DROP_URL,
+    },
+    "New York": {
+        "blurb": (
+            "New York doesn't have a centralized data-broker deletion tool yet — a "
+            "registration + one-shot-deletion bill (S9088 / A9642) was introduced in "
+            "January 2026 and is still in committee, not law. If it's a criminal "
+            "record you're trying to seal instead, this app's own NY Expungement "
+            "Guidance covers real CPL 160.50 / 160.55 / 160.59 pathways — a "
+            "different kind of resource than DROP, but the most relevant "
+            "state-specific starting point available today."
+        ),
+        "action_label": "Go to NY Expungement Guidance",
+        "action_mode": "⚖️ NY Expungement Guidance",
+    },
+}
+
 # A URL-encoded mailto body longer than this is unreliable across clients —
 # Outlook and several mobile mail apps have been observed truncating mailto
 # bodies well under this. Above the threshold, the UI should steer the user
