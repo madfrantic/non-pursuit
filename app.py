@@ -36,11 +36,13 @@ st.set_page_config(
 )
 
 
-@st.cache_data
 def _image_data_uri(path):
     """Raw <img> tags inside a custom-HTML block can't reference a local
     file path directly -- base64-embedding it is the standard way to get a
-    local image into markdown(unsafe_allow_html=True)."""
+    local image into markdown(unsafe_allow_html=True). Deliberately not
+    cached: caching was keyed only on the path string, so editing these
+    small logo files in place (as happened while iterating on crop/sizing)
+    kept serving stale base64 data forever, with no visible sign why."""
     with open(path, "rb") as f:
         encoded = base64.b64encode(f.read()).decode("ascii")
     return f"data:image/png;base64,{encoded}"
