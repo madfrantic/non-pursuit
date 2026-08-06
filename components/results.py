@@ -24,26 +24,28 @@ TRISTATE_OPTIONS = ["Haven't checked", "Checked — clear", "Found exposure"]
 
 
 def _broker_risk_badge(found_count, total_count):
+    # st.badge strips a leading emoji from the label itself -- it has to go
+    # through the dedicated icon= argument instead, so return it separately.
     if total_count == 0:
-        return "Not checked", "gray"
+        return "Not checked", "gray", "⚪"
     ratio = found_count / total_count
     if found_count == 0:
-        return "Low", "green"
+        return "Low", "green", "🟢"
     elif ratio < 0.34:
-        return "Medium", "yellow"
+        return "Medium", "yellow", "🟡"
     elif ratio < 0.67:
-        return "High", "orange"
+        return "High", "orange", "🟠"
     else:
-        return "Critical", "red"
+        return "Critical", "red", "🔴"
 
 
 def _tristate_badge(value):
     if value == "Found exposure":
-        return "Critical", "red"
+        return "Critical", "red", "🔴"
     elif value == "Checked — clear":
-        return "Low", "green"
+        return "Low", "green", "🟢"
     else:
-        return "Not checked", "gray"
+        return "Not checked", "gray", "⚪"
 
 
 def render(brokers_df):
@@ -165,14 +167,14 @@ def render(brokers_df):
     }
 
     # Fill in the badges now that we know the answers
-    email_label, email_color = _tristate_badge(email_answer)
+    email_label, email_color, email_icon = _tristate_badge(email_answer)
     if email:
-        email_state.badge(email_label, color=email_color)
-    phone_label, phone_color = _tristate_badge(phone_answer)
+        email_state.badge(email_label, icon=email_icon, color=email_color)
+    phone_label, phone_color, phone_icon = _tristate_badge(phone_answer)
     if phone and broker_domains:
-        phone_state.badge(phone_label, color=phone_color)
-    social_label, social_color = _tristate_badge(social_answer)
-    social_state.badge(social_label, color=social_color)
+        phone_state.badge(phone_label, icon=phone_icon, color=phone_color)
+    social_label, social_color, social_icon = _tristate_badge(social_answer)
+    social_state.badge(social_label, icon=social_icon, color=social_color)
 
     st.markdown("---")
     st.subheader(":material/apartment: Broker-by-broker detail")
@@ -212,8 +214,8 @@ def render(brokers_df):
     found_count = sum(1 for v in st.session_state.listed_confirmed.values() if v)
     total_count = len(brokers_df)
     metric_placeholder.metric("Brokers confirmed listed", f"{found_count} / {total_count} checked")
-    broker_label, broker_color = _broker_risk_badge(found_count, total_count)
-    broker_badge_placeholder.badge(broker_label, color=broker_color)
+    broker_label, broker_color, broker_icon = _broker_risk_badge(found_count, total_count)
+    broker_badge_placeholder.badge(broker_label, icon=broker_icon, color=broker_color)
 
     # Combined real exposure readout: broker ratio + the three tri-state
     # answers, equally weighted and disclosed as such — no invented
@@ -224,16 +226,22 @@ def render(brokers_df):
     combined_total = total_count + checklist_checked
     ratio = combined_found / combined_total if combined_total else 0
 
-    if combined_total == total_count and found_count == 0:
-        exposure_placeholder.info(":material/check_circle: Nothing confirmed yet — check items off below as you verify them.")
-    elif combined_found == 0:
-        exposure_placeholder.success(":material/check_circle: Nothing found exposed in what's been checked so far.")
-    elif ratio < 0.34:
-        exposure_placeholder.success(f":material/check_circle: Confirmed exposed in {combined_found} of {combined_total} checks so far.")
-    elif ratio < 0.67:
-        exposure_placeholder.warning(f":material/warning: Confirmed exposed in {combined_found} of {combined_total} checks so far.")
-    else:
-        exposure_placeholder.error(f":material/error: Confirmed exposed in {combined_found} of {combined_total} checks so far — worth prioritizing deletion letters.")
+    with exposure_placeholder.container():
+        if combined_total == total_count and found_count == 0:
+            st.markdown("## :material/help: Not checked yet")
+            st.info("Nothing confirmed yet — check items off below as you verify them.")
+        elif combined_found == 0:
+            st.markdown("## 🎉 All clear so far")
+            st.success("Nothing found exposed in what's been checked so far.")
+        elif ratio < 0.34:
+            st.markdown(f"## 🙂 Low exposure — {combined_found} of {combined_total}")
+            st.success(f"Confirmed exposed in {combined_found} of {combined_total} checks so far.")
+        elif ratio < 0.67:
+            st.markdown(f"## ⚠️ Moderate exposure — {combined_found} of {combined_total}")
+            st.warning(f"Confirmed exposed in {combined_found} of {combined_total} checks so far.")
+        else:
+            st.markdown(f"## 🚨 High exposure — {combined_found} of {combined_total}")
+            st.error(f"Confirmed exposed in {combined_found} of {combined_total} checks so far — worth prioritizing deletion letters.")
 
     st.markdown("---")
     st.subheader("Other real ways to check yourself")
