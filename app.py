@@ -201,11 +201,15 @@ mode = st.sidebar.radio(
 
 st.markdown(
     f"""
-    <div style="width: 100%; display: flex; align-items: center; justify-content: flex-start;
-                gap: 0; padding: 0.5rem 0 1rem 0;">
-        <img src="{_image_data_uri(config.APP_LOGO_PATH)}" style="height: 130px;" alt="">
-        <img src="{_image_data_uri(config.APP_WORDMARK_PATH)}" style="height: 150px; margin-left: -0.3rem;" alt="{config.APP_TITLE}">
+    <div style="width: 100%; display: flex; align-items: center; justify-content: center;
+                gap: 0; padding: 0.5rem 0 0.5rem 0;">
+        <img src="{_image_data_uri(config.APP_LOGO_PATH)}" style="height: 170px;" alt="">
+        <img src="{_image_data_uri(config.APP_WORDMARK_PATH)}" style="height: 195px; margin-left: -0.3rem;" alt="{config.APP_TITLE}">
     </div>
+    <p style="width: 100%; text-align: center; font-size: 1.5rem; font-weight: 700;
+              color: {config.TEXT_COLOR}; margin: 0 0 1rem 0;">
+        {config.APP_TAGLINE}
+    </p>
     """,
     unsafe_allow_html=True,
 )
