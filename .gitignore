@@ -7,3 +7,9 @@ __pycache__/
 # answers. Real personal data belongs on the user's machine only, never in
 # git history.
 data/tracker.db
+
+# Raw multi-megabyte logo source sheets (four crops each, checkerboard
+# preview background baked in) -- kept locally for re-processing, but the
+# app only ever reads the small derived asset in assets/.
+/LOGOBRAND.png
+/LOGOBRAND_2.png

@@ -1,3 +1,4 @@
+import base64
 import sys
 import os
 
@@ -25,7 +26,7 @@ from components import results as results_component
 # ---------------------------------------------------------------------------
 st.set_page_config(
     page_title=config.APP_TITLE,
-    page_icon=config.APP_ICON,
+    page_icon=config.APP_LOGO_PATH,
     layout=config.APP_LAYOUT,
     # "expanded" pinned the sidebar open even on narrow viewports, leaving
     # the main content squeezed into a sliver on mobile. "auto" keeps
@@ -33,6 +34,16 @@ st.set_page_config(
     # responsive breakpoint collapse it into a slide-out drawer on phones.
     initial_sidebar_state="auto",
 )
+
+
+@st.cache_data
+def _logo_data_uri():
+    """Raw <img> tags inside a custom-HTML block can't reference a local
+    file path directly -- base64-embedding it is the standard way to get a
+    local image into markdown(unsafe_allow_html=True)."""
+    with open(config.APP_LOGO_PATH, "rb") as f:
+        encoded = base64.b64encode(f.read()).decode("ascii")
+    return f"data:image/png;base64,{encoded}"
 
 # Theming lives in .streamlit/config.toml. The only custom CSS left here is
 # for the "Broker Notes" info box and letter-preview box, which Streamlit's
@@ -155,7 +166,9 @@ brokers_df = load_brokers()
 if st.session_state.get("pending_nav") is not None:
     st.session_state.nav_mode = st.session_state.pop("pending_nav")
 
-st.sidebar.title(f"{config.APP_ICON} {config.APP_TITLE}")
+sidebar_logo_col, sidebar_title_col = st.sidebar.columns([1, 3])
+sidebar_logo_col.image(config.APP_LOGO_PATH, width=44)
+sidebar_title_col.markdown(f"### {config.APP_TITLE}")
 st.sidebar.caption(config.APP_TAGLINE)
 st.sidebar.markdown("---")
 
@@ -186,7 +199,10 @@ st.markdown(
     f"""
     <div class="np-hero">
         <div class="np-card-label">Privacy workflow</div>
-        <h2 style="margin: 0 0 0.35rem 0;">{config.APP_ICON} {config.APP_TITLE}</h2>
+        <h2 style="margin: 0 0 0.35rem 0; display: flex; align-items: center; gap: 0.5rem;">
+            <img src="{_logo_data_uri()}" style="height: 1.4em;" alt="">
+            {config.APP_TITLE}
+        </h2>
         <p class="np-quiet" style="margin: 0 0 0.6rem 0;">{config.APP_TAGLINE}</p>
         <div>
             <span class="np-step-pill">1. Gather your profile</span>
