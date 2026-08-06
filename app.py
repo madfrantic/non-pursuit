@@ -11,6 +11,8 @@ if UTILS_DIR not in sys.path:
 
 from tracker import add_request, get_all_requests, update_status, delete_request, purge_expired_notes, STATUS_OPTIONS
 from calendar_export import build_ics
+from data_export import build_json_export
+import exposure_store
 import config
 
 from components import letters as letters_component
@@ -25,7 +27,11 @@ st.set_page_config(
     page_title=config.APP_TITLE,
     page_icon=config.APP_ICON,
     layout=config.APP_LAYOUT,
-    initial_sidebar_state="expanded",
+    # "expanded" pinned the sidebar open even on narrow viewports, leaving
+    # the main content squeezed into a sliver on mobile. "auto" keeps
+    # desktop's default-open behavior but lets Streamlit's native
+    # responsive breakpoint collapse it into a slide-out drawer on phones.
+    initial_sidebar_state="auto",
 )
 
 # Theming lives in .streamlit/config.toml. The only custom CSS left here is
@@ -304,9 +310,31 @@ elif mode == ":material/search_off: 3. Google De-Indexing":
     st.markdown("Request removal of personally identifiable information from Google Search results.")
     st.markdown("---")
 
-    st.subheader("Standardized PII Justification Statement")
+    g_name = st.session_state.user_name
+    g_email = st.session_state.user_email
 
-    justification_text = """I am requesting the removal of personally identifiable information (PII) from Google Search results because:
+    if not g_name or not g_email:
+        st.warning("Enter your name and email on the **Dashboard** first — this request is personalized and needs a real contact for verification.")
+    else:
+        st.subheader("URLs to request removal for")
+        st.caption("Paste each Google search result URL containing your PII, one per line.")
+        pii_urls_raw = st.text_area(
+            "URLs",
+            placeholder="https://broker-site.com/your-name/record\nhttps://example.com/another-page",
+            height=100,
+            label_visibility="collapsed",
+        )
+        pii_urls = [u.strip() for u in pii_urls_raw.splitlines() if u.strip()]
+
+        st.markdown("---")
+        st.subheader("Standardized PII Justification Statement")
+
+        if pii_urls:
+            url_block = "\n".join(f"- {u}" for u in pii_urls)
+        else:
+            url_block = "- [Add the specific URLs above before submitting — Google requires them]"
+
+        justification_text = f"""I am {g_name}, and I am requesting the removal of personally identifiable information (PII) from Google Search results because:
 
 1. The information contains my personal contact details (home address, phone number, email)
 2. This information is being exposed without my consent
@@ -321,10 +349,13 @@ This request is made under Google's PII removal policies for:
 - Personal medical records
 - Private contact information
 
-I have attached evidence of the search results containing this information and request prompt removal to protect my privacy and security."""
+The specific URLs containing this information are:
+{url_block}
 
-    st.code(justification_text, language=None)
-    st.caption("Use the copy icon in the corner above to copy this text.")
+I have attached evidence of the search results containing this information and request prompt removal to protect my privacy and security. I can be reached at {g_email} to verify this request."""
+
+        st.code(justification_text, language=None)
+        st.caption("Use the copy icon in the corner above to copy this text.")
 
     st.markdown("---")
 
@@ -395,14 +426,24 @@ elif mode == ":material/monitoring: 4. Campaign Tracker":
         c2.metric("Overdue", overdue_count)
         c3.metric("Complete", sum(1 for r in requests_list if r["status"] == "Complete"))
 
+        export_cols = st.columns(2)
         open_requests = [r for r in requests_list if r["status"] != "Complete"]
         if open_requests:
-            st.download_button(
+            export_cols[0].download_button(
                 "📅 Export deadlines to calendar (.ics)",
                 data=build_ics(requests_list),
                 file_name="non_pursuit_deadlines.ics",
                 mime="text/calendar",
+                width="stretch",
             )
+        export_cols[1].download_button(
+            ":material/download: Export all my data (.json)",
+            data=build_json_export(requests_list, exposure_store.get_all_checks(config.EXPOSURE_DB_PATH)),
+            file_name="non_pursuit_data_export.json",
+            mime="application/json",
+            width="stretch",
+            help="Everything tracked in this app -- campaign requests and self-search history -- as one portable file you control.",
+        )
 
         st.markdown("---")
 

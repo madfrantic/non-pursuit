@@ -114,7 +114,7 @@ def render(brokers_df):
             )
             if confirmed_listed:
                 st.session_state.listed_confirmed[selected_broker] = True
-                exposure_store.record_check(config.EXPOSURE_DB_PATH, f"broker:{selected_broker}", "true")
+                exposure_store.record_check(config.EXPOSURE_DB_PATH, f"broker:{selected_broker}", "Found exposure")
 
         if not confirmed_listed:
             st.info("Check the box above once you've confirmed you're listed to generate the letter.")
@@ -201,7 +201,7 @@ def render(brokers_df):
                 if row_cols[2].checkbox("Confirmed listed", key=f"batch_confirmed_{broker_name}"):
                     confirmed_brokers.append(broker_name)
                     st.session_state.listed_confirmed[broker_name] = True
-                    exposure_store.record_check(config.EXPOSURE_DB_PATH, f"broker:{broker_name}", "true")
+                    exposure_store.record_check(config.EXPOSURE_DB_PATH, f"broker:{broker_name}", "Found exposure")
 
             st.markdown("---")
 

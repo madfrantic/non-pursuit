@@ -34,10 +34,13 @@ SOCIAL_MEDIA_DOMAINS = ["instagram.com", "facebook.com", "twitter.com", "x.com",
 TRISTATE_OPTIONS = ["Haven't checked", "Checked — clear", "Found exposure"]
 
 
-def _broker_risk_badge(found_count, total_count):
+def _broker_risk_badge(found_count, checked_count, total_count):
     # st.badge strips a leading emoji from the label itself -- it has to go
     # through the dedicated icon= argument instead, so return it separately.
-    if total_count == 0:
+    # checked_count (not total_count) gates "Not checked" -- 0 found out of
+    # 7 means something very different if nobody's looked yet vs. everyone
+    # confirmed clear, the same distinction tri-state gives email/phone/social.
+    if checked_count == 0:
         return "Not checked", "gray", "⚪"
     ratio = found_count / total_count
     if found_count == 0:
@@ -339,28 +342,31 @@ def render(brokers_df):
 
         broker_category = f"broker:{broker_name}"
         stored_broker_entry = persisted.get(broker_category)
-        checked = row_cols[2].checkbox(
-            "Found myself listed here",
-            value=stored_broker_entry["value"] == "true" if stored_broker_entry else False,
-            key=f"selfsearch_check_{broker_name}",
+        broker_answer = row_cols[2].segmented_control(
+            "Result", TRISTATE_OPTIONS, default=stored_broker_entry["value"] if stored_broker_entry else None,
+            key=f"selfsearch_check_{broker_name}", label_visibility="collapsed",
         )
-        st.session_state.listed_confirmed[broker_name] = checked
+        # listed_confirmed feeds Letters' "already confirmed" gate, which only
+        # needs a plain yes/no -- "Found exposure" is the only tri-state
+        # answer that means yes.
+        st.session_state.listed_confirmed[broker_name] = (broker_answer == "Found exposure")
 
-        # Only record a check the first time there's an actual interaction --
-        # an untouched, still-default-unchecked box isn't a "checked, clear"
-        # answer, it's just nobody having looked yet.
         broker_entry = stored_broker_entry
-        if stored_broker_entry or checked:
-            broker_entry = _record_if_changed(broker_category, "true" if checked else "false", persisted)
+        if broker_answer in ("Checked — clear", "Found exposure"):
+            broker_entry = _record_if_changed(broker_category, broker_answer, persisted)
         broker_note = _staleness_note(broker_entry)
         if broker_note:
             row_cols[2].caption(broker_note)
 
     found_count = sum(1 for v in st.session_state.listed_confirmed.values() if v)
+    checked_broker_count = sum(
+        1 for _, b in brokers_df.iterrows()
+        if persisted.get(f"broker:{b['broker_name']}", {}).get("value") in ("Checked — clear", "Found exposure")
+    )
     total_count = len(brokers_df)
     check_count = sum(1 for v in [email_answer, phone_answer, social_answer] if v is not None)
     metric_placeholder.metric("Brokers confirmed listed", f"{found_count} / {total_count} checked")
-    broker_label, broker_color, broker_icon = _broker_risk_badge(found_count, total_count)
+    broker_label, broker_color, broker_icon = _broker_risk_badge(found_count, checked_broker_count, total_count)
     broker_badge_placeholder.badge(broker_label, icon=broker_icon, color=broker_color)
 
     st.markdown("---")
@@ -382,7 +388,7 @@ def render(brokers_df):
     checklist_found = sum(1 for v in [email_answer, phone_answer, social_answer] if v == "Found exposure")
     checklist_checked = sum(1 for v in [email_answer, phone_answer, social_answer] if v is not None)
     combined_found = found_count + checklist_found
-    combined_total = total_count + checklist_checked
+    combined_total = checked_broker_count + checklist_checked
     ratio = combined_found / combined_total if combined_total else 0
     stale_count = sum(
         1 for entry in persisted.values()
@@ -390,7 +396,7 @@ def render(brokers_df):
     )
 
     with exposure_placeholder.container():
-        if combined_total == total_count and found_count == 0:
+        if combined_total == 0:
             st.markdown("## :material/help: Not checked yet")
             st.info("Nothing confirmed yet — check items off below as you verify them.")
         elif combined_found == 0:
