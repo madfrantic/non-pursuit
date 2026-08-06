@@ -2,3 +2,8 @@ venv/
 __pycache__/
 *.pyc
 .pytest_cache/
+
+# Local user data -- broker requests, notes, and now self-search exposure
+# answers. Real personal data belongs on the user's machine only, never in
+# git history.
+data/tracker.db
