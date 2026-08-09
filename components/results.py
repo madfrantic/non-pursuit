@@ -19,7 +19,7 @@ closing the browser -- previously this only lived in session state and
 reset every session, making it impossible to know if an answer was fresh
 or six months stale.
 """
-from datetime import datetime
+from datetime import datetime, timezone
 
 import streamlit as st
 import requests
@@ -116,6 +116,42 @@ def _flag_emoji(country_code):
     return "".join(chr(0x1F1E6 + ord(c) - ord("A")) for c in country_code.upper())
 
 
+def _parse_device_info(user_agent):
+    """Best-effort "Browser on OS" label from a real User-Agent string --
+    not a full UA-parsing library, just the common cases, with an honest
+    fallback rather than a guess when something doesn't match."""
+    if not user_agent:
+        return "Unknown device"
+
+    if "Windows" in user_agent:
+        os_name = "Windows"
+    elif "Mac OS X" in user_agent:
+        os_name = "macOS"
+    elif "Android" in user_agent:
+        os_name = "Android"
+    elif "iPhone" in user_agent or "iPad" in user_agent:
+        os_name = "iOS"
+    elif "Linux" in user_agent:
+        os_name = "Linux"
+    else:
+        os_name = "an unknown OS"
+
+    if "Edg/" in user_agent:
+        browser = "Edge"
+    elif "OPR/" in user_agent or "Opera" in user_agent:
+        browser = "Opera"
+    elif "Firefox/" in user_agent:
+        browser = "Firefox"
+    elif "Chrome/" in user_agent and "Chromium" not in user_agent:
+        browser = "Chrome"
+    elif "Safari/" in user_agent and "Chrome" not in user_agent:
+        browser = "Safari"
+    else:
+        browser = "an unrecognized browser"
+
+    return f"{browser} on {os_name}"
+
+
 def render(brokers_df):
     st.markdown(
         """
@@ -145,15 +181,18 @@ def render(brokers_df):
 
     persisted = exposure_store.get_all_checks(config.EXPOSURE_DB_PATH)
     client_context = _get_client_context()
+    user_agent = st.context.headers.get("User-Agent", "")
+    device_label = _parse_device_info(user_agent)
+    checked_at = datetime.now(timezone.utc).strftime("%B %d, %Y, %I:%M%p UTC")
 
     with st.container(border=True):
         first_name = name.split()[0] if name else "friend"
         flag = _flag_emoji(client_context["country"])
         st.markdown(f"## Hello, {first_name}")
-        st.markdown(
-            f"**This is what any site can see about you right now: "
-            f"{flag} {client_context['city']}, {client_context['region']}, {client_context['country']}**"
-        )
+        st.caption("Same kind of thing as the \"new sign-in\" email your other accounts send you — except this is what THIS page just learned about you, unprompted, with no login at all.")
+        st.markdown(f"**Device type:** {device_label}")
+        st.markdown(f"**Location:** {flag} {client_context['city']}, {client_context['region']}, {client_context['country']}")
+        st.markdown(f"**Time:** {checked_at}")
         st.caption(f"IP address: {client_context['ip']}")
         st.caption(f"ISP / provider: {client_context['org']}")
         with st.expander(":material/visibility: How does a site learn this from a single visit?"):
@@ -165,6 +204,11 @@ def render(brokers_df):
                 "🌍 **Location and ISP** get derived by looking that IP up in a public registry that maps "
                 "IP address ranges to the internet provider they were issued to, and roughly where that "
                 "provider operates — same technique this page just used against `ipinfo.io`.\n\n"
+                "💻 **Device type** comes straight from the `User-Agent` header your browser sends with "
+                "every single request, automatically — the exact field the \"new sign-in\" email at the "
+                "top of this card is inspired by.\n\n"
+                f"🌐 Your browser also quietly reports its **language** (`{st.context.locale or 'unavailable'}`) "
+                f"and **timezone** (`{st.context.timezone or 'unavailable'}`) on every visit, sight unseen.\n\n"
                 "🎯 It's usually accurate to your **city/region**, not your exact address — precision "
                 "depends on your ISP, not the site doing the looking.\n\n"
                 "🛡️ A VPN (or your ISP's carrier-grade NAT) is what actually hides this — it swaps your "
