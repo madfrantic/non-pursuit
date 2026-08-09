@@ -183,7 +183,12 @@ st.sidebar.markdown(
     """,
     unsafe_allow_html=True,
 )
-st.sidebar.caption(config.APP_TAGLINE)
+st.sidebar.markdown(
+    f'<p style="width: 100%; text-align: center; text-transform: uppercase; '
+    f'font-weight: 700; font-size: 0.8rem; color: {config.TEXT_COLOR}; margin: 0;">'
+    f'{config.APP_TAGLINE}</p>',
+    unsafe_allow_html=True,
+)
 st.sidebar.markdown("---")
 
 mode = st.sidebar.radio(
