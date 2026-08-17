@@ -27,7 +27,11 @@ import requests
 import config
 import exposure_store
 import spokeo_automation
+from applog import get_logger
+from broker_freshness import is_broker_stale, days_since_verified
 from google_dork import domain_from_url, build_combined_dork_url, build_broker_dork_url
+
+_log = get_logger("results")
 
 SOCIAL_MEDIA_DOMAINS = ["instagram.com", "facebook.com", "twitter.com", "x.com", "linkedin.com", "tiktok.com"]
 
@@ -104,7 +108,7 @@ def _get_client_context():
                 "org": payload.get("org", "Unknown ISP"),
             }
     except Exception:
-        pass
+        _log.exception("IP/ISP lookup via ipinfo.io failed")
     return {"ip": "Unavailable", "city": "Unknown", "region": "Unknown", "country": "Unknown", "org": "Unknown ISP"}
 
 
@@ -392,6 +396,14 @@ def render(brokers_df):
         row_cols[0].markdown(f"**{broker_name}**")
         if broker["notes"]:
             row_cols[0].caption(broker["notes"])
+        last_verified = broker.get("last_verified", "")
+        if is_broker_stale(last_verified, config.BROKER_STALE_DAYS):
+            days = days_since_verified(last_verified)
+            age_text = f"{days} days ago" if days is not None else "date unknown"
+            row_cols[0].caption(
+                f":material/warning: This broker's contact info was last verified {age_text} "
+                "— the email/opt-out link above may be out of date."
+            )
 
         if is_automated:
             if row_cols[1].button("🤖 Auto-search", key=f"autosearch_{broker_name}"):
@@ -399,10 +411,16 @@ def render(brokers_df):
                     f"Chrome is open and searching {broker_name} — review the results there, "
                     "then close that window to continue."
                 ):
-                    outcome = spokeo_automation.run_search_and_wait(name, location)
-                if outcome == "timed_out":
+                    result = spokeo_automation.run_search_and_wait(name, location)
+                if result["outcome"] == "timed_out":
                     wait_minutes = spokeo_automation.MAX_WAIT_SECONDS // 60
                     st.warning(f"Closed the {broker_name} window automatically after {wait_minutes} minutes of inactivity.")
+                if result["record_url"]:
+                    st.session_state.record_url = result["record_url"]
+                    st.success(
+                        f"Captured the record URL you clicked into on {broker_name} — "
+                        "it's now prefilled on the Letters page."
+                    )
         elif broker["search_url"]:
             broker_domain = domain_from_url(broker["search_url"])
             dork_url = build_broker_dork_url(name, location, broker_domain)

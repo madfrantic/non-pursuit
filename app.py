@@ -12,7 +12,7 @@ if UTILS_DIR not in sys.path:
 
 from tracker import add_request, get_all_requests, update_status, delete_request, purge_expired_notes, STATUS_OPTIONS
 from calendar_export import build_ics
-from data_export import build_json_export
+from data_export import build_json_export, build_csv_export, build_pdf_export
 import database
 import exposure_store
 import config
@@ -180,6 +180,9 @@ def load_brokers():
     if "automated_search" not in df.columns:
         df["automated_search"] = ""
     df["automated_search"] = df["automated_search"].fillna("")
+    if "last_verified" not in df.columns:
+        df["last_verified"] = ""
+    df["last_verified"] = df["last_verified"].fillna("")
     return df
 
 
@@ -465,23 +468,39 @@ elif mode == "📈 Campaign Tracker":
         c2.metric("Overdue", overdue_count)
         c3.metric("Complete", sum(1 for r in requests_list if r["status"] == "Complete"))
 
-        export_cols = st.columns(2)
+        export_cols = st.columns(4)
         open_requests = [r for r in requests_list if r["status"] != "Complete"]
         if open_requests:
             export_cols[0].download_button(
-                "📅 Export deadlines to calendar (.ics)",
+                "📅 Calendar (.ics)",
                 data=build_ics(requests_list),
                 file_name="non_pursuit_deadlines.ics",
                 mime="text/calendar",
                 width="stretch",
             )
         export_cols[1].download_button(
-            ":material/download: Export all my data (.json)",
+            ":material/download: All data (.json)",
             data=build_json_export(requests_list, exposure_store.get_all_checks(config.EXPOSURE_DB_PATH)),
             file_name="non_pursuit_data_export.json",
             mime="application/json",
             width="stretch",
             help="Everything tracked in this app -- campaign requests and self-search history -- as one portable file you control.",
+        )
+        export_cols[2].download_button(
+            ":material/table: Requests (.csv)",
+            data=build_csv_export(requests_list),
+            file_name="non_pursuit_requests.csv",
+            mime="text/csv",
+            width="stretch",
+            help="Just the campaign requests table, for opening in a spreadsheet.",
+        )
+        export_cols[3].download_button(
+            ":material/picture_as_pdf: Report (.pdf)",
+            data=build_pdf_export(requests_list, exposure_store.get_all_checks(config.EXPOSURE_DB_PATH)),
+            file_name="non_pursuit_report.pdf",
+            mime="application/pdf",
+            width="stretch",
+            help="A readable summary to hand to someone else -- an attorney, a family member helping out.",
         )
 
         st.markdown("---")

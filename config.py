@@ -117,3 +117,17 @@ PROFILE_DB_PATH = "data/tracker.db"
 # web-mention monitoring, point users at the real ones.
 GOOGLE_ALERTS_URL = "https://www.google.com/alerts"
 HIBP_NOTIFY_URL = "https://haveibeenpwned.com/NotifyMe"
+
+# Diagnostic log, separate from data/ (which is user data, backed up via the
+# JSON/CSV/PDF exports and never written to by anything but the user's own
+# actions). The log can still end up holding identifying details caught in
+# an exception message, so it's gitignored the same way data/tracker.db is.
+LOG_PATH = "logs/non_pursuit.log"
+
+# How old a broker's own last_verified date can get before Results flags the
+# row as due for a human to re-confirm its compliance email / opt-out URL /
+# notes still work. Much longer than RECHECK_STALE_DAYS (30 days) above --
+# that one is about whether *your* exposure answer is still fresh, this one
+# is about whether a broker's *contact info* is still fresh, and broker
+# contact info drifts far slower than a person's exposure status does.
+BROKER_STALE_DAYS = 180

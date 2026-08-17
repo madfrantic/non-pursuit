@@ -8,6 +8,10 @@ __pycache__/
 # git history.
 data/tracker.db
 
+# Diagnostic log -- can end up holding identifying details caught in an
+# exception message, same reasoning as data/tracker.db above.
+logs/
+
 # Raw multi-megabyte logo source sheets (four crops each, checkerboard
 # preview background baked in) -- kept locally for re-processing, but the
 # app only ever reads the small derived asset in assets/.
