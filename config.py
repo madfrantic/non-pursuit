@@ -109,6 +109,10 @@ PII_RETENTION_DAYS = 30
 RECHECK_STALE_DAYS = 30
 EXPOSURE_DB_PATH = "data/tracker.db"
 
+# Baseline identity/location profile (target_profile table) -- same local
+# SQLite file as the tracker and exposure checks.
+PROFILE_DB_PATH = "data/tracker.db"
+
 # Free, already-built alerting services -- rather than reinventing breach or
 # web-mention monitoring, point users at the real ones.
 GOOGLE_ALERTS_URL = "https://www.google.com/alerts"

@@ -13,12 +13,15 @@ if UTILS_DIR not in sys.path:
 from tracker import add_request, get_all_requests, update_status, delete_request, purge_expired_notes, STATUS_OPTIONS
 from calendar_export import build_ics
 from data_export import build_json_export
+import database
 import exposure_store
 import config
 
 from components import letters as letters_component
 from components import dashboard as dashboard_component
 from components import results as results_component
+
+database.init_db(config.PROFILE_DB_PATH)
 
 
 # ---------------------------------------------------------------------------
@@ -116,11 +119,29 @@ st.markdown(
 # ---------------------------------------------------------------------------
 # Session state
 # ---------------------------------------------------------------------------
+# A fresh session (new tab/browser) starts blank unless a baseline profile
+# was already saved on the Dashboard -- in that case, seed the quick fields
+# from it so returning users don't have to retype their info every visit.
+_saved_profile = database.get_latest_target_profile(config.PROFILE_DB_PATH)
+_seeded_name = ""
+_seeded_location = ""
+_seeded_email = ""
+_seeded_phone = ""
+if _saved_profile:
+    _seeded_name = " ".join(
+        part for part in [_saved_profile.get("first_name"), _saved_profile.get("middle_name"), _saved_profile.get("last_name")] if part
+    )
+    _seeded_location = ", ".join(
+        part for part in [_saved_profile.get("current_city"), _saved_profile.get("current_state")] if part
+    )
+    _seeded_email = _saved_profile.get("email_address") or ""
+    _seeded_phone = _saved_profile.get("phone_number") or ""
+
 for key, default in {
-    "user_name": "",
-    "user_email": "",
-    "user_location": "",
-    "user_phone": "",
+    "user_name": _seeded_name,
+    "user_email": _seeded_email,
+    "user_location": _seeded_location,
+    "user_phone": _seeded_phone,
     "record_url": "",
     "listed_confirmed": {},
     "pending_nav": None,
