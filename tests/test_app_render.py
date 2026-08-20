@@ -25,7 +25,7 @@ if ROOT not in sys.path:
 
 import config  # noqa: E402  -- needs ROOT on the path first
 
-MASTER = "🛰️ Master Dashboard"
+MASTER = "🔍 Master Intelligence Dossier"
 
 
 def _run(monkeypatch, tmp_path, demo=False):
@@ -71,9 +71,9 @@ def test_city_and_state_default_to_new_york(monkeypatch, tmp_path):
     assert app.session_state["pf_state"] == "NY"
 
 
-def test_a_saved_profile_beats_the_default(monkeypatch, tmp_path):
-    """The prefill is a convenience for an empty form, not an override --
-    it must never quietly replace a location the user actually saved."""
+def test_app_starts_fresh_without_cached_profile(monkeypatch, tmp_path):
+    """Each new session starts with a blank profile for privacy.
+    Previously saved profiles are not automatically loaded."""
     import database
 
     db = str(tmp_path / "tracker.db")
@@ -84,5 +84,9 @@ def test_a_saved_profile_beats_the_default(monkeypatch, tmp_path):
     })
 
     app = _run(monkeypatch, tmp_path)
-    assert app.session_state["pf_city"] == "Austin"
-    assert app.session_state["pf_state"] == "TX"
+    # Form should start with defaults, not loaded profile
+    assert app.session_state["pf_city"] == "New York"  # Default
+    assert app.session_state["pf_state"] == "NY"  # Default
+    # Not the saved profile values
+    assert app.session_state["pf_first_name"] == ""  # Empty, not "Jane"
+    assert app.session_state["pf_last_name"] == ""  # Empty, not "Doe"

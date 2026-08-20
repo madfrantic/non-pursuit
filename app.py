@@ -79,11 +79,9 @@ st.markdown(
 # ---------------------------------------------------------------------------
 # Session state
 # ---------------------------------------------------------------------------
-# A fresh session (new tab/browser) starts blank unless a baseline profile
-# was already saved on the Dashboard -- in that case, seed the quick fields
-# from it so returning users don't have to retype their info every visit.
-_saved_profile = database.get_latest_target_profile(runtime_mode.db_path())
-profile_state.ensure_profile(st.session_state, _saved_profile)
+# Start each new session with a blank profile for privacy and a fresh slate.
+# Users can explicitly load a saved profile from the dashboard if desired.
+profile_state.ensure_profile(st.session_state, None)  # Pass None to start with blank profile
 profile_state.sync_profile(st.session_state, profile_state.get_profile(st.session_state))
 
 for key, default in {

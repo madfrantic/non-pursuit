@@ -56,25 +56,21 @@ def _switch_to(mode_value):
 
 
 def _seed_profile_fields():
-    """Populate the form's widget keys from the last saved profile, once
-    per session -- so reopening the Dashboard shows what's on file instead
-    of a blank form that looks like nothing was ever saved."""
+    """Initialize form fields with defaults only - start each session fresh.
+    No auto-loading of previously saved profiles to ensure privacy."""
     if st.session_state.get("_profile_fields_seeded"):
         return
     st.session_state._profile_fields_seeded = True
-    saved_profile = database.get_latest_target_profile(runtime_mode.db_path()) or {}
-    profile = profile_state.get_profile(st.session_state)
+    # Initialize all fields with defaults, not saved profile data
     for key, column in _PROFILE_FIELDS.items():
-        st.session_state.setdefault(key, saved_profile.get(column) or _FIELD_DEFAULTS.get(key, ""))
-    st.session_state.setdefault("pf_birth_year", saved_profile.get("birth_year"))
-    st.session_state.setdefault("pf_handle", profile.get("handle", ""))
-    st.session_state.setdefault("pf_domain", profile.get("domain", ""))
-    entities = profile.get("relational_entities") or []
-    first_entity = entities[0] if entities else {}
-    st.session_state.setdefault("pf_associated_name", first_entity.get("name", ""))
-    st.session_state.setdefault("pf_shared_addresses", "\n".join(first_entity.get("shared_historical_addresses", [])))
-    st.session_state.setdefault("pf_shared_phones", "\n".join(first_entity.get("shared_phone_numbers", [])))
-    st.session_state.setdefault("pf_shared_loyalty", "\n".join(first_entity.get("shared_store_loyalty_vectors", [])))
+        st.session_state.setdefault(key, _FIELD_DEFAULTS.get(key, ""))
+    st.session_state.setdefault("pf_birth_year", None)
+    st.session_state.setdefault("pf_handle", "")
+    st.session_state.setdefault("pf_domain", "")
+    st.session_state.setdefault("pf_associated_name", "")
+    st.session_state.setdefault("pf_shared_addresses", "")
+    st.session_state.setdefault("pf_shared_phones", "")
+    st.session_state.setdefault("pf_shared_loyalty", "")
 
 
 def _load_demo_profile():
