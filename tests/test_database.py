@@ -1,3 +1,4 @@
+import json
 import sqlite3
 
 import pytest
@@ -33,6 +34,11 @@ def test_insert_target_profile_stores_all_fields(db_path):
             "current_state": "TX",
             "current_zip_code": "78701",
             "historical_zip_codes": "94105, 10001",
+            "relational_entities": [{
+                "name": "Alex Doe",
+                "shared_historical_addresses": ["1 Main St, Austin, TX 78701"],
+                "shared_phone_numbers": ["555-1111"],
+            }],
         },
     )
     assert row_id == 1
@@ -52,6 +58,10 @@ def test_insert_target_profile_stores_all_fields(db_path):
     assert row["current_state"] == "TX"
     assert row["current_zip_code"] == "78701"
     assert row["historical_zip_codes"] == "94105, 10001"
+    assert json.loads(row["relational_entities"])[0]["name"] == "Alex Doe"
+
+    profile = database.get_latest_target_profile(db_path)
+    assert profile["relational_entities"][0]["shared_phone_numbers"] == ["555-1111"]
 
 
 def test_insert_target_profile_allows_missing_optional_fields(db_path):

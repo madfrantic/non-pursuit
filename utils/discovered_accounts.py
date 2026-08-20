@@ -32,6 +32,14 @@ STATUS_IGNORED = "Ignored"
 
 STATUS_OPTIONS = [STATUS_NEW, STATUS_FLAGGED, STATUS_CLOSED, STATUS_IGNORED]
 
+# Avatar verification: user confirms "yes, that's me" or "not my account".
+# Defaults to unverified so audit exports don't accidentally include false positives.
+VERIFIED_UNREVIEWED = "unreviewed"
+VERIFIED_CONFIRMED = "confirmed"
+VERIFIED_FALSE_POSITIVE = "false_positive"
+
+VERIFICATION_OPTIONS = [VERIFIED_UNREVIEWED, VERIFIED_CONFIRMED, VERIFIED_FALSE_POSITIVE]
+
 # States meaning "the user is finished with this row", which is what makes
 # it eligible for retention cleanup. Flagged-for-closure is deliberately
 # excluded -- that's still open work.
@@ -51,14 +59,25 @@ def _connect(db_path: str):
             category TEXT,
             target_identifier TEXT NOT NULL,
             profile_url TEXT,
+            avatar_url TEXT,
             confidence TEXT NOT NULL,
             status TEXT NOT NULL,
+            verification_status TEXT NOT NULL,
             discovered_date TEXT NOT NULL,
             updated_at TEXT NOT NULL,
             UNIQUE(platform, target_identifier)
         )
         """
     )
+    # Graceful schema migration: add avatar_url and verification_status if missing
+    try:
+        conn.execute("ALTER TABLE discovered_accounts ADD COLUMN avatar_url TEXT")
+    except Exception:
+        pass
+    try:
+        conn.execute("ALTER TABLE discovered_accounts ADD COLUMN verification_status TEXT NOT NULL DEFAULT 'unreviewed'")
+    except Exception:
+        pass
     conn.commit()
     try:
         yield conn
@@ -74,10 +93,10 @@ def init_db(db_path: str) -> None:
 def save_discoveries(db_path: str, rows: list) -> int:
     """Upsert scan results. Returns how many rows were written.
 
-    ON CONFLICT refreshes only what the scanner owns. status and
-    discovered_date are left untouched so re-running a scan never
-    overwrites the user's triage or backdates when something was first
-    seen.
+    ON CONFLICT refreshes only what the scanner owns. status, discovered_date,
+    and verification_status are left untouched so re-running a scan never
+    overwrites the user's triage, backdates when something was first seen, or
+    resets their verification choice.
     """
     if not rows:
         return 0
@@ -89,8 +108,10 @@ def save_discoveries(db_path: str, rows: list) -> int:
             row.get("category", ""),
             row["target_identifier"],
             row.get("profile_url", ""),
+            row.get("avatar_url", ""),
             row["confidence"],
             STATUS_NEW,
+            VERIFIED_UNREVIEWED,
             today,
             today,
         )
@@ -101,12 +122,13 @@ def save_discoveries(db_path: str, rows: list) -> int:
         conn.executemany(
             """
             INSERT INTO discovered_accounts
-                (platform, category, target_identifier, profile_url,
-                 confidence, status, discovered_date, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                (platform, category, target_identifier, profile_url, avatar_url,
+                 confidence, status, verification_status, discovered_date, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(platform, target_identifier) DO UPDATE SET
                 confidence = excluded.confidence,
                 profile_url = excluded.profile_url,
+                avatar_url = excluded.avatar_url,
                 category = excluded.category,
                 updated_at = excluded.updated_at
             """,
@@ -132,6 +154,18 @@ def update_status(db_path: str, row_id: int, status: str) -> None:
         conn.execute(
             "UPDATE discovered_accounts SET status = ?, updated_at = ? WHERE id = ?",
             (status, datetime.now().strftime("%Y-%m-%d"), row_id),
+        )
+        conn.commit()
+
+
+def update_verification(db_path: str, row_id: int, verification: str) -> None:
+    """Mark a discovered account as user-verified (match/false positive/unreviewed)."""
+    if verification not in VERIFICATION_OPTIONS:
+        raise ValueError(f"Unknown verification status: {verification}")
+    with _connect(db_path) as conn:
+        conn.execute(
+            "UPDATE discovered_accounts SET verification_status = ?, updated_at = ? WHERE id = ?",
+            (verification, datetime.now().strftime("%Y-%m-%d"), row_id),
         )
         conn.commit()
 

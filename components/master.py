@@ -21,6 +21,7 @@ via a session flag and automatically runs the reconnaissance sweep. The
 sweep is cached per unique (handle, email) pair, so changing just the
 location doesn't re-scan, but a new handle does.
 """
+import asyncio
 import streamlit as st
 
 import config
@@ -36,8 +37,123 @@ from tracker import get_all_requests
 from components import footprint as footprint_component
 from components import results as results_component
 from applog import get_logger
+from osint_aggregator import run_full_osint_sweep
+import profile_state
 
 _log = get_logger("master")
+
+_OSINT_STATUS_LABELS = {
+    "high": "High",
+    "medium": "Medium",
+    "low": "Low",
+    "unavailable": "Unavailable",
+}
+
+
+def _osint_profile():
+    profile = profile_state.get_profile(st.session_state)
+    return {
+        "name": profile["full_name"],
+        "handle": profile["handle"],
+        "domain": profile["domain"],
+        "state": profile["state"],
+    }
+
+
+def _osint_status(result):
+    if result.get("status") == "unavailable":
+        return "unavailable"
+    count = result.get("count", result.get("cert_count", 0))
+    if count > 3:
+        return "high"
+    if count:
+        return "medium"
+    return "low"
+
+
+def _render_osint_records(result):
+    records = result.get("records", [])
+    if result.get("module") == "infrastructure":
+        records = result.get("certificates", [])
+        domain_info = result.get("domain_info") or {}
+        if domain_info:
+            records = [domain_info, *records]
+
+    if not records:
+        st.caption("No records returned.")
+        return
+
+    for record in records[:8]:
+        if not isinstance(record, dict):
+            st.write(str(record))
+            continue
+        label = next(
+            (record.get(key) for key in (
+                "entity_name", "case_name", "contributor_name", "email", "subdomain", "domain"
+            ) if record.get(key)),
+            "Finding",
+        )
+        detail = " · ".join(
+            str(record[key]) for key in (
+                "filing_type", "filing_date", "court", "docket_number", "repository", "issuer", "registrar"
+            ) if record.get(key)
+        )
+        with st.container(border=True):
+            st.markdown(f"**{label}**")
+            if detail:
+                st.caption(detail)
+            url = record.get("url") or record.get("court_url")
+            if url:
+                st.link_button("Open source", url, width="content")
+
+
+def _render_osint_vector(result, title):
+    badge = _OSINT_STATUS_LABELS[_osint_status(result)]
+    st.markdown(f"##### {title}  ·  `{badge}`")
+    _render_osint_records(result)
+
+
+def _render_osint_sweep():
+    """Render the five-vector passive OSINT workspace and export control."""
+    st.caption("Public, passive lookups only. Findings remain in this session until you append them to the audit package.")
+    profile = profile_state.get_profile(st.session_state)
+    st.markdown(
+        f"**Target profile:** {profile['full_name'] or 'No name saved'} · "
+        f"{profile['handle'] or 'No handle'} · {profile['domain'] or 'No domain'}"
+    )
+
+    if st.button("Run passive OSINT sweep", type="primary", width="content"):
+        with st.spinner("Running five passive vectors concurrently..."):
+            try:
+                st.session_state.osint_findings = asyncio.run(run_full_osint_sweep(_osint_profile()))
+                st.session_state.pop("audit_zip", None)
+            except Exception as exc:
+                _log.error("OSINT sweep failed: %s", exc)
+                st.error("The sweep could not be completed. No findings were saved.")
+
+    findings = st.session_state.get("osint_findings")
+    if not findings:
+        st.info("Enter a handle or domain, then run a sweep. A full name is taken from the saved profile.")
+        return
+
+    if st.button("Append raw findings to audit export", width="content"):
+        st.session_state.osint_findings_appended = True
+        st.session_state.pop("audit_zip", None)
+        st.success("Raw findings will be included in the next audit ZIP as audit_summary.json.")
+
+    entity_tab, legal_tab, digital_tab = st.tabs([
+        "🏢 Entities & Filings",
+        "🏛️ Legal & Dockets",
+        "💻 Digital & Domain Footprints",
+    ])
+    with entity_tab:
+        _render_osint_vector(findings["sec"], "SEC disclosures")
+        _render_osint_vector(findings["fec"], "FEC disclosures")
+    with legal_tab:
+        _render_osint_vector(findings["courtlistener"], "CourtListener dockets")
+    with digital_tab:
+        _render_osint_vector(findings["github"], "GitHub email exposure")
+        _render_osint_vector(findings["infrastructure"], "crt.sh and RDAP infrastructure")
 
 
 def _render_deadline_strip():
@@ -275,10 +391,11 @@ def render(brokers_df):
         st.markdown("##### ⚖️ CCPA statutory countdowns")
         _render_deadline_strip()
 
-    exposure_tab, map_tab, accounts_tab = st.tabs([
+    exposure_tab, map_tab, accounts_tab, osint_tab = st.tabs([
         "🏢 Broker exposure",
         "🕸️ Relational Entity Exposure Map",
         "👤 Discovered accounts",
+        "🛰️ Passive OSINT sweep",
     ])
 
     with exposure_tab:
@@ -297,3 +414,6 @@ def render(brokers_df):
         st.divider()
         st.markdown("##### or run a manual scan")
         footprint_component.render(show_title=False)
+
+    with osint_tab:
+        _render_osint_sweep()

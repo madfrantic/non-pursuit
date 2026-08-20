@@ -14,6 +14,7 @@ import io
 import json
 import os
 from datetime import datetime
+from xml.sax.saxutils import escape
 
 import config
 
@@ -24,7 +25,8 @@ CSV_FIELDS = [
 CSV_HEADERS = ["Broker", "Channel", "Date Sent", "Deadline", "Status", "Days Remaining", "Notes"]
 
 
-def build_json_export(requests: list[dict], exposure_checks: dict) -> bytes:
+def build_json_export(requests: list[dict], exposure_checks: dict,
+                      discovered_accounts: list[dict] | None = None) -> bytes:
     """requests: from tracker.get_all_requests(). exposure_checks: from
     exposure_store.get_all_checks(). Both are already plain dict/list data,
     so this just adds an export timestamp and serializes."""
@@ -32,6 +34,7 @@ def build_json_export(requests: list[dict], exposure_checks: dict) -> bytes:
         "exported_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "campaign_requests": requests,
         "exposure_checks": exposure_checks,
+        "discovered_accounts": discovered_accounts or [],
     }
     return json.dumps(payload, indent=2).encode("utf-8")
 
@@ -112,6 +115,9 @@ def build_pdf_export(requests: list[dict], exposure_checks: dict) -> bytes:
         "NPHeaderCell", parent=cell_style, textColor=colors.white, fontName="Helvetica-Bold"
     )
 
+    def cell_text(value) -> str:
+        return escape(str(value))
+
     story = []
     if os.path.exists(config.APP_LOGO_PATH):
         logo = Image(config.APP_LOGO_PATH, width=0.55 * inch, height=0.55 * inch)
@@ -145,12 +151,12 @@ def build_pdf_export(requests: list[dict], exposure_checks: dict) -> bytes:
             if r.get("is_overdue"):
                 status_text = f'<font color="{config.ERROR_COLOR}"><b>{status_text} (OVERDUE)</b></font>'
             table_rows.append([
-                Paragraph(str(r.get("broker_name", "")), cell_style),
-                Paragraph(str(r.get("channel", "")), cell_style),
-                Paragraph(str(r.get("date_sent", "")), cell_style),
-                Paragraph(str(r.get("deadline", "")), cell_style),
+                Paragraph(cell_text(r.get("broker_name", "")), cell_style),
+                Paragraph(cell_text(r.get("channel", "")), cell_style),
+                Paragraph(cell_text(r.get("date_sent", "")), cell_style),
+                Paragraph(cell_text(r.get("deadline", "")), cell_style),
                 Paragraph(status_text, cell_style),
-                Paragraph(str(r.get("notes") or "—"), cell_style),
+                Paragraph(cell_text(r.get("notes") or "-"), cell_style),
             ])
         col_widths = [1.05 * inch, 0.75 * inch, 0.85 * inch, 0.85 * inch, 1.05 * inch, 1.65 * inch]
         story.append(_styled_table(table_rows, col_widths, primary_color))
@@ -163,9 +169,9 @@ def build_pdf_export(requests: list[dict], exposure_checks: dict) -> bytes:
         exp_rows = [[Paragraph(h, header_cell_style) for h in ["Category", "Result", "Checked"]]]
         for category, entry in sorted(exposure_checks.items()):
             exp_rows.append([
-                Paragraph(category, cell_style),
-                Paragraph(str(entry.get("value", "")), cell_style),
-                Paragraph(str(entry.get("checked_at", "")), cell_style),
+                Paragraph(cell_text(category), cell_style),
+                Paragraph(cell_text(entry.get("value", "")), cell_style),
+                Paragraph(cell_text(entry.get("checked_at", "")), cell_style),
             ])
         story.append(_styled_table(exp_rows, [2.3 * inch, 2.3 * inch, 1.6 * inch], primary_color))
     else:

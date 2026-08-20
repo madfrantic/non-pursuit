@@ -17,10 +17,12 @@ import config
 import runtime_mode
 import database
 import exposure_store
+import facial_recognition
+import profile_state
 from tracker import get_all_requests
 from validators import is_valid_email
 
-_MODE_RESULTS = "🔍 Results"
+_MODE_RESULTS = "🛰️ Master Dashboard"
 _MODE_LETTERS = "✉️ Data Broker Deletion Letters"
 _MODE_TRACKER = "📈 Campaign Tracker"
 
@@ -35,6 +37,13 @@ _PROFILE_FIELDS = {
     "pf_state": "current_state",
     "pf_zip": "current_zip_code",
     "pf_historical_zips": "historical_zip_codes",
+}
+
+# Prefilled only when nothing is on file -- a saved profile always wins,
+# so this never overwrites a real answer with a guess.
+_FIELD_DEFAULTS = {
+    "pf_city": "New York",
+    "pf_state": "NY",
 }
 
 
@@ -53,10 +62,19 @@ def _seed_profile_fields():
     if st.session_state.get("_profile_fields_seeded"):
         return
     st.session_state._profile_fields_seeded = True
-    profile = database.get_latest_target_profile(runtime_mode.db_path()) or {}
+    saved_profile = database.get_latest_target_profile(runtime_mode.db_path()) or {}
+    profile = profile_state.get_profile(st.session_state)
     for key, column in _PROFILE_FIELDS.items():
-        st.session_state.setdefault(key, profile.get(column) or "")
-    st.session_state.setdefault("pf_birth_year", profile.get("birth_year"))
+        st.session_state.setdefault(key, saved_profile.get(column) or _FIELD_DEFAULTS.get(key, ""))
+    st.session_state.setdefault("pf_birth_year", saved_profile.get("birth_year"))
+    st.session_state.setdefault("pf_handle", profile.get("handle", ""))
+    st.session_state.setdefault("pf_domain", profile.get("domain", ""))
+    entities = profile.get("relational_entities") or []
+    first_entity = entities[0] if entities else {}
+    st.session_state.setdefault("pf_associated_name", first_entity.get("name", ""))
+    st.session_state.setdefault("pf_shared_addresses", "\n".join(first_entity.get("shared_historical_addresses", [])))
+    st.session_state.setdefault("pf_shared_phones", "\n".join(first_entity.get("shared_phone_numbers", [])))
+    st.session_state.setdefault("pf_shared_loyalty", "\n".join(first_entity.get("shared_store_loyalty_vectors", [])))
 
 
 def _load_demo_profile():
@@ -70,10 +88,31 @@ def _load_demo_profile():
     st.session_state.pf_zip = ""
     st.session_state.pf_birth_year = None
     st.session_state.pf_historical_zips = ""
+    st.session_state.pf_associated_name = ""
+    st.session_state.pf_shared_addresses = ""
+    st.session_state.pf_shared_phones = ""
+    st.session_state.pf_shared_loyalty = ""
     st.session_state.record_url = config.DEMO_PROFILE["record_url"]
 
 
 def _save_profile():
+    full_name = " ".join(
+        part for part in [
+            st.session_state.pf_first_name,
+            st.session_state.pf_middle_name,
+            st.session_state.pf_last_name,
+        ] if part
+    )
+    profile_state.sync_profile(st.session_state, {
+        "full_name": full_name,
+        "email": st.session_state.pf_email,
+        "handle": st.session_state.pf_handle,
+        "domain": st.session_state.pf_domain,
+        "city": st.session_state.pf_city,
+        "state": st.session_state.pf_state,
+        "zip_code": st.session_state.pf_zip,
+        "phone": st.session_state.pf_phone,
+    })
     database.insert_target_profile(
         runtime_mode.db_path(),
         {
@@ -87,16 +126,17 @@ def _save_profile():
             "current_state": st.session_state.pf_state,
             "current_zip_code": st.session_state.pf_zip,
             "historical_zip_codes": st.session_state.pf_historical_zips,
+            "relational_entities": ([{
+                "name": st.session_state.pf_associated_name.strip(),
+                "shared_historical_addresses": [line.strip() for line in st.session_state.pf_shared_addresses.splitlines() if line.strip()],
+                "shared_phone_numbers": [line.strip() for line in st.session_state.pf_shared_phones.splitlines() if line.strip()],
+                "shared_store_loyalty_vectors": [line.strip() for line in st.session_state.pf_shared_loyalty.splitlines() if line.strip()],
+            }] if st.session_state.pf_associated_name.strip() else []),
         },
     )
-    # The rest of the app (Results/Letters/Tracker) reads these plain
-    # session keys rather than re-deriving them from the DB profile.
-    st.session_state.user_name = " ".join(
-        p for p in [st.session_state.pf_first_name, st.session_state.pf_middle_name, st.session_state.pf_last_name] if p
-    )
-    st.session_state.user_email = st.session_state.pf_email
-    st.session_state.user_phone = st.session_state.pf_phone
-    st.session_state.user_location = ", ".join(p for p in [st.session_state.pf_city, st.session_state.pf_state] if p)
+    # Signal to Master Dashboard: new or changed profile, trigger auto-scan.
+    # The flag is consumed after scan completes so we don't rescan on every rerun.
+    st.session_state.profile_saved_auto_scan = True
 
 
 def render():
@@ -112,9 +152,13 @@ def render():
             contact_cols[0].text_input("✉️ Email", key="pf_email", placeholder="you@example.com")
             contact_cols[1].text_input("📱 Phone", key="pf_phone", placeholder="Optional")
 
+            target_cols = st.columns(2)
+            target_cols[0].text_input("👤 Username / handle", key="pf_handle", placeholder="Optional")
+            target_cols[1].text_input("🌐 Domain", key="pf_domain", placeholder="Optional, e.g. example.com")
+
             location_cols = st.columns(2)
-            location_cols[0].text_input("🏙️ City", key="pf_city", placeholder="Austin")
-            location_cols[1].text_input("📍 State", key="pf_state", placeholder="TX")
+            location_cols[0].text_input("🏙️ City", key="pf_city", placeholder="New York")
+            location_cols[1].text_input("📍 State", key="pf_state", placeholder="NY")
 
             with st.expander("🕰️ Previous names & addresses"):
                 extra_cols = st.columns(2)
@@ -124,6 +168,13 @@ def render():
                 )
                 st.text_input("📮 ZIP", key="pf_zip", placeholder="Optional")
                 st.text_area("📮 Prior ZIPs", key="pf_historical_zips", placeholder="94105, 10001", height=80)
+
+            with st.expander("🔗 Household & Relational Entities (Ex-Spouses, Co-habitants, Shared Addresses)"):
+                st.caption("Optional local-only mapping for former household and shared-account relationships.")
+                st.text_input("👤 Associated Individual Full Name", key="pf_associated_name", placeholder="Ex-spouse or former co-habitant")
+                st.text_area("🏠 Historical Shared Addresses (Street, City, State, ZIP)", key="pf_shared_addresses", placeholder="One address per line", height=90)
+                st.text_area("📞 Shared Landlines / Phone Numbers", key="pf_shared_phones", placeholder="One per line", height=90)
+                st.text_area("🛍️ Shared Store Card / Loyalty Vectors (Optional)", key="pf_shared_loyalty", placeholder="Retailer or loyalty-account relationship", height=90)
 
             submitted = st.form_submit_button("💾 Save", type="primary", width="stretch")
             if submitted:
@@ -136,9 +187,40 @@ def render():
                     st.toast("Profile saved!")
                     st.rerun()
 
+    if runtime_mode.facial_recognition_enabled():
+        with st.container(border=True):
+            st.markdown("##### 🧬 Biometric verification (optional)")
+            st.caption(
+                "Upload a clear photo of yourself and the Master Dashboard will suggest — never "
+                "auto-confirm — whether a discovered account's avatar looks like you. Nothing here "
+                "is written to disk: the photo lives only in this browser session and is gone when "
+                "you close the tab."
+            )
+            uploaded = st.file_uploader(
+                "Upload Master Face Image", type=["jpg", "jpeg", "png"],
+                key="master_face_uploader",
+                help="Used only in-memory for on-device comparison against discovered avatars.",
+            )
+            if uploaded is not None:
+                st.session_state.master_face_image_bytes = uploaded.getvalue()
+                st.image(uploaded, width=96, caption="Master photo (session only)")
+            if st.session_state.get("master_face_image_bytes") and st.button(
+                "🗑️ Remove master photo", key="clear_master_face"
+            ):
+                st.session_state.master_face_image_bytes = None
+                st.rerun()
+            if not facial_recognition.facial_recognition_available():
+                st.caption(
+                    "⚠️ The optional `deepface` dependency isn't installed, so matching won't run "
+                    "yet — the photo can still be uploaded, but no suggestion will be shown until "
+                    "it's available."
+                )
+    else:
+        st.session_state.master_face_image_bytes = None
+
     action_cols = st.columns([2, 1])
     if action_cols[0].button(
-        "🌐 See my results", type="primary", width="stretch",
+        "🛰️ Open my Master Dashboard", type="primary", width="stretch",
         disabled=not st.session_state.user_name,
     ):
         _switch_to(_MODE_RESULTS)
@@ -153,7 +235,7 @@ def render():
     )
     if stale_count:
         item_word = "item" if stale_count == 1 else "items"
-        st.warning(f"⏰ {stale_count} {item_word} on your Results page haven't been rechecked in {config.RECHECK_STALE_DAYS}+ days.")
+        st.warning(f"⏰ {stale_count} {item_word} on your Master Dashboard haven't been rechecked in {config.RECHECK_STALE_DAYS}+ days.")
 
     requests = get_all_requests(runtime_mode.db_path())
     total = len(requests)

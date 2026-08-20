@@ -32,7 +32,10 @@ shouldn't quietly accept unverified connections to make its numbers look
 better.
 """
 import asyncio
+import ipaddress
 import random
+import socket
+from urllib.parse import urlsplit
 
 import aiohttp
 
@@ -47,10 +50,12 @@ ERROR = "ERROR"
 
 # Status codes that mean "an edge firewall answered, not the site". The
 # account may well exist behind the gate, so these are POSSIBLE rather
-# than a miss.
-WAF_STATUS_CODES = frozenset({403, 503})
+# than a miss. 999 is LinkedIn's own non-standard refusal code; 429 is a
+# rate limit, which says nothing about whether the account exists.
+WAF_STATUS_CODES = frozenset({403, 429, 503, 999})
 
-DEFAULT_CONCURRENCY = 15
+DEFAULT_CONCURRENCY = 50
+DEFAULT_PER_HOST = 4
 DEFAULT_TIMEOUT = 15
 # Small random pause before each request. Not stealth -- it just keeps a
 # 700-site sweep from arriving as one synchronised burst that edge
@@ -94,6 +99,30 @@ def build_request(site: dict, account: str) -> dict:
     }
 
 
+def validate_target_url(url: str) -> str | None:
+    """Return a rejection reason for URLs that should never be requested."""
+    try:
+        parsed = urlsplit(url)
+        hostname = parsed.hostname
+        if parsed.scheme != "https" or not hostname or parsed.username or parsed.password:
+            return "unsafe URL scheme or authority"
+        port = parsed.port or 443
+    except ValueError:
+        return "malformed URL"
+
+    try:
+        addresses = socket.getaddrinfo(hostname, port, type=socket.SOCK_STREAM)
+    except socket.gaierror:
+        return None
+
+    for address in addresses:
+        ip = ipaddress.ip_address(address[4][0])
+        if any((ip.is_private, ip.is_loopback, ip.is_link_local, ip.is_reserved,
+                ip.is_multicast, ip.is_unspecified)):
+            return "target resolves to a private or reserved address"
+    return None
+
+
 def classify(site: dict, status_code: int | None, content: str) -> tuple[str, str]:
     """Sort one response into (verdict, reason).
 
@@ -104,7 +133,8 @@ def classify(site: dict, status_code: int | None, content: str) -> tuple[str, st
       4. m_code == status     -> NOT_FOUND (skipped when m_code == e_code)
       5. e_code + e_string    -> CONFIRMED
       6. bare 200             -> POSSIBLE (soft 200 / JS-rendered page)
-      7. anything else        -> NOT_FOUND
+    7. 3xx without following a redirect -> POSSIBLE
+    8. anything else        -> NOT_FOUND
 
     A site that defines no e_string (2 of them) can only ever match on
     status code, which is thin evidence for asserting someone owns an
@@ -114,7 +144,7 @@ def classify(site: dict, status_code: int | None, content: str) -> tuple[str, st
         return ERROR, "no response"
 
     if status_code in WAF_STATUS_CODES:
-        return POSSIBLE, f"blocked by WAF/CAPTCHA (HTTP {status_code})"
+        return POSSIBLE, f"manual review required — blocked by WAF/CAPTCHA (HTTP {status_code})"
 
     e_code = site.get("e_code")
     m_code = site.get("m_code")
@@ -136,6 +166,9 @@ def classify(site: dict, status_code: int | None, content: str) -> tuple[str, st
     if status_code == 200:
         return POSSIBLE, "HTTP 200 without a definitive match"
 
+    if 300 <= status_code < 400:
+        return POSSIBLE, f"redirect requires review (HTTP {status_code})"
+
     return NOT_FOUND, f"no match (HTTP {status_code})"
 
 
@@ -144,12 +177,44 @@ def _protection_note(site: dict) -> str:
     return ", ".join(protections)
 
 
+MANUAL_REVIEW_REASON = "manual review required"
+
+
+def is_manual_review(result: dict) -> bool:
+    """True for rows a human has to check by hand because an edge firewall
+    answered instead of the platform. The UI labels these differently from
+    an ordinary ambiguous response -- 'go look yourself' is a different
+    instruction than 'this response was unclear'."""
+    return MANUAL_REVIEW_REASON in (result.get("reason") or "")
+
+
+def _degrade_waf_error(site: dict, verdict: str, reason: str) -> tuple[str, str]:
+    """Route any non-definitive answer from a WAF-protected site to
+    manual review.
+
+    LinkedIn is the case this exists for, and it is worse than a simple
+    block. It answers automated GETs with HTTP 999 or 403 from some
+    networks, drops the connection from others, and from a third set
+    returns a perfectly ordinary 200 -- an auth wall or interstitial that
+    contains no profile and proves nothing. All three are the same fact:
+    this platform cannot be resolved automatically. Reporting the 200 as
+    an ordinary ambiguous row would imply a future rescan might settle
+    it, which it never will.
+
+    NOT_FOUND survives untouched -- a real 404 is a genuine signal that
+    the handle isn't there -- as does CONFIRMED, on the rare protected
+    site that still returns its own exists-string.
+    """
+    if verdict in (POSSIBLE, ERROR) and "waf" in _protection_note(site).lower():
+        return POSSIBLE, f"{MANUAL_REVIEW_REASON} — not resolvable automatically ({reason})"
+    return verdict, reason
+
+
 async def _check_site(session, site, account, semaphore, timeout):
-    request = build_request(site, account)
     result = {
-        "platform": site["name"],
+        "platform": site.get("name", "Unknown platform"),
         "category": site.get("cat", ""),
-        "profile_url": request["display_url"],
+        "profile_url": "",
         "target_identifier": account,
         "protection": _protection_note(site),
     }
@@ -157,30 +222,40 @@ async def _check_site(session, site, account, semaphore, timeout):
     async with semaphore:
         await asyncio.sleep(random.uniform(*JITTER_RANGE_MS) / 1000)
         try:
-            async with session.request(
-                request["method"],
-                request["url"],
-                headers=request["headers"],
-                data=request["body"],
-                timeout=aiohttp.ClientTimeout(total=timeout),
-                allow_redirects=True,
-            ) as response:
-                content = await response.text(errors="ignore")
-                verdict, reason = classify(site, response.status, content)
+            request = build_request(site, account)
+            result["profile_url"] = request["display_url"]
+            rejection = await asyncio.to_thread(validate_target_url, request["url"])
+            if rejection:
+                verdict, reason = ERROR, rejection
+            else:
+                async with session.request(
+                    request["method"],
+                    request["url"],
+                    headers={key: value for key, value in request["headers"].items()
+                             if key.lower() not in {"host", "content-length"}},
+                    data=request["body"],
+                    timeout=aiohttp.ClientTimeout(total=timeout),
+                    allow_redirects=False,
+                ) as response:
+                    content = await response.text(errors="ignore")
+                    verdict, reason = classify(site, response.status, content)
         except asyncio.TimeoutError:
             verdict, reason = ERROR, "timed out"
         except Exception as exc:
-            _log.info("Check failed for %s: %s", site["name"], exc)
+            _log.info("Check failed for %s: %s", site.get("name", "unknown"), exc)
             verdict, reason = ERROR, "request failed"
 
+    verdict, reason = _degrade_waf_error(site, verdict, reason)
     result["confidence"] = verdict
     result["reason"] = reason
     return result
 
 
-async def _scan(account, sites, concurrency, timeout, on_progress):
+async def _scan(account, sites, concurrency, timeout, on_progress, per_host):
     semaphore = asyncio.Semaphore(concurrency)
-    connector = aiohttp.TCPConnector(limit=concurrency, ttl_dns_cache=300)
+    connector = aiohttp.TCPConnector(
+        limit=concurrency, limit_per_host=per_host, ttl_dns_cache=300
+    )
     results = []
 
     async with aiohttp.ClientSession(connector=connector) as session:
@@ -200,7 +275,8 @@ async def _scan(account, sites, concurrency, timeout, on_progress):
 
 
 def scan_account(account: str, sites: list, concurrency: int = DEFAULT_CONCURRENCY,
-                 timeout: int = DEFAULT_TIMEOUT, on_progress=None) -> list:
+                 timeout: int = DEFAULT_TIMEOUT, on_progress=None,
+                 per_host: int = DEFAULT_PER_HOST) -> list:
     """Scan one handle across `sites` and return every result, including
     misses -- filtering is the caller's decision, and the miss/error
     counts are what make a clean scan distinguishable from a broken one.
@@ -213,7 +289,7 @@ def scan_account(account: str, sites: list, concurrency: int = DEFAULT_CONCURREN
     account = (account or "").strip()
     if not account or not sites:
         return []
-    return asyncio.run(_scan(account, sites, concurrency, timeout, on_progress))
+    return asyncio.run(_scan(account, sites, concurrency, timeout, on_progress, per_host))
 
 
 def summarize(results: list) -> dict:
@@ -225,9 +301,41 @@ def summarize(results: list) -> dict:
     return summary
 
 
+def _extract_social_avatar_url(platform: str, handle: str) -> str:
+    """Build avatar URLs for platforms where they're accessible without auth.
+
+    Most social platforms don't expose avatars for unauthenticated lookups,
+    but a few have public CDN paths. This list is conservative: only include
+    platforms where the avatar is reliably at a predictable URL.
+    """
+    handle_clean = (handle or "").lower().strip()
+    if not handle_clean:
+        return ""
+
+    avatar_builders = {
+        "X": lambda h: f"https://twitter.com/{h}/photo",
+        "Instagram": lambda h: f"https://www.instagram.com/{h}/",
+        "GitHub (User)": lambda h: f"https://api.github.com/users/{h}",
+        "YouTube Channel": lambda h: f"https://www.youtube.com/@{h}",
+    }
+    builder = avatar_builders.get(platform)
+    return builder(handle_clean) if builder else ""
+
+
 def discoveries(results: list) -> list:
     """Just the rows worth showing a human: confirmed hits first, then
-    the ones needing review. NOT_FOUND and ERROR are dropped."""
-    keep = [r for r in results if r["confidence"] in (CONFIRMED, POSSIBLE)]
+    the ones needing review. NOT_FOUND and ERROR are dropped.
+
+    Adds avatar URLs for social platforms where available, so the UI
+    can display a visual confirmation card. Only extracts avatars if
+    target_identifier is present (it always is in real scans, but test
+    fixtures may omit it).
+    """
+    keep = []
+    for r in results:
+        if r["confidence"] in (CONFIRMED, POSSIBLE):
+            if "avatar_url" not in r and "target_identifier" in r:
+                r["avatar_url"] = _extract_social_avatar_url(r["platform"], r["target_identifier"])
+            keep.append(r)
     order = {CONFIRMED: 0, POSSIBLE: 1}
     return sorted(keep, key=lambda r: (order[r["confidence"]], r["platform"].lower()))

@@ -22,6 +22,7 @@ or six months stale.
 from datetime import datetime, timezone
 
 import streamlit as st
+import profile_state
 import requests
 
 import config
@@ -114,6 +115,13 @@ def _get_client_context():
     return {"ip": "Unavailable", "city": "Unknown", "region": "Unknown", "country": "Unknown", "org": "Unknown ISP"}
 
 
+def _escape_graphviz_label(value: str) -> str:
+    return (
+        str(value).replace("\\", "\\\\").replace('"', '\\"')
+        .replace("\r", "").replace("\n", "\\n")
+    )
+
+
 def _flag_emoji(country_code):
     """ISO 3166-1 alpha-2 code -> flag emoji, via the regional-indicator
     trick (each letter maps to a Unicode regional-indicator symbol)."""
@@ -158,14 +166,64 @@ def _parse_device_info(user_agent):
     return f"{browser} on {os_name}"
 
 
-def render(brokers_df):
-    st.title("Your results")
+def render_entity_map():
+    """The household/known-associate graph, drawn from the saved profile.
+
+    Its own function so the master dashboard can place it in a tab
+    without dragging the whole results page along. It also has to be
+    isolated: built inline, its loop variable shadowed the user's own
+    name, and every dork link rendered after it searched for the
+    associate instead of the user.
+    """
+    profile = database.get_latest_target_profile(runtime_mode.db_path()) or {}
+    entities = profile.get("relational_entities") or []
+
+    st.subheader("🕸️ Relational Entity Exposure Map")
+    if not entities:
+        st.info("⚪ No Linked Entities Detected")
+        return
+
+    st.success("⚖️ Statutory Relational Severance Clause active")
+    st.caption(
+        "A local relationship map for reviewing household and known-associate linkages. "
+        "It does not prove that a broker maintains each link."
+    )
+    lines = [
+        "digraph {", "rankdir=LR;",
+        'node [shape=box, style="rounded,filled", fillcolor="#16213a", fontcolor="white"];',
+        'user [label="👤 Primary User"];',
+    ]
+    for index, entity in enumerate(entities):
+        entity_id = f"entity{index}"
+        entity_name = _escape_graphviz_label(entity.get("name") or "Associated entity")
+        lines.append(f'{entity_id} [label="👥 {entity_name}"];')
+        addresses = entity.get("shared_historical_addresses") or []
+        loyalty = entity.get("shared_store_loyalty_vectors") or []
+        vector_id = f"vector{index}"
+        vector_label = "Address / Retail Co-Op" if addresses or loyalty else "Household Linkage"
+        lines.append(f'{vector_id} [label="🔗 Shared Vector: {vector_label}"];')
+        lines.append(f"user -> {vector_id};")
+        lines.append(f"{vector_id} -> {entity_id};")
+        for broker in ("WhitePages", "Spokeo", "BeenVerified", "Radaris"):
+            broker_id = f"{entity_id}_{broker.lower()}"
+            lines.append(
+                f'{broker_id} [label="🏢 Data Broker Node: {broker}\\nKnown Associates", fillcolor="#3b2a2a"];'
+            )
+            lines.append(f"{entity_id} -> {broker_id} [color=red];")
+    lines.append("}")
+    st.graphviz_chart("\n".join(lines), width="stretch")
+
+
+def render(brokers_df, show_title=True):
+    if show_title:
+        st.title("Your results")
     st.caption("Confirm the listings you find, keep track of stale checks, and move from research into a clear removal plan.")
 
-    name = st.session_state.user_name
-    location = st.session_state.user_location
-    email = st.session_state.user_email
-    phone = st.session_state.user_phone
+    profile = profile_state.get_profile(st.session_state)
+    name = profile["full_name"]
+    location = ", ".join(value for value in (profile["city"], profile["state"]) if value)
+    email = profile["email"]
+    phone = profile["phone"]
 
     if not name:
         st.warning("Enter your name on the **Dashboard** first, then come back here to see your results.")
@@ -178,7 +236,15 @@ def render(brokers_df):
         return
 
     persisted = exposure_store.get_all_checks(runtime_mode.db_path())
-    client_context = _get_client_context()
+    allow_network_lookup = st.checkbox(
+        "Reveal approximate network location",
+        value=False,
+        help="This sends your IP address to ipinfo.io for approximate location and ISP data.",
+    )
+    client_context = _get_client_context() if allow_network_lookup else {
+        "ip": "Not requested", "city": "Not requested", "region": "",
+        "country": "", "org": "Not requested",
+    }
     user_agent = st.context.headers.get("User-Agent", "")
     device_label = _parse_device_info(user_agent)
     checked_at = datetime.now(timezone.utc).strftime("%B %d, %Y, %I:%M%p UTC")

@@ -21,11 +21,12 @@ import discovered_accounts
 import exposure_store
 import config
 import runtime_mode
+import ny_sealing
+import profile_state
 
 from components import letters as letters_component
 from components import dashboard as dashboard_component
-from components import results as results_component
-from components import footprint as footprint_component
+from components import master as master_component
 
 database.init_db(runtime_mode.db_path())
 
@@ -81,28 +82,17 @@ st.markdown(
 # was already saved on the Dashboard -- in that case, seed the quick fields
 # from it so returning users don't have to retype their info every visit.
 _saved_profile = database.get_latest_target_profile(runtime_mode.db_path())
-_seeded_name = ""
-_seeded_location = ""
-_seeded_email = ""
-_seeded_phone = ""
-if _saved_profile:
-    _seeded_name = " ".join(
-        part for part in [_saved_profile.get("first_name"), _saved_profile.get("middle_name"), _saved_profile.get("last_name")] if part
-    )
-    _seeded_location = ", ".join(
-        part for part in [_saved_profile.get("current_city"), _saved_profile.get("current_state")] if part
-    )
-    _seeded_email = _saved_profile.get("email_address") or ""
-    _seeded_phone = _saved_profile.get("phone_number") or ""
+profile_state.ensure_profile(st.session_state, _saved_profile)
+profile_state.sync_profile(st.session_state, profile_state.get_profile(st.session_state))
 
 for key, default in {
-    "user_name": _seeded_name,
-    "user_email": _seeded_email,
-    "user_location": _seeded_location,
-    "user_phone": _seeded_phone,
     "record_url": "",
     "listed_confirmed": {},
     "pending_nav": None,
+    "profile_saved_auto_scan": False,
+    "_auto_scan_last_pair": None,
+    "_auto_scan_in_progress": False,
+    "master_face_image_bytes": None,
 }.items():
     if key not in st.session_state:
         st.session_state[key] = default
@@ -177,8 +167,7 @@ mode = st.sidebar.radio(
     "Select tool",
     [
         "📊 Dashboard",
-        "🔍 Results",
-        "🌐 Online Footprint",
+        "🛰️ Master Dashboard",
         "✉️ Data Broker Deletion Letters",
         "⚖️ NY Expungement Guidance",
         "🚫 Google De-Indexing",
@@ -201,9 +190,15 @@ if runtime_mode.is_demo_mode():
                          help="Seed this session with a synthetic campaign already in progress."):
         seeded = demo_data.seed_demo_campaign(runtime_mode.db_path())
         database.insert_target_profile(runtime_mode.db_path(), demo_data.DEMO_PROFILE)
-        st.session_state.user_name = demo_data.DEMO_NAME
-        st.session_state.user_location = demo_data.DEMO_LOCATION
-        st.session_state.user_email = demo_data.DEMO_EMAIL
+        demo_city, _, demo_state = demo_data.DEMO_LOCATION.partition(", ")
+        profile_state.sync_profile(st.session_state, {
+            "full_name": demo_data.DEMO_NAME,
+            "email": demo_data.DEMO_EMAIL,
+            "city": demo_city,
+            "state": demo_state,
+            "handle": "",
+            "domain": "",
+        })
         st.session_state.record_url = demo_data.DEMO_RECORD_URL
         st.session_state.demo_loaded = True
         st.toast(
@@ -218,8 +213,9 @@ if runtime_mode.is_demo_mode():
 # broker, which is wasted work on every unrelated widget interaction.
 _audit_requests = get_all_requests(runtime_mode.db_path())
 if _audit_requests:
-    if st.sidebar.button("📦 Build audit trail (.ZIP)", width="stretch",
+    if st.sidebar.button("📦 Download Complete Audit Trail (.ZIP)", width="stretch",
                          help="Bundle demands, deadlines and verification logs into one archive."):
+        _routing_profile = profile_state.get_profile(st.session_state)
         st.session_state.audit_zip = audit_packager.build_audit_package(
             requests=_audit_requests,
             discovered=discovered_accounts.get_all(runtime_mode.db_path()),
@@ -228,14 +224,29 @@ if _audit_requests:
                 "name": st.session_state.user_name,
                 "location": st.session_state.user_location,
                 "email": st.session_state.user_email,
+                # state/country drive jurisdiction routing in audit_packager --
+                # unused by the letter template itself, so carrying them here
+                # is harmless for any code path that doesn't route.
+                "state": _routing_profile["state"],
+                "country": _routing_profile["country"],
+                "relational_entities": (database.get_latest_target_profile(runtime_mode.db_path()) or {}).get("relational_entities", []),
             },
             record_url=st.session_state.record_url,
             default_window=config.CCPA_RESPONSE_WINDOW_DAYS,
+            osint_findings=(
+                st.session_state.get("osint_findings")
+                if st.session_state.get("osint_findings_appended") else None
+            ),
+            # Per-broker template_type recorded when the user reviewed and
+            # confirmed that broker's letter in Data Broker Deletion Letters --
+            # keeps the archived letter byte-for-byte identical to what was
+            # actually reviewed, rather than re-routed fresh at export time.
+            broker_template_types=st.session_state.get("broker_jurisdiction", {}),
         )
 
     if st.session_state.get("audit_zip"):
         st.sidebar.download_button(
-            "📥 Download audit trail",
+            "📥 Download Complete Audit Trail",
             data=st.session_state.audit_zip,
             file_name=f"non_pursuit_audit_{datetime.now().strftime('%Y%m%d')}.zip",
             mime="application/zip",
@@ -260,101 +271,89 @@ st.markdown(
 if mode == "📊 Dashboard":
     dashboard_component.render()
 
-elif mode == "🔍 Results":
-    results_component.render(brokers_df)
-
-elif mode == "🌐 Online Footprint":
-    footprint_component.render()
+elif mode == "🛰️ Master Dashboard":
+    master_component.render(brokers_df)
 
 elif mode == "✉️ Data Broker Deletion Letters":
     letters_component.render(brokers_df)
 
 elif mode == "⚖️ NY Expungement Guidance":
-    st.title("⚖️ New York criminal record expungement guidance")
-    st.caption("Navigate New York Criminal Procedure Law (CPL) pathways for record sealing and expungement.")
+    st.title("⚖️ New York record-sealing intake")
+    st.caption("Compare your paperwork against a transparent screening calculation. This is general information, not a legal determination.")
 
-    st.subheader("Step 1: Case outcome")
-    case_outcome = st.selectbox(
-        "What was the outcome of your criminal case?",
-        ["Case was dismissed / acquitted", "Convicted of a crime", "Convicted of a violation / non-criminal offense"],
-    )
+    with st.form("ny_sealing_intake"):
+        st.subheader("Case metadata")
+        jurisdiction = st.text_input("Jurisdiction", value="New York State")
+        court_type = st.selectbox("Court type", ["Criminal Court", "Supreme Court"])
+        docket = st.text_input("Docket or indictment number")
 
-    if case_outcome == "Case was dismissed / acquitted":
-        st.markdown("---")
-        st.success("### You may qualify under **NY CPL § 160.50**")
-        st.markdown(
-            """
-            **CPL 160.50** applies to cases where:
-            - The case was dismissed
-            - You were acquitted (found not guilty)
-            - The prosecution terminated the case
+        st.subheader("Offense details")
+        penal_law = st.text_input("Penal Law section", placeholder="PL 155.25")
+        offense_description = st.text_input("Offense description", placeholder="Petit Larceny")
+        charge_level = st.selectbox("Charge level", ["Violation", "Misdemeanor", "Felony"])
+        felony_class = st.selectbox("Felony class", ["None", "A", "B", "C", "D", "E", "I"])
+        is_sex_offense = st.checkbox("Sex offense under Article 130 / COR 168-a")
+        is_article_220_drug = st.checkbox("Article 220 drug felony exception applies")
 
-            **Next Steps:**
-            1. Your records should be automatically sealed
-            2. If not sealed, file a motion with the court
-            3. Contact the court where your case was heard
-            """
+        st.subheader("Timeline and current status")
+        sentencing_date = st.date_input("Sentencing date", value=None)
+        incarceration_served = st.checkbox("Incarceration was served")
+        release_date = st.date_input("Release date", value=None, disabled=not incarceration_served)
+        supervision_completed = st.checkbox("Probation/parole completed")
+        completion_date = st.date_input("Supervision completion date", value=None, disabled=not supervision_completed)
+        pending_ny = st.checkbox("Pending New York charges")
+        pending_out_of_state = st.checkbox("Pending out-of-state felony")
+        subsequent_date = st.date_input("Most recent subsequent conviction date", value=None)
+
+        audit_targets = st.multiselect(
+            "Commercial audit targets",
+            ["Checkr", "Sterling", "HireRight", "LexisNexis"],
+            default=["Checkr", "Sterling", "HireRight", "LexisNexis"],
         )
-        st.link_button("Official NY courts guide", config.NY_COURT_EXPUNGEMENT_URL, icon="📚")
+        submitted = st.form_submit_button("Calculate screening result", type="primary")
 
-    elif case_outcome == "Convicted of a crime":
-        st.subheader("Step 2: Waiting period")
-        time_since_conviction = st.selectbox(
-            "How long has it been since your conviction?",
-            ["Less than 10 years", "10+ years"],
-        )
-
-        if time_since_conviction == "10+ years":
-            st.success("### You may qualify under **NY CPL § 160.59**")
-            st.markdown(
-                """
-                **CPL 160.59** allows for sealing of certain convictions after 10 years if:
-                - You have no more than 2 convictions
-                - You have no pending criminal charges
-                - You have satisfied all sentencing requirements
-                - The conviction was not for a sex offense or violent felony
-
-                **Next Steps:**
-                1. File a certificate of disposition
-                2. Submit motion to seal with the court
-                3. Attend court hearing if required
-                """
-            )
-            st.link_button("Official NY courts guide", config.NY_COURT_EXPUNGEMENT_URL, icon="📚")
+    if submitted:
+        payload = {
+            "case_metadata": {"jurisdiction": jurisdiction, "court_type": court_type, "docket_or_indictment_no": docket},
+            "offense_details": {
+                "penal_law_section": penal_law, "offense_description": offense_description,
+                "charge_level": charge_level, "felony_class": None if felony_class == "None" else felony_class,
+                "is_sex_offense": is_sex_offense, "is_article_220_drug": is_article_220_drug,
+            },
+            "timeline_inputs": {
+                "sentencing_date": sentencing_date, "incarceration_served": incarceration_served,
+                "release_date": release_date if incarceration_served else None,
+                "probation_parole_completed": supervision_completed, "completion_date": completion_date,
+            },
+            "current_status_flags": {
+                "has_pending_ny_charges": pending_ny, "has_pending_out_of_state_felony": pending_out_of_state,
+                "subsequent_conviction_date": subsequent_date,
+            },
+        }
+        result = ny_sealing.eligibility(payload)
+        if result["status"] == ny_sealing.STATUS_SEALED:
+            st.success(f"Screening result: {result['status']}")
+        elif result["status"] == ny_sealing.STATUS_PENDING:
+            st.warning(f"Screening result: {result['status']}")
         else:
-            st.warning("### You do not currently qualify for CPL 160.59")
-            st.markdown(
-                """
-                You must wait 10 years from the date of conviction before applying for sealing under CPL 160.59.
+            st.error(f"Screening result: {result['status']}")
+        st.write(result["reason"])
+        if "threshold_date" in result:
+            st.write(f"Clock start: {result['start_date']} | Threshold date: {result['threshold_date']} | Days elapsed: {result['days_elapsed']}")
+        st.info(result.get("implementation_window_note", "Use the official court process to verify the result."))
 
-                **Consider:**
-                - CPL 160.55 for certain marijuana convictions
-                - Certificate of Relief from Disabilities
-                - Consult with a criminal defense attorney
-                """
-            )
+        st.subheader("State versus private audit")
+        for instruction in ny_sealing.audit_instructions(audit_targets):
+            st.write(f"- {instruction}")
 
-    else:
-        st.success("### Your record may already be sealed")
-        st.markdown(
-            """
-            Violations and non-criminal offenses (e.g., disorderly conduct, traffic violations) are typically:
-            - Automatically sealed after 1 year
-            - Not visible in standard background checks
-            - Not considered criminal convictions
+        st.subheader("Employment questionnaire script")
+        st.code("I have no reportable conviction that is legally required to be disclosed for this question. Please evaluate any record under New York law and provide the report and basis for any adverse action.")
 
-            **Verification:**
-            - Request your criminal history from the NY Division of Criminal Justice Services
-            - Check with the court where your case was heard
-            """
-        )
-        st.link_button("Official NY courts guide", config.NY_COURT_EXPUNGEMENT_URL, icon="📚")
+        st.subheader("Commercial-report dispute language")
+        st.code("I dispute the completeness and accuracy of the criminal-record information reported about me. Please reinvestigate under 15 U.S.C. § 1681e(b), delete information that is inaccurate, incomplete, sealed, or not legally reportable, and provide the results and source of your investigation. New York Human Rights Law § 296(16) also restricts discriminatory use of criminal-history information.")
 
-    st.info(
-        "**Disclaimer:** This tool provides general guidance only. For legal advice regarding "
-        "your specific situation, consult with a qualified New York criminal defense attorney.",
-        icon="⚠️",
-    )
+    st.link_button("Official NY courts guide", config.NY_COURT_EXPUNGEMENT_URL, icon="📚")
+    st.info("Verify every date and disposition against the Certificate of Disposition and DCJS record. Consult a qualified New York criminal-defense attorney for case-specific advice.", icon="⚠️")
 
 
 # ---------------------------------------------------------------------------
@@ -491,7 +490,11 @@ elif mode == "📈 Campaign Tracker":
         export_cols[1].download_button(
             "All data (.json)",
             icon="📥",
-            data=build_json_export(requests_list, exposure_store.get_all_checks(runtime_mode.db_path())),
+            data=build_json_export(
+                requests_list,
+                exposure_store.get_all_checks(runtime_mode.db_path()),
+                discovered_accounts.get_all(runtime_mode.db_path()),
+            ),
             file_name="non_pursuit_data_export.json",
             mime="application/json",
             width="stretch",

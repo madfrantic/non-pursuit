@@ -122,3 +122,82 @@ def test_purge_keeps_flagged_rows_regardless_of_age(db_path):
 
     assert store.purge_finished(db_path, retention_days=30) == 0
     assert len(store.get_all(db_path)) == 1
+
+
+def test_email_associations_persist_and_reach_the_audit_summary(tmp_path):
+    """The passive email scan is only useful if what it finds survives
+    into the evidence package -- this is the whole path: scan result ->
+    discovered_accounts row -> audit_summary.json."""
+    import audit_packager
+    from email_scanner import CONFIRMED as EMAIL_CONFIRMED, email_discoveries
+
+    db = str(tmp_path / "tracker.db")
+    rows = email_discoveries([
+        {"service": "Gravatar", "identifier": "jane@example.com",
+         "confidence": EMAIL_CONFIRMED, "reason": "profile found", "vector": "avatar_service"},
+    ])
+    assert store.save_discoveries(db, rows) == 1
+
+    stored = store.get_all(db)
+    assert [r["platform"] for r in stored] == ["Gravatar"]
+    assert stored[0]["target_identifier"] == "jane@example.com"
+    assert stored[0]["category"] == "email"
+
+    summary = audit_packager.build_summary(
+        requests=[], discovered=stored, exposure_checks={}, target_profile={}
+    )
+    assert summary["totals"]["accounts_discovered"] == 1
+    assert summary["discovered_accounts"][0]["identifier"] == "jane@example.com"
+
+
+def test_rescanning_the_same_email_updates_rather_than_duplicates(tmp_path):
+    from email_scanner import CONFIRMED as EMAIL_CONFIRMED, email_discoveries
+
+    db = str(tmp_path / "tracker.db")
+    result = {"service": "Gravatar", "identifier": "jane@example.com",
+              "confidence": EMAIL_CONFIRMED, "reason": "found", "vector": "avatar_service"}
+    store.save_discoveries(db, email_discoveries([result]))
+    store.save_discoveries(db, email_discoveries([result]))
+    assert len(store.get_all(db)) == 1
+
+
+def test_verification_status_defaults_to_unreviewed(db_path):
+    row = make_row()
+    store.save_discoveries(db_path, [row])
+    saved = store.get_all(db_path)[0]
+    assert saved["verification_status"] == store.VERIFIED_UNREVIEWED
+
+
+def test_update_verification_status(db_path):
+    row = make_row()
+    store.save_discoveries(db_path, [row])
+    saved_id = store.get_all(db_path)[0]["id"]
+
+    store.update_verification(db_path, saved_id, store.VERIFIED_CONFIRMED)
+    updated = store.get_all(db_path)[0]
+    assert updated["verification_status"] == store.VERIFIED_CONFIRMED
+
+    store.update_verification(db_path, saved_id, store.VERIFIED_FALSE_POSITIVE)
+    updated = store.get_all(db_path)[0]
+    assert updated["verification_status"] == store.VERIFIED_FALSE_POSITIVE
+
+
+def test_rescanning_doesnt_reset_verification_status(db_path):
+    row = make_row()
+    store.save_discoveries(db_path, [row])
+    saved_id = store.get_all(db_path)[0]["id"]
+
+    store.update_verification(db_path, saved_id, store.VERIFIED_CONFIRMED)
+
+    # Rescan returns the same row
+    store.save_discoveries(db_path, [row])
+    rescanned = store.get_all(db_path)[0]
+    assert rescanned["verification_status"] == store.VERIFIED_CONFIRMED
+
+
+def test_avatar_url_is_preserved(db_path):
+    row = make_row()
+    row["avatar_url"] = "https://example.com/avatar.jpg"
+    store.save_discoveries(db_path, [row])
+    saved = store.get_all(db_path)[0]
+    assert saved["avatar_url"] == "https://example.com/avatar.jpg"

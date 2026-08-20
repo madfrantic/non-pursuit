@@ -24,7 +24,7 @@ ERROR_COLOR = "#ef4444"
 
 # File paths
 BROKERS_CSV_PATH = "data/brokers.csv"
-TEMPLATE_PATH = "templates/ccpa_deletion_demand.j2"
+TEMPLATE_PATH = "utils/statutory_letters/ccpa_deletion_demand.j2"
 TRACKER_DB_PATH = "data/tracker.db"
 
 # Statutory response window CCPA gives a business/broker to act on a deletion
@@ -127,10 +127,15 @@ WMN_DATASET_PATH = "data/wmn-data.json"
 # Discovered accounts live in the same local SQLite file as everything else.
 FOOTPRINT_DB_PATH = "data/tracker.db"
 
-# Bounded concurrency for a scan. 15 is high enough that the ~50-site fast
-# scan finishes in a few seconds, low enough that a full ~700-site sweep
-# doesn't arrive at any one edge firewall as a burst.
-FOOTPRINT_CONCURRENCY = 15
+# Bounded concurrency for a scan. The default scan is the full ~700-site
+# sweep, so 50 in flight is what keeps it to roughly a minute instead of
+# five. Sockets are not the constraint at this level -- 50 is far under
+# the usual 1024 file-descriptor limit -- the constraint is how much of
+# that concurrency lands on any single host, which is what PER_HOST caps.
+# The sweep is wide (one or two requests each across hundreds of distinct
+# hosts), never deep on one.
+FOOTPRINT_CONCURRENCY = 50
+FOOTPRINT_PER_HOST_CONCURRENCY = 4
 FOOTPRINT_TIMEOUT_SECONDS = 15
 
 # Diagnostic log, separate from data/ (which is user data, backed up via the

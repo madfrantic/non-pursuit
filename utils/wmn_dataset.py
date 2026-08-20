@@ -19,10 +19,15 @@ a background job nobody asked for.
 FAST_SCAN_SITES is a hand-curated subset, and every name in it was
 verified to resolve against the live dataset before being added -- the
 names are not guessable. Twitter is listed as "X" (the "Twitter" entries
-are archive-only mirrors), GitHub is "GitHub (User)", tumblr is
-lowercase, and LinkedIn isn't in the dataset at all. A typo here doesn't
-raise; it just silently scans fewer sites, so resolve_fast_sites()
-reports what it couldn't find instead of quietly dropping it.
+are archive-only mirrors), GitHub is "GitHub (User)", and tumblr is
+lowercase. A typo here doesn't raise; it just silently scans fewer sites,
+so resolve_fast_sites() reports what it couldn't find instead of quietly
+dropping it. It is no longer the default scan -- see select_sites().
+
+LinkedIn is absent from the upstream dataset, which is why EXTRA_SITES
+exists: it's the one platform people most expect to see in a footprint
+report, and leaving it out silently reads as "you have no LinkedIn"
+rather than "this tool never looked".
 """
 import hashlib
 import json
@@ -62,6 +67,33 @@ FAST_SCAN_SITES = (
     # writing / commerce / misc
     "Medium", "Substack", "Patreon", "Etsy", "eBay", "Venmo", "about.me",
     "Strava", "Duolingo", "Hacker News", "WordPress.com (Public)",
+)
+
+
+# Platforms worth checking that upstream doesn't define. Kept in the
+# dataset's own schema so they flow through build_request/classify
+# untouched rather than needing a parallel code path.
+#
+# LinkedIn answers automated requests with HTTP 999 (its own invented
+# refusal code) or 403 -- it is not scrapeable and pretending otherwise
+# would produce a confident wrong answer. So it declares no e_string,
+# which caps it at POSSIBLE, and declares WAF protection, which routes a
+# refusal to a manual-review row. uri_pretty points at a site-scoped
+# search rather than the profile URL: the profile URL is exactly what
+# won't load for a logged-out visitor, so the useful thing to hand
+# someone doing manual review is the search that finds it.
+EXTRA_SITES = (
+    {
+        "name": "LinkedIn",
+        "cat": "business",
+        "uri_check": "https://www.linkedin.com/in/{account}",
+        "uri_pretty": "https://duckduckgo.com/?q=site%3Alinkedin.com%2Fin+%22{account}%22",
+        "e_code": 200,
+        "e_string": "",
+        "m_code": 404,
+        "m_string": "",
+        "protection": ["WAF"],
+    },
 )
 
 
@@ -152,12 +184,22 @@ def resolve_fast_sites(dataset: dict, names=FAST_SCAN_SITES) -> tuple[list, list
     return found, missing
 
 
-def select_sites(dataset: dict, deep: bool = False, include_nsfw: bool = False,
+def select_sites(dataset: dict, deep: bool = True, include_nsfw: bool = False,
                  categories: list | None = None) -> list:
-    """The site list a scan should actually run against."""
+    """The site list a scan should actually run against.
+
+    Deep (the full list) is the default. The curated fast subset stays
+    available for anyone who wants a quick look, but a footprint tool
+    whose default answer covers 7% of the platforms it knows about is
+    reporting a floor as if it were a finding.
+
+    NSFW stays excluded unless explicitly asked for: probing 39 adult
+    sites with someone's real handle is not a surprise a compliance tool
+    should spring on them, whatever the scan depth.
+    """
     if not deep:
         sites, _ = resolve_fast_sites(dataset)
-        return sites
+        return sites + list(EXTRA_SITES)
 
     sites = list(dataset.get("sites", []))
     if not include_nsfw:
@@ -165,7 +207,8 @@ def select_sites(dataset: dict, deep: bool = False, include_nsfw: bool = False,
     if categories:
         wanted = set(categories)
         sites = [s for s in sites if s.get("cat") in wanted]
-    return sites
+        return sites
+    return sites + list(EXTRA_SITES)
 
 
 def available_categories(dataset: dict, include_nsfw: bool = False) -> list:

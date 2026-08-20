@@ -20,6 +20,7 @@ from footprint_scanner import (
     discoveries,
     scan_account,
     summarize,
+    validate_target_url,
 )
 
 
@@ -73,6 +74,23 @@ def test_waf_challenge_is_possible_not_missing(status):
 def test_no_response_is_error():
     verdict, _ = classify(make_site(), None, "")
     assert verdict == ERROR
+
+
+def test_redirect_requires_review_without_following_it():
+    verdict, reason = classify(make_site(), 302, "")
+    assert verdict == POSSIBLE
+    assert "redirect" in reason
+
+
+def test_target_url_rejects_non_https_and_private_addresses():
+    assert validate_target_url("http://example.com/alice")
+    assert validate_target_url("https://127.0.0.1/alice")
+
+
+def test_malformed_site_becomes_error_without_aborting_scan():
+    results = scan_account("alice", [{"name": "Broken site"}])
+    assert len(results) == 1
+    assert results[0]["confidence"] == ERROR
 
 
 # --- the two dataset traps -------------------------------------------
@@ -178,3 +196,56 @@ def test_scan_account_short_circuits_without_network():
     assert scan_account("", [make_site()]) == []
     assert scan_account("   ", [make_site()]) == []
     assert scan_account("alice", []) == []
+
+
+# --- WAF-blocked platforms (LinkedIn) ---------------------------------
+
+def test_linkedin_999_is_manual_review_not_a_miss():
+    """LinkedIn answers automated GETs with its own invented HTTP 999.
+    Reading that as NOT_FOUND would report 'no LinkedIn account' to
+    someone who has one."""
+    from footprint_scanner import is_manual_review
+    verdict, reason = classify(make_site(), 999, "")
+    assert verdict == POSSIBLE
+    assert is_manual_review({"reason": reason})
+
+
+def test_rate_limit_is_not_a_miss():
+    verdict, _ = classify(make_site(), 429, "")
+    assert verdict == POSSIBLE
+
+
+@pytest.mark.parametrize("verdict", [ERROR, POSSIBLE])
+def test_waf_protected_site_always_degrades_to_manual_review(verdict):
+    """A declared-WAF site answers automated checks three different ways
+    depending on the network -- a refusal code, a dropped connection, or
+    a bare 200 auth wall. All three mean the same thing, so none of them
+    may look like a row a future rescan could settle."""
+    from footprint_scanner import _degrade_waf_error, is_manual_review
+    site = make_site(protection=["WAF"])
+    result, reason = _degrade_waf_error(site, verdict, "whatever happened")
+    assert result == POSSIBLE
+    assert is_manual_review({"reason": reason})
+
+
+def test_waf_protected_site_keeps_a_genuine_404():
+    """A real miss is still a real miss -- the degrade must not turn
+    'this handle isn't there' into 'go look yourself'."""
+    from footprint_scanner import _degrade_waf_error, is_manual_review
+    site = make_site(protection=["WAF"])
+    result, reason = _degrade_waf_error(site, NOT_FOUND, "no match (HTTP 404)")
+    assert result == NOT_FOUND
+    assert not is_manual_review({"reason": reason})
+
+
+def test_unprotected_site_failure_stays_an_error():
+    """Only declared-WAF sites get the benefit of the doubt."""
+    from footprint_scanner import _degrade_waf_error
+    verdict, _ = _degrade_waf_error(make_site(), ERROR, "timed out")
+    assert verdict == ERROR
+
+
+def test_manual_review_is_false_for_an_ordinary_ambiguous_row():
+    from footprint_scanner import is_manual_review
+    _, reason = classify(make_site(), 200, "<div id='root'></div>")
+    assert not is_manual_review({"reason": reason})

@@ -25,6 +25,10 @@ If your organization is a data broker registered with the California Privacy Pro
 
 Please confirm in writing once this request has been completed.
 
+{% if relational_entities %}
+{{ relational_disassociation_clause }}
+{% endif %}
+
 Sincerely,
 {{ user_name }}
 {{ user_email }}

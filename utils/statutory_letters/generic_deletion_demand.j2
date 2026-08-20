@@ -1,0 +1,51 @@
+{{ current_date }}
+
+{{ broker_name }}
+Attn: Privacy Team
+
+Re: Request for Deletion and Opt-Out of Sale of Personal Information
+
+To Whom It May Concern:
+
+I am writing to request the deletion of my personal information from your databases and the suppression of my record from your public-facing search results.
+
+I have identified a record containing my personal information on your platform, located at:
+{{ record_url }}
+
+For identification purposes, my information is as follows:
+
+Name: {{ user_name }}
+Location: {{ user_location }}
+Email: {{ user_email }}
+
+BASIS FOR THIS REQUEST
+
+This request is made under the deletion and opt-out policies your organization publishes, and under the terms of the privacy policy you hold out to the public. Where your privacy policy states that individuals may request removal of their information, this letter constitutes such a request and I ask that it be processed in accordance with the procedure that policy describes.
+
+Where your organization extends the rights afforded to residents of states with comprehensive consumer privacy statutes to all individuals as a matter of company policy — a practice many national data brokers have adopted — I ask that this request be processed on those same terms.
+
+SCOPE OF THE REQUEST
+
+I request that you:
+
+1. Delete all personal information you have collected about me, including information obtained from public records, purchased data sets, and third-party sources;
+2. Suppress my record so that it does not reappear when your data sources are next refreshed, rather than merely removing the current listing;
+3. Cease selling, licensing, or otherwise disclosing my personal information to third parties;
+4. Direct any affiliates, service providers, or downstream licensees who have received my information from you to do the same; and
+5. Identify the source from which my information was obtained, so that I may direct a separate request there.
+
+I specifically request suppression rather than one-time deletion. A deletion that leaves your ingestion pipeline free to re-acquire the same record from the same upstream source resolves nothing, and I will treat the reappearance of my record as a failure to honor this request.
+
+RESPONSE REQUESTED
+
+Please confirm in writing within forty-five (45) days which of the above actions you have taken, and identify any information you decline to delete together with the basis for retaining it.
+
+Please note that residency does not limit this request: to the extent I am or become a resident of a jurisdiction whose law affords me an enforceable deletion right, I reserve the right to renew this demand under that statute, and this letter serves as notice of the request date.
+
+{% if relational_entities %}
+{{ relational_disassociation_clause }}
+{% endif %}
+
+Sincerely,
+{{ user_name }}
+{{ user_email }}

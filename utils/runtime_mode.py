@@ -129,6 +129,18 @@ def persistent_storage_enabled() -> bool:
     return not is_demo_mode()
 
 
+def facial_recognition_enabled() -> bool:
+    """Biometric face matching is off on the hosted build regardless of
+    whether the DeepFace dependency happens to be installed there. A face
+    photo is a more sensitive category of PII than anything else this app
+    touches, and a shared demo host processing one visitor's uploaded face
+    -- even transiently, even without persisting it -- is a risk this app
+    takes nowhere else. Local mode is a single person's own machine
+    running against their own photo; that consent boundary doesn't exist
+    on a hosted container."""
+    return not is_demo_mode()
+
+
 def mode_badge() -> tuple[str, str]:
     """(label, help text) for the sidebar indicator."""
     if is_demo_mode():

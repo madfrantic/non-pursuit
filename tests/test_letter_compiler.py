@@ -66,6 +66,19 @@ def test_missing_record_url_renders_empty_not_none():
     assert "None" not in letter
 
 
+def test_relational_disassociation_clause_renders_for_entities():
+    profile = {**PROFILE, "relational_entities": [{"name": "Alex Doe"}]}
+    letter = compile_demand_letter("Spokeo", profile, "https://x.test/1")
+    assert "STATUTORY RELATIONAL SEVERANCE & DISASSOCIATION DEMAND" in letter
+    assert "Alex Doe" in letter
+    assert "household IDs" in letter
+
+
+def test_relational_disassociation_clause_omits_without_entities():
+    letter = compile_demand_letter("Spokeo", PROFILE, "https://x.test/1")
+    assert "STATUTORY RELATIONAL SEVERANCE" not in letter
+
+
 def test_missing_profile_fields_do_not_raise():
     letter = compile_demand_letter("Spokeo", {}, "https://x.test/1")
     assert "1798.105" in letter
@@ -95,3 +108,48 @@ def test_compiler_needs_no_working_directory(tmp_path, monkeypatch):
 ])
 def test_letter_filename_is_filesystem_safe(broker, expected):
     assert letter_filename(broker) == expected
+
+
+# --- multi-jurisdiction templates ------------------------------------------
+
+
+def test_gdpr_template_cites_article_17_and_one_month_window():
+    letter = compile_demand_letter("Spokeo", PROFILE, "https://x.test/1", template_type="gdpr_erasure")
+    assert "Article 17" in letter
+    assert "one month" in letter
+    assert "Spokeo" in letter
+
+
+def test_ny_hybrid_template_cites_both_statutes_and_disclaims_shield_as_deletion_right():
+    letter = compile_demand_letter("Spokeo", PROFILE, "https://x.test/1", template_type="ny_hybrid")
+    assert "380-d" in letter or "§ 380" in letter
+    assert "899-bb" in letter
+    # The letter must not misrepresent SHIELD as itself granting erasure --
+    # that's the exact defect the NY template was reframed to avoid.
+    assert "does not itself create a right of erasure" in letter
+
+
+def test_generic_template_relies_on_broker_policy_not_a_statute():
+    letter = compile_demand_letter("Spokeo", PROFILE, "https://x.test/1", template_type="generic_deletion")
+    assert "privacy policy" in letter
+    assert "Spokeo" in letter
+
+
+@pytest.mark.parametrize("template_type", ["gdpr_erasure", "ny_hybrid", "generic_deletion"])
+def test_new_templates_embed_profile_and_record_url(template_type):
+    letter = compile_demand_letter("Spokeo", PROFILE, "https://x.test/1", template_type=template_type)
+    assert PROFILE["name"] in letter
+    assert PROFILE["email"] in letter
+    assert "https://x.test/1" in letter
+
+
+@pytest.mark.parametrize("template_type", ["gdpr_erasure", "ny_hybrid", "generic_deletion"])
+def test_new_templates_do_not_raise_on_missing_profile_fields(template_type):
+    letter = compile_demand_letter("Spokeo", {}, "https://x.test/1", template_type=template_type)
+    assert "Spokeo" in letter
+
+
+def test_available_templates_includes_all_four_jurisdictions():
+    assert set(available_templates()) == {
+        "ccpa_deletion", "gdpr_erasure", "ny_hybrid", "generic_deletion",
+    }

@@ -15,30 +15,69 @@ import streamlit as st
 import config
 import exposure_store
 import runtime_mode
+import database
 from letter_compiler import compile_demand_letter
 from mailto_builder import build_mailto_link, mailto_length, is_mailto_safe
 from tracker import add_request
 from validators import is_valid_url
+import profile_state
+import jurisdiction_router
 
 
-def _render_letter(broker_name, user_name, user_location, user_email, record_url):
+def _render_letter(broker_name, user_name, user_location, user_email, record_url, template_type):
     """Thin adapter over the shared compiler -- the statutory text itself
     lives in utils/letter_compiler.py so the audit-trail ZIP renders from
     the identical code path."""
     return compile_demand_letter(
         broker_name,
-        {"name": user_name, "location": user_location, "email": user_email},
+        {"name": user_name, "location": user_location, "email": user_email,
+         "relational_entities": (database.get_latest_target_profile(runtime_mode.db_path()) or {}).get("relational_entities", [])},
         record_url=record_url,
+        template_type=template_type,
     )
+
+
+def _render_jurisdiction_picker(profile):
+    """Auto-route off profile_state, but let the user override the
+    template. Auto-routing can be wrong -- a profile with a stale state
+    field, a snowbird splitting time between two states -- and the
+    consequence of guessing wrong is a letter that cites a statute that
+    doesn't reach the recipient. Returns the chosen template_type."""
+    auto = jurisdiction_router.route(profile)
+    jurisdictions = jurisdiction_router.available_jurisdictions()
+    labels = [j.label for j in jurisdictions]
+    template_types = [j.template_type for j in jurisdictions]
+
+    st.markdown("##### ⚖️ Statutory framework")
+    default_index = template_types.index(auto.template_type)
+    chosen_label = st.selectbox(
+        "Applies to this letter",
+        labels,
+        index=default_index,
+        help="Auto-selected from your saved location. Override if it guessed wrong.",
+        key="jurisdiction_override",
+    )
+    chosen = jurisdictions[labels.index(chosen_label)]
+
+    if chosen.template_type != auto.template_type:
+        st.caption(f"Auto-detected **{auto.label}** from your saved profile — overridden below.")
+    st.caption(f"{chosen.statute} · {chosen.response_window_days}-day statutory response window")
+    st.caption(chosen.summary)
+    if chosen.template_type == jurisdiction_router.NY_HYBRID:
+        st.caption(jurisdiction_router.STATUTORY_WINDOW_NOTE)
+
+    return chosen.template_type
 
 
 def render(brokers_df):
     st.title("✉️ Data broker deletion letters")
     st.caption("Generate formal deletion demand letters for data brokers under California Civil Code § 1798.105.")
 
-    user_name = st.session_state.user_name
-    user_email = st.session_state.user_email
-    user_location = st.session_state.user_location
+    profile = profile_state.get_profile(st.session_state)
+    user_name = profile["full_name"]
+    user_email = profile["email"]
+    user_location = ", ".join(value for value in (profile["city"], profile["state"]) if value)
+    relational_entities = (database.get_latest_target_profile(runtime_mode.db_path()) or {}).get("relational_entities", [])
 
     if not (user_name and user_email and user_location):
         st.warning("Add your name, email, and location on the **Dashboard** first -- these letters are personalized and need a real contact for the broker to respond to.")
@@ -57,7 +96,7 @@ def render(brokers_df):
             "Record URL",
             value=st.session_state.record_url,
             placeholder="https://broker.com/record/...",
-            help="The specific listing page for you on this broker's site -- captured automatically by Auto-search on Results, or pasted in manually.",
+            help="The specific listing page for you on this broker's site -- captured automatically by Auto-search on the Master Dashboard, or pasted in manually.",
         )
     st.session_state.record_url = record_url
 
@@ -69,6 +108,9 @@ def render(brokers_df):
     if brokers_df.empty:
         st.error("Unable to load broker data. Check data/brokers.csv.")
         return
+
+    with st.container(border=True):
+        template_type = _render_jurisdiction_picker(profile)
 
     batch_mode = st.toggle("Batch mode (select multiple brokers)", value=False)
 
@@ -90,7 +132,7 @@ def render(brokers_df):
         st.subheader("🔍 Step 1: Confirm you're actually listed")
 
         if st.session_state.listed_confirmed.get(selected_broker, False):
-            st.success(f"✅ Already confirmed via Results that you're listed on {selected_broker}.")
+            st.success(f"✅ Already confirmed on the Master Dashboard that you're listed on {selected_broker}.")
             confirmed_listed = True
         else:
             st.caption(
@@ -112,11 +154,34 @@ def render(brokers_df):
         if not confirmed_listed:
             st.info("Check the box above once you've confirmed you're listed to generate the letter.")
         else:
-            rendered_letter = _render_letter(selected_broker, user_name, user_location, user_email, record_url)
+            rendered_letter = _render_letter(
+                selected_broker, user_name, user_location, user_email, record_url, template_type,
+            )
 
             st.subheader("📄 Generated demand letter")
+            if relational_entities:
+                with st.container(border=True):
+                    st.subheader("⚖️ Statutory Relational Severance Clause (CCPA §1798.105)")
+                    st.info("🛡️ Notice: Broker is legally mandated to break household cluster graphs and purge relational associate tags.")
             st.code(rendered_letter, language=None)
             st.caption("Use the copy icon in the corner above, or download below.")
+
+            reviewed = st.checkbox(
+                "🔎 I have reviewed this letter and confirm it's accurate before sending or logging it",
+                key=f"reviewed_{selected_broker}_{template_type}",
+            )
+            if not reviewed:
+                st.info("Review the letter above and check the box to unlock sending, downloading, and logging.")
+                return
+
+            # Record exactly which template this broker's letter was confirmed
+            # under, so the audit-trail ZIP archives this same letter rather
+            # than re-routing at export time and possibly picking a different
+            # template than the one the user actually reviewed.
+            broker_jurisdiction = st.session_state.setdefault("broker_jurisdiction", {})
+            if broker_jurisdiction.get(selected_broker) != template_type:
+                broker_jurisdiction[selected_broker] = template_type
+                st.session_state.pop("audit_zip", None)
 
             st.subheader("🚀 Actions")
 
@@ -180,7 +245,7 @@ def render(brokers_df):
 
                 if st.session_state.listed_confirmed.get(broker_name, False):
                     row_cols[1].caption("—")
-                    row_cols[2].caption("✅ Confirmed via Results")
+                    row_cols[2].caption("✅ Confirmed on the Master Dashboard")
                     confirmed_brokers.append(broker_name)
                     continue
 
@@ -198,12 +263,29 @@ def render(brokers_df):
             else:
                 letters = {}
                 for broker_name in confirmed_brokers:
-                    letters[broker_name] = _render_letter(broker_name, user_name, user_location, user_email, record_url)
+                    letters[broker_name] = _render_letter(
+                        broker_name, user_name, user_location, user_email, record_url, template_type,
+                    )
 
-                with st.expander(f"Preview ({len(letters)} letters)"):
+                with st.expander(f"Preview ({len(letters)} letters)", expanded=True):
                     for broker_name, letter_text in letters.items():
                         st.markdown(f"**{broker_name}**")
                         st.code(letter_text, language=None)
+
+                reviewed = st.checkbox(
+                    f"🔎 I have reviewed all {len(letters)} letters above and confirm they're accurate "
+                    "before downloading or logging them",
+                    key=f"reviewed_batch_{template_type}",
+                )
+                if not reviewed:
+                    st.info("Expand the preview above and check the box to unlock the ZIP download and tracker logging.")
+                    return
+
+                broker_jurisdiction = st.session_state.setdefault("broker_jurisdiction", {})
+                if any(broker_jurisdiction.get(b) != template_type for b in confirmed_brokers):
+                    for broker_name in confirmed_brokers:
+                        broker_jurisdiction[broker_name] = template_type
+                    st.session_state.pop("audit_zip", None)
 
                 zip_buffer = io.BytesIO()
                 with zipfile.ZipFile(zip_buffer, "w") as zf:

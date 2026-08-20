@@ -7,6 +7,7 @@ Backed by the same local SQLite file the campaign tracker and exposure
 checks use.
 """
 import sqlite3
+import json
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -21,6 +22,7 @@ PROFILE_COLUMNS = [
     "current_state",
     "current_zip_code",
     "historical_zip_codes",
+    "relational_entities",
 ]
 
 
@@ -42,10 +44,14 @@ def _connect(db_path: str):
             current_city TEXT,
             current_state TEXT,
             current_zip_code TEXT,
-            historical_zip_codes TEXT
+            historical_zip_codes TEXT,
+            relational_entities TEXT
         )
         """
     )
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(target_profile)")}
+    if "relational_entities" not in columns:
+        conn.execute("ALTER TABLE target_profile ADD COLUMN relational_entities TEXT")
     conn.commit()
     try:
         yield conn
@@ -66,7 +72,14 @@ def get_latest_target_profile(db_path: str) -> dict | None:
         row = conn.execute(
             "SELECT * FROM target_profile ORDER BY id DESC LIMIT 1"
         ).fetchone()
-        return dict(row) if row else None
+        if not row:
+            return None
+        profile = dict(row)
+        try:
+            profile["relational_entities"] = json.loads(profile.get("relational_entities") or "[]")
+        except (TypeError, json.JSONDecodeError):
+            profile["relational_entities"] = []
+        return profile
 
 
 def insert_target_profile(db_path: str, data: dict) -> int:
@@ -74,7 +87,10 @@ def insert_target_profile(db_path: str, data: dict) -> int:
     `data` and every value is bound as a parameter, so nothing from the
     form is ever string-formatted into SQL. Returns the new row's id.
     """
-    values = [data.get(col) for col in PROFILE_COLUMNS]
+    values = [
+        json.dumps(data.get(col) or []) if col == "relational_entities" else data.get(col)
+        for col in PROFILE_COLUMNS
+    ]
     with _connect(db_path) as conn:
         cursor = conn.execute(
             f"INSERT INTO target_profile ({', '.join(PROFILE_COLUMNS)}) "
