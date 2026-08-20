@@ -235,6 +235,7 @@ def render():
         _load_demo_profile()
         st.toast("Demo profile loaded -- click Save to use it.")
         st.rerun()
+        st.rerun()
 
     stale_count = sum(
         1 for entry in exposure_store.get_all_checks(runtime_mode.db_path()).values()
