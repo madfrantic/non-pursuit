@@ -1,7 +1,10 @@
 # Keep the image lean and, more importantly, keep local user data out of it.
 # data/tracker.db and logs/ hold real personal information; an image is a
 # distributable artifact and must never carry them.
-data/tracker.db
+.env
+data/*.db
+data/*.db-wal
+data/*.db-shm
 data/wmn-data.json
 logs/
 

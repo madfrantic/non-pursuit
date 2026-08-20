@@ -16,6 +16,7 @@ async def _fetch_certificates(domain: str, retries: int = 3) -> List[Dict[str, A
     """
     Fetch certificates from crt.sh with retry logic (it's flaky).
     Returns staging subdomains, wildcard certs, and issuance dates.
+    Falls back to CertSpotter API if crt.sh fails.
     """
     if not domain:
         return []
@@ -28,13 +29,13 @@ async def _fetch_certificates(domain: str, retries: int = 3) -> List[Dict[str, A
                                       timeout=aiohttp.ClientTimeout(total=30)) as r:
                     if r.status == 200:
                         return await r.json() or []
-                    elif r.status == 502:
+                    elif r.status in (502, 503, 504):
                         if attempt < retries - 1:
                             await asyncio.sleep(2 ** attempt)  # exponential backoff
                             continue
                     else:
                         _log.warning("crt.sh returned %d", r.status)
-                    return []
+                        break
         except asyncio.TimeoutError:
             if attempt < retries - 1:
                 await asyncio.sleep(2 ** attempt)
@@ -42,7 +43,28 @@ async def _fetch_certificates(domain: str, retries: int = 3) -> List[Dict[str, A
             _log.info("crt.sh timeout after %d retries", retries)
         except Exception as exc:
             _log.info("crt.sh error: %s", exc)
-            return []
+            break
+            
+    _log.info("Falling back to CertSpotter for %s", domain)
+    try:
+        url = f"https://api.certspotter.com/v1/issuances?domain={domain}&include_subdomains=true&expand=dns_names"
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, timeout=aiohttp.ClientTimeout(total=15)) as r:
+                if r.status == 200:
+                    data = await r.json() or []
+                    # Transform CertSpotter format to match expected crt.sh format
+                    return [
+                        {
+                            "name_value": "\\n".join(cert.get("dns_names", [])),
+                            "issuer_name": cert.get("issuer", {}).get("name", ""),
+                            "not_before": cert.get("not_before", ""),
+                            "not_after": cert.get("not_after", ""),
+                        }
+                        for cert in data
+                    ]
+    except Exception as exc:
+        _log.info("CertSpotter fallback error: %s", exc)
+
     return []
 
 

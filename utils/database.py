@@ -14,11 +14,17 @@ callers -- this module handles encrypt/decrypt internally.
 import sqlite3
 import json
 import os
+import sys
+import base64
+import logging
+import argparse
 from contextlib import contextmanager
 from pathlib import Path
 
 from cryptography.fernet import Fernet
 from dotenv import load_dotenv
+
+_log = logging.getLogger("database")
 
 PROFILE_COLUMNS = [
     "first_name",
@@ -47,13 +53,24 @@ def _load_or_generate_key() -> bytes:
     load_dotenv()
     key = os.getenv("ENCRYPTION_KEY")
     if key:
-        return key.encode() if isinstance(key, str) else key
+        key_bytes = key.encode() if isinstance(key, str) else key
+        try:
+            decoded = base64.urlsafe_b64decode(key_bytes)
+            if len(decoded) != 32:
+                raise ValueError("Key must be 32 bytes")
+            return key_bytes
+        except Exception as e:
+            _log.error("Invalid ENCRYPTION_KEY in .env. Must be a valid 32-byte urlsafe base64 Fernet key: %s", e)
+            raise ValueError("Invalid ENCRYPTION_KEY format in .env.") from e
+
+    _log.warning("No ENCRYPTION_KEY found in .env. Generating a new one. CRITICAL: Preserve .env to decrypt your local SQLite database!")
     key = Fernet.generate_key()
     env_path = Path(".env")
     env_path.touch(mode=0o600, exist_ok=True)
     with open(env_path, "a") as f:
         f.write(f"\nENCRYPTION_KEY={key.decode()}\n")
     return key
+
 
 
 _CIPHER = None
@@ -88,7 +105,9 @@ def _decrypt(value) -> str | None:
 @contextmanager
 def _connect(db_path: str):
     Path(db_path).parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(db_path, timeout=10)
+    conn = sqlite3.connect(db_path, timeout=20.0)
+    conn.execute("PRAGMA journal_mode=WAL;")
+    conn.execute("PRAGMA synchronous=NORMAL;")
     conn.row_factory = sqlite3.Row
     conn.execute(
         """
@@ -216,3 +235,35 @@ def parse_historical_zips(raw: str | None) -> list[str]:
         if zip_code and zip_code not in zips:
             zips.append(zip_code)
     return zips
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Database Key Management")
+    parser.add_argument("--export-key", action="store_true", help="Export the current Fernet key")
+    parser.add_argument("--rotate-key", metavar="NEW_KEY", type=str, help="Rotate to a new Fernet key")
+    args = parser.parse_args()
+
+    if args.export_key:
+        print(_load_or_generate_key().decode())
+    elif args.rotate_key:
+        new_key = args.rotate_key.encode()
+        try:
+            decoded = base64.urlsafe_b64decode(new_key)
+            if len(decoded) != 32:
+                raise ValueError("Key must be 32 bytes")
+        except Exception as e:
+            print(f"Error: Invalid new key format. Must be a 32-byte urlsafe base64 string. {e}", file=sys.stderr)
+            sys.exit(1)
+        
+        env_path = Path(".env")
+        if env_path.exists():
+            content = env_path.read_text()
+            lines = []
+            for line in content.splitlines():
+                if not line.startswith("ENCRYPTION_KEY="):
+                    lines.append(line)
+            lines.append(f"ENCRYPTION_KEY={new_key.decode()}")
+            env_path.write_text("\n".join(lines) + "\n")
+        else:
+            env_path.touch(mode=0o600, exist_ok=True)
+            env_path.write_text(f"ENCRYPTION_KEY={new_key.decode()}\n")
+        print("Key successfully rotated in .env.")

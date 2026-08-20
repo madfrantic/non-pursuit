@@ -70,9 +70,11 @@ def test_full_sweep_runs_all_five_and_normalizes_results():
          patch("osint_aggregator.scan_courtlistener", new=AsyncMock(return_value=results["courtlistener"])), \
          patch("osint_aggregator.scan_fec", new=AsyncMock(return_value=results["fec"])), \
          patch("osint_aggregator.scan_github", new=AsyncMock(return_value=results["github"])), \
-         patch("osint_aggregator.scan_infrastructure", new=AsyncMock(return_value=results["infrastructure"])):
+         patch("osint_aggregator.scan_infrastructure", new=AsyncMock(return_value=results["infrastructure"])), \
+         patch("osint_aggregator._run_footprint", new=AsyncMock(return_value=[])), \
+         patch("osint_aggregator._run_email", new=AsyncMock(return_value=[])):
         sweep = run(run_full_osint_sweep({"name": "Jane Doe", "handle": "janedoe", "domain": "example.com", "state": "CA"}))
-    assert set(sweep) >= {"sec", "courtlistener", "fec", "github", "infrastructure", "vectors", "summary"}
+    assert set(sweep) >= {"sec", "courtlistener", "fec", "github", "infrastructure", "footprint", "email", "vectors", "summary"}
     assert sweep["summary"]["total_exposures"] == 3
     assert sweep["vectors"]["corporate"]["records"] == results["sec"]["records"]
 
@@ -82,9 +84,51 @@ def test_full_sweep_contains_unavailable_for_scanner_failures():
          patch("osint_aggregator.scan_courtlistener", new=AsyncMock(side_effect=RuntimeError("docket down"))), \
          patch("osint_aggregator.scan_fec", new=AsyncMock(return_value={"status": STATUS_EMPTY, "records": []})), \
          patch("osint_aggregator.scan_github", new=AsyncMock(return_value={"status": STATUS_EMPTY, "records": []})), \
-         patch("osint_aggregator.scan_infrastructure", new=AsyncMock(side_effect=ConnectionError("crt down"))):
+         patch("osint_aggregator.scan_infrastructure", new=AsyncMock(side_effect=ConnectionError("crt down"))), \
+         patch("osint_aggregator._run_footprint", new=AsyncMock(return_value={"status": STATUS_EMPTY, "records": []})), \
+         patch("osint_aggregator._run_email", new=AsyncMock(return_value={"status": STATUS_EMPTY, "records": []})):
         sweep = run(run_full_osint_sweep({"name": "Jane Doe"}))
     assert sweep["sec"]["status"] == STATUS_UNAVAILABLE
     assert sweep["courtlistener"]["status"] == STATUS_UNAVAILABLE
     assert sweep["infrastructure"]["status"] == STATUS_UNAVAILABLE
     assert sweep["summary"]["vectors_available"] == 0
+
+
+def test_certspotter_fallback_on_crtsh_504(monkeypatch):
+    class MockResponse:
+        def __init__(self, status, json_data=None):
+            self.status = status
+            self._json_data = json_data
+            
+        async def __aenter__(self):
+            return self
+            
+        async def __aexit__(self, exc_type, exc_val, exc_tb):
+            pass
+            
+        async def json(self):
+            return self._json_data
+
+    class MockClientSession:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc_val, exc_tb):
+            pass
+
+        def get(self, url, **kwargs):
+            if "crt.sh" in url:
+                return MockResponse(504)
+            if "api.certspotter.com" in url:
+                return MockResponse(200, [{"dns_names": ["fallback.example.com"], "issuer": {"name": "Let's Encrypt"}}])
+            return MockResponse(404)
+
+    import aiohttp
+    monkeypatch.setattr(aiohttp, "ClientSession", MockClientSession)
+    
+    from osint.infrastructure import _fetch_certificates
+    import asyncio
+    certs = asyncio.run(_fetch_certificates("example.com", retries=1))
+    
+    assert len(certs) == 1
+    assert certs[0]["name_value"] == "fallback.example.com"

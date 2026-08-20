@@ -17,8 +17,9 @@ from urllib.parse import quote
 
 def build_mailto_link(to_address: str, subject: str, body: str) -> str:
     """Build a properly URL-encoded mailto: link."""
-    encoded_subject = quote(subject)
-    encoded_body = quote(body)
+    # RFC 2368 strictly requires all reserved URL characters (including '/') to be encoded
+    encoded_subject = quote(subject, safe='')
+    encoded_body = quote(body, safe='')
     return f"mailto:{to_address}?subject={encoded_subject}&body={encoded_body}"
 
 

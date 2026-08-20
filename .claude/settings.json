@@ -5,7 +5,15 @@
       "Bash(python)",
       "Bash(python3)",
       "Bash(venv/bin/python -m py_compile components/footprint.py)",
-      "Bash(pkill -f \"streamlit run\")"
+      "Bash(pkill -f \"streamlit run\")",
+      "Bash(python -m pytest tests/ -q)",
+      "Bash(python3 -m pytest tests/ -q)",
+      "Bash(/usr/bin/python3 -m pytest --version)",
+      "Bash(/usr/bin/python3 -m pip install pytest streamlit cryptography python-dotenv -q)",
+      "Bash(/home/b0t/workspace/non-pursuit/venv/bin/python -m pytest tests/ -q)",
+      "Bash(git commit -m ' *)",
+      "Bash(/home/b0t/workspace/non-pursuit/venv/bin/python -m pytest tests/ -q --tb=short)",
+      "Bash(chmod +x /home/b0t/workspace/non-pursuit/demo.sh)"
     ]
   }
 }

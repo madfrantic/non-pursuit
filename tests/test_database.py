@@ -131,3 +131,22 @@ def test_parse_historical_zips_returns_empty_list_for_none_or_blank():
     assert database.parse_historical_zips(None) == []
     assert database.parse_historical_zips("") == []
     assert database.parse_historical_zips("   ") == []
+
+
+def test_database_cli_rotation_and_export(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    env_path = tmp_path / ".env"
+    
+    import subprocess
+    import sys
+    import os
+    repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+    env = os.environ.copy()
+    env["PYTHONPATH"] = repo_root
+
+    result = subprocess.run(
+        [sys.executable, "-m", "utils.database", "--rotate-key", "YWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWE="],
+        capture_output=True, text=True, cwd=str(tmp_path), env=env
+    )
+    assert result.returncode == 0
+    assert "ENCRYPTION_KEY=YWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWE=" in env_path.read_text()

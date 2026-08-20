@@ -73,26 +73,6 @@ def _seed_profile_fields():
     st.session_state.setdefault("pf_shared_loyalty", "")
 
 
-def _load_demo_profile():
-    city, _, state = config.DEMO_PROFILE["location"].partition(", ")
-    first_name, _, last_name = config.DEMO_PROFILE["name"].partition(" ")
-    st.session_state.pf_first_name = first_name
-    st.session_state.pf_last_name = last_name
-    st.session_state.pf_middle_name = ""
-    st.session_state.pf_email = config.DEMO_PROFILE["email"]
-    st.session_state.pf_phone = ""
-    st.session_state.pf_city = city
-    st.session_state.pf_state = state
-    st.session_state.pf_zip = ""
-    st.session_state.pf_birth_year = None
-    st.session_state.pf_historical_zips = ""
-    st.session_state.pf_associated_name = ""
-    st.session_state.pf_shared_addresses = ""
-    st.session_state.pf_shared_phones = ""
-    st.session_state.pf_shared_loyalty = ""
-    st.session_state.record_url = config.DEMO_PROFILE["record_url"]
-
-
 def _save_profile():
     full_name = " ".join(
         part for part in [
@@ -225,17 +205,11 @@ def render():
     else:
         st.session_state.master_face_image_bytes = None
 
-    action_cols = st.columns([2, 1])
-    if action_cols[0].button(
+    if st.button(
         "🔍 Open Master Intelligence Dossier", type="primary", width="stretch",
         disabled=not st.session_state.user_name,
     ):
         _switch_to(_MODE_RESULTS)
-    if action_cols[1].button("🧪 Try a demo profile", width="stretch"):
-        _load_demo_profile()
-        st.toast("Demo profile loaded -- click Save to use it.")
-        st.rerun()
-        st.rerun()
 
     stale_count = sum(
         1 for entry in exposure_store.get_all_checks(runtime_mode.db_path()).values()
