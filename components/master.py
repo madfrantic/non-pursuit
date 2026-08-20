@@ -120,19 +120,23 @@ def render(brokers_df):
         "public footprint, and statutory action plans."
     )
 
-    # Runtime mode callout banner
-    if runtime_mode.is_cloud_deployment():
-        st.warning(
-            "☁️ **WEB / CLOUD RUNTIME** — Passive OSINT enabled (Gravatar, PGP, CertSpotter). "
-            "Heavy network sweeps disabled to prevent IP limits.",
-            icon="☁️"
-        )
-    elif runtime_mode.is_local_mode():
-        st.info(
-            "🖥️ **DESKTOP RUNTIME** — Full active sweeps enabled (700+ site username checks, "
-            "deep socket scans, local export packaging).",
-            icon="🖥️"
-        )
+    # PROMINENT ENVIRONMENT MODE BANNER
+    mode_cols = st.columns([1, 3])
+    with mode_cols[0]:
+        if runtime_mode.is_cloud_deployment():
+            st.error("☁️ WEB MODE")
+        elif runtime_mode.is_demo_mode():
+            st.warning("🟡 DEMO MODE")
+        else:
+            st.success("🖥️ DESKTOP MODE")
+
+    with mode_cols[1]:
+        if runtime_mode.is_cloud_deployment():
+            st.caption("**WEB / CLOUD RUNTIME** — Passive OSINT only (Gravatar, PGP, CertSpotter). Email scans work. Heavy sweeps disabled.")
+        elif runtime_mode.is_demo_mode():
+            st.caption("**DEMO SANDBOX** — Mock OSINT data shown. No real scanning.")
+        else:
+            st.caption("**DESKTOP RUNTIME** — Full active OSINT enabled. All email vectors available (700+ sites, Gravatar, PGP, breaches).")
 
     # Always read fresh profile state (not stale from input widget cache)
     profile = profile_state.get_profile(st.session_state)
@@ -214,13 +218,27 @@ def render(brokers_df):
                 
     st.subheader("🔐 Section 2: Data Exposures & Breaches")
     with st.container(border=True):
-        # Email exposure section with fallback for missing data
+        # Email exposure section with detailed diagnostics
         email_vector = findings.get("email", {})
-        if not email_vector or email_vector.get("status") == "unavailable":
-            st.markdown("##### 📧 Email & Identity Exposure  ·  `⚪ Unavailable`")
-            st.caption("Email scan unavailable or no email provided.")
+        email_count = email_vector.get("count", 0)
+
+        if not profile.get("email"):
+            st.markdown("##### 📧 Email & Identity Exposure  ·  `⚪ Not Available`")
+            st.warning("No email address provided. Enter your email in the 👤 Profile tab to scan for email exposures (Gravatar, PGP, breaches, etc.)")
+        elif not email_vector or email_vector.get("status") == "unavailable":
+            st.markdown("##### 📧 Email & Identity Exposure  ·  `⚪ Scan Failed`")
+            st.caption(f"Email scan failed for: {profile.get('email')}")
+            st.caption("This could be due to: timeout, API limits, or network issues. Try again in a moment.")
+        elif email_count == 0:
+            st.markdown("##### 📧 Email & Identity Exposure  ·  `🟢 Clean`")
+            st.caption(f"No exposures found for {profile.get('email')} in:")
+            cols = st.columns(2)
+            cols[0].caption("• Gravatar profiles\n• PGP key servers")
+            cols[1].caption("• Known breaches\n• DNS validation")
         else:
-            _render_osint_vector(email_vector, "Email & Identity Exposure")
+            _render_osint_vector(email_vector, f"📧 Email & Identity Exposure ({email_count} findings)")
+
+        st.divider()
 
         # GitHub exposure section
         _render_osint_vector(findings.get("github", {}), "Developer & Code Exposure")
