@@ -123,6 +123,185 @@ st.markdown(
         #MainMenu {visibility: hidden;}
         footer {visibility: hidden;}
         .block-container {padding-top: 1rem; padding-bottom: 0rem;}
+
+        /* ==================================================================
+           CINEMATIC LAYER -- 70s NYPD SIU surveillance-monitor treatment.
+           Purely presentational: every rule below is either non-interactive
+           (pointer-events: none) or a paint-only property, so nothing here
+           can intercept a click or move a widget's hit box.
+           ================================================================== */
+
+        :root {
+            --siu-brass: #D4AF37;
+            --siu-navy: #0B1325;
+            --siu-slate: #152238;
+            --siu-serif: 'Iowan Old Style', 'Palatino Linotype', Palatino, Georgia, 'Times New Roman', serif;
+            --siu-mono: 'Courier New', Courier, monospace;
+        }
+
+        /* --- 1. CRT scanline overlay -------------------------------------
+           Fixed to the viewport and painted over the whole app like the
+           feed on a surveillance monitor. pointer-events: none is what
+           keeps the app fully clickable underneath it. */
+        [data-testid="stApp"]::after,
+        .stApp::after {
+            content: "";
+            position: fixed;
+            inset: 0;
+            pointer-events: none;
+            z-index: 9999;
+            opacity: 0.05;
+            background: repeating-linear-gradient(
+                180deg,
+                rgba(0, 0, 0, 0.95) 0px,
+                rgba(0, 0, 0, 0.95) 1px,
+                transparent 1px,
+                transparent 3px
+            );
+        }
+
+        /* --- 2. Analog terminal flicker ----------------------------------
+           Applied to the single main content wrapper rather than to every
+           text node: one compositor layer instead of hundreds, and the
+           dips are brief and shallow (never below 0.985) so body copy
+           stays legible while reading. */
+        @keyframes flicker {
+            0%, 91%, 100% { opacity: 1; }
+            92%           { opacity: 0.985; }
+            93%           { opacity: 1; }
+            96%           { opacity: 0.99; }
+            97%           { opacity: 1; }
+        }
+        [data-testid="stMain"] .block-container {
+            animation: flicker 9s linear infinite;
+        }
+
+        /* --- 3. Glowing brass borders ------------------------------------
+           Bordered st.container blocks (the OSINT result cards) and the
+           metric cards breathe a low brass glow. */
+        @keyframes pulse-glow {
+            0%, 100% {
+                box-shadow: 0 0 10px rgba(212, 175, 55, 0.2),
+                            0 4px 10px rgba(0, 0, 0, 0.4);
+                border-color: rgba(212, 175, 55, 0.35);
+            }
+            50% {
+                box-shadow: 0 0 22px rgba(212, 175, 55, 0.38),
+                            0 4px 12px rgba(0, 0, 0, 0.45);
+                border-color: rgba(212, 175, 55, 0.60);
+            }
+        }
+        /* Streamlit 1.62 hangs st.container(border=True) off a
+           stLayoutWrapper -- there is no stVerticalBlockBorderWrapper in
+           this version, and a bare stVerticalBlock selector would also
+           catch columns and expander bodies. The direct-child combinator
+           is what makes this hit bordered containers and nothing else
+           (every st.container in this repo passes border=True). The
+           BorderWrapper selector is kept as a forward-compat alias. */
+        [data-testid="stMain"] [data-testid="stLayoutWrapper"] > [data-testid="stVerticalBlock"],
+        [data-testid="stMain"] [data-testid="stVerticalBlockBorderWrapper"] {
+            border: 1px solid rgba(212, 175, 55, 0.35);
+            border-radius: 6px;
+            background: linear-gradient(180deg, rgba(30, 47, 84, 0.55) 0%, rgba(17, 27, 51, 0.55) 100%);
+            animation: pulse-glow 5.5s ease-in-out infinite;
+        }
+        /* Nested cards keep the border but drop the animation -- stacked
+           pulses read as noise rather than atmosphere. */
+        [data-testid="stMain"] [data-testid="stLayoutWrapper"] > [data-testid="stVerticalBlock"]
+            [data-testid="stLayoutWrapper"] > [data-testid="stVerticalBlock"] {
+            animation: none;
+            box-shadow: 0 0 10px rgba(212, 175, 55, 0.15);
+        }
+        [data-testid="stVerticalBlock"] > div:has(> [data-testid="stMetric"]) {
+            animation: pulse-glow 5.5s ease-in-out infinite;
+        }
+
+        /* --- 4. Dossier typography ---------------------------------------
+           Serif carries the authority in headline sizes; Courier carries
+           the metadata (h4/h5/h6, captions, code) the way the case-file
+           banner already does. */
+        [data-testid="stMain"] h1,
+        [data-testid="stMain"] h2,
+        [data-testid="stMain"] h3,
+        [data-testid="stSidebar"] h1,
+        [data-testid="stSidebar"] h2,
+        [data-testid="stSidebar"] h3 {
+            font-family: var(--siu-serif) !important;
+            letter-spacing: 0.02em;
+        }
+        [data-testid="stMain"] h4,
+        [data-testid="stMain"] h5,
+        [data-testid="stMain"] h6,
+        [data-testid="stSidebar"] h4,
+        [data-testid="stSidebar"] h5,
+        [data-testid="stSidebar"] h6 {
+            font-family: var(--siu-mono) !important;
+            font-size: 1.05rem !important;
+            letter-spacing: 0.04em;
+            color: #E8E2D4;
+        }
+        /* The global giant-emoji rule sizes every bare span at 2.5rem,
+           which dwarfs a 1.05rem Courier sub-header. Scaled to sit on the
+           cap height instead -- delete this block to restore the
+           uniformly giant emojis. */
+        [data-testid="stMain"] :is(h4, h5, h6) span,
+        [data-testid="stSidebar"] :is(h4, h5, h6) span {
+            font-size: 1.5rem !important;
+        }
+        /* Emoji spans inside headers must not inherit Courier -- the
+           existing giant-emoji rule sizes them, this keeps them drawing
+           from the system emoji font. */
+        [data-testid="stMain"] :is(h1, h2, h3, h4, h5, h6) span,
+        [data-testid="stSidebar"] :is(h1, h2, h3, h4, h5, h6) span {
+            font-family: inherit;
+        }
+
+        /* SIU case-file banner: mono kicker, serif title, brass glow. */
+        .siu-banner {
+            animation: pulse-glow 5.5s ease-in-out infinite;
+        }
+        .siu-banner .siu-kicker,
+        .siu-banner .siu-file {
+            font-family: var(--siu-mono) !important;
+        }
+        .siu-banner .siu-title {
+            font-family: var(--siu-serif) !important;
+        }
+
+        /* Dossier section headers rendered by components/master.py. */
+        .siu-section {
+            margin: 34px 0 14px;
+            border-top: 1px solid rgba(212, 175, 55, 0.30);
+            padding-top: 14px;
+        }
+        .siu-section .siu-section-no {
+            font-family: var(--siu-mono);
+            font-size: 0.72rem;
+            letter-spacing: 0.28em;
+            text-transform: uppercase;
+            color: var(--siu-brass);
+        }
+        .siu-section .siu-section-name {
+            font-family: var(--siu-serif);
+            font-size: 1.6rem;
+            font-weight: 700;
+            color: #F8FAFC;
+            letter-spacing: 0.02em;
+            margin-top: 2px;
+        }
+
+        /* --- Accessibility guard ----------------------------------------
+           Motion sensitivity outranks atmosphere: the scanlines stay
+           (they are static), every animation stops. */
+        @media (prefers-reduced-motion: reduce) {
+            [data-testid="stMain"] .block-container,
+            [data-testid="stMain"] [data-testid="stLayoutWrapper"] > [data-testid="stVerticalBlock"],
+            [data-testid="stMain"] [data-testid="stVerticalBlockBorderWrapper"],
+            [data-testid="stVerticalBlock"] > div:has(> [data-testid="stMetric"]),
+            .siu-banner {
+                animation: none !important;
+            }
+        }
     </style>
     """,
     unsafe_allow_html=True,
@@ -366,7 +545,7 @@ if _audit_requests:
 
 st.markdown(
     """
-    <div style="
+    <div class="siu-banner" style="
         background: linear-gradient(180deg, #1A2744 0%, #111B33 100%);
         border: 2px solid #D4AF37;
         border-radius: 4px;
@@ -378,14 +557,14 @@ st.markdown(
         box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
     ">
         <div>
-            <div style="font-family: 'Courier New', Courier, monospace; color: #D4AF37; font-size: 0.75rem; letter-spacing: 2.5px; text-transform: uppercase;">
+            <div class="siu-kicker" style="font-family: 'Courier New', Courier, monospace; color: #D4AF37; font-size: 0.75rem; letter-spacing: 2.5px; text-transform: uppercase;">
                 NEW YORK POLICE DEPT // SPECIAL INVESTIGATIONS UNIT
             </div>
-            <div style="font-family: 'Georgia', serif; color: #F8FAFC; font-size: 1.75rem; font-weight: 700; letter-spacing: 1px; margin-top: 2px;">
+            <div class="siu-title" style="font-family: 'Georgia', serif; color: #F8FAFC; font-size: 1.75rem; font-weight: 700; letter-spacing: 1px; margin-top: 2px;">
                 🛡️ NON-PURSUIT : DIVISION OF OSINT
             </div>
         </div>
-        <div style="text-align: right; font-family: 'Courier New', Courier, monospace; border-left: 2px solid #314A81; padding-left: 18px;">
+        <div class="siu-file" style="text-align: right; font-family: 'Courier New', Courier, monospace; border-left: 2px solid #314A81; padding-left: 18px;">
             <div style="color: #D4AF37; font-weight: 700; font-size: 0.85rem;">FILE: CONFIDENTIAL</div>
             <div style="color: #F8FAFC; font-size: 0.7rem; letter-spacing: 1px;">DIRECTIVE § 1798 / NY-SHIELD</div>
         </div>

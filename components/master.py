@@ -97,6 +97,24 @@ def _render_osint_records(result):
             continue
 
 
+def _section_header(number, icon, name):
+    """Dossier-style section rule: mono case-file kicker over a serif title.
+
+    Presentational only -- st.subheader gave no hook for the SIU styling
+    (Streamlit owns the h2 markup), so the header is emitted as markup
+    the .siu-section rules in app.py can reach.
+    """
+    st.markdown(
+        f'''
+        <div class="siu-section">
+            <div class="siu-section-no">Section {number:02d} &nbsp;//&nbsp; Case File</div>
+            <div class="siu-section-name">{icon} {name}</div>
+        </div>
+        ''',
+        unsafe_allow_html=True,
+    )
+
+
 def _render_osint_vector(result, title):
     if not result:
         st.markdown(f"##### {title}  ·  `⚪ Unavailable`")
@@ -353,7 +371,7 @@ def render(brokers_df):
 
     st.markdown("---")
 
-    st.subheader("👤 Section 1: Online Identity & Media Exposure")
+    _section_header(1, "👤", "Online Identity &amp; Media Exposure")
     with st.container(border=True):
         c1, c2 = st.columns(2)
         with c1:
@@ -370,7 +388,7 @@ def render(brokers_df):
             if not found_avatars:
                 st.caption("No avatars discovered.")
                 
-    st.subheader("🔐 Section 2: Data Exposures & Breaches")
+    _section_header(2, "🔐", "Data Exposures &amp; Breaches")
     with st.container(border=True):
         # Email exposure section with detailed diagnostics
         email_vector = findings.get("email", {})
@@ -397,7 +415,7 @@ def render(brokers_df):
         # GitHub exposure section
         _render_osint_vector(findings.get("github", {}), "Developer & Code Exposure")
 
-    st.subheader("🏛️ Section 3: Legal, Financial & Corporate Footprint")
+    _section_header(3, "🏛️", "Legal, Financial &amp; Corporate Footprint")
     with st.container(border=True):
         sec_col, fec_col, court_col = st.columns(3)
         with sec_col:
@@ -410,6 +428,6 @@ def render(brokers_df):
     with st.container(border=True):
         _render_osint_vector(findings.get("infrastructure", {}), "Domains & Certificates")
 
-    st.subheader("⚔️ Section 4: Statutory Action Plan")
+    _section_header(4, "⚔️", "Statutory Action Plan")
     with st.container(border=True):
         letters_component.render(brokers_df)
