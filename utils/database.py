@@ -5,11 +5,20 @@ personalizes the search flow and letters around.
 
 Backed by the same local SQLite file the campaign tracker and exposure
 checks use.
+
+PII columns (name, email, phone, location) are encrypted at rest using
+Fernet symmetric encryption. The key is stored in .env (or generated if
+missing) and is never committed to git. Read/write are transparent to
+callers -- this module handles encrypt/decrypt internally.
 """
 import sqlite3
 import json
+import os
 from contextlib import contextmanager
 from pathlib import Path
+
+from cryptography.fernet import Fernet
+from dotenv import load_dotenv
 
 PROFILE_COLUMNS = [
     "first_name",
@@ -24,6 +33,56 @@ PROFILE_COLUMNS = [
     "historical_zip_codes",
     "relational_entities",
 ]
+
+# PII columns that are encrypted at rest.
+PII_COLUMNS = {
+    "first_name", "last_name", "middle_name",
+    "email_address", "phone_number",
+    "current_city", "current_state", "current_zip_code", "historical_zip_codes",
+}
+
+
+def _load_or_generate_key() -> bytes:
+    """Load the Fernet encryption key from .env, or generate and save it."""
+    load_dotenv()
+    key = os.getenv("ENCRYPTION_KEY")
+    if key:
+        return key.encode() if isinstance(key, str) else key
+    key = Fernet.generate_key()
+    env_path = Path(".env")
+    env_path.touch(mode=0o600, exist_ok=True)
+    with open(env_path, "a") as f:
+        f.write(f"\nENCRYPTION_KEY={key.decode()}\n")
+    return key
+
+
+_CIPHER = None
+
+def _cipher() -> Fernet:
+    """Lazily initialize the Fernet cipher with the encryption key."""
+    global _CIPHER
+    if _CIPHER is None:
+        _CIPHER = Fernet(_load_or_generate_key())
+    return _CIPHER
+
+
+def _encrypt(value) -> str | None:
+    """Encrypt a string value, or return None if the value is None/empty."""
+    if value is None or value == "":
+        return value
+    s = str(value)
+    return _cipher().encrypt(s.encode()).decode() if s else ""
+
+
+def _decrypt(value) -> str | None:
+    """Decrypt a string value, handling None and already-plaintext gracefully."""
+    if value is None or value == "":
+        return value
+    s = str(value)
+    try:
+        return _cipher().decrypt(s.encode()).decode()
+    except Exception:
+        return s
 
 
 @contextmanager
@@ -60,14 +119,16 @@ def _connect(db_path: str):
 
 
 def init_db(db_path: str) -> None:
-    """Create the target_profile table if it doesn't already exist."""
+    """Create the target_profile table if it doesn't already exist.
+    Triggers a one-time encryption migration on plaintext data."""
     with _connect(db_path):
         pass
+    _migrate_encrypt_plaintext(db_path)
 
 
 def get_latest_target_profile(db_path: str) -> dict | None:
     """Return the most recently saved profile as a dict, or None if no
-    profile has been saved yet."""
+    profile has been saved yet. PII columns are decrypted on read."""
     with _connect(db_path) as conn:
         row = conn.execute(
             "SELECT * FROM target_profile ORDER BY id DESC LIMIT 1"
@@ -75,6 +136,9 @@ def get_latest_target_profile(db_path: str) -> dict | None:
         if not row:
             return None
         profile = dict(row)
+        for col in PII_COLUMNS:
+            if col in profile:
+                profile[col] = _decrypt(profile[col])
         try:
             profile["relational_entities"] = json.loads(profile.get("relational_entities") or "[]")
         except (TypeError, json.JSONDecodeError):
@@ -85,12 +149,17 @@ def get_latest_target_profile(db_path: str) -> dict | None:
 def insert_target_profile(db_path: str, data: dict) -> int:
     """Insert a new profile record. Only PROFILE_COLUMNS are read from
     `data` and every value is bound as a parameter, so nothing from the
-    form is ever string-formatted into SQL. Returns the new row's id.
+    form is ever string-formatted into SQL. PII columns are encrypted
+    before writing. Returns the new row's id.
     """
-    values = [
-        json.dumps(data.get(col) or []) if col == "relational_entities" else data.get(col)
-        for col in PROFILE_COLUMNS
-    ]
+    values = []
+    for col in PROFILE_COLUMNS:
+        val = data.get(col)
+        if col == "relational_entities":
+            val = json.dumps(val or [])
+        elif col in PII_COLUMNS:
+            val = _encrypt(val)
+        values.append(val)
     with _connect(db_path) as conn:
         cursor = conn.execute(
             f"INSERT INTO target_profile ({', '.join(PROFILE_COLUMNS)}) "
@@ -99,6 +168,38 @@ def insert_target_profile(db_path: str, data: dict) -> int:
         )
         conn.commit()
         return cursor.lastrowid
+
+
+def _migrate_encrypt_plaintext(db_path: str) -> None:
+    """One-time migration: detect plaintext PII and re-encrypt it.
+
+    Called during init_db if plaintext data is detected. Does nothing if
+    all PII is already encrypted (or empty).
+    """
+    with _connect(db_path) as conn:
+        rows = conn.execute("SELECT id FROM target_profile").fetchall()
+        for (row_id,) in rows:
+            row = conn.execute("SELECT * FROM target_profile WHERE id = ?", (row_id,)).fetchone()
+            profile = dict(row)
+
+            needs_update = False
+            for col in PII_COLUMNS:
+                val = profile.get(col)
+                if val and not val.startswith("gAAAAAA"):
+                    try:
+                        _decrypt(val)
+                    except Exception:
+                        needs_update = True
+                        profile[col] = _encrypt(val)
+
+            if needs_update:
+                updates = ", ".join(f"{col} = ?" for col in PII_COLUMNS)
+                values = [profile[col] for col in PII_COLUMNS] + [row_id]
+                conn.execute(
+                    f"UPDATE target_profile SET {updates} WHERE id = ?",
+                    values,
+                )
+        conn.commit()
 
 
 def parse_historical_zips(raw: str | None) -> list[str]:

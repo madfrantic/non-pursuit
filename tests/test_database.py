@@ -1,13 +1,24 @@
 import json
 import sqlite3
+from unittest.mock import patch
 
 import pytest
 
 import database
+from cryptography.fernet import Fernet
 
 
 @pytest.fixture
-def db_path(tmp_path):
+def encryption_key():
+    """Provide a fixed test encryption key."""
+    return Fernet.generate_key()
+
+
+@pytest.fixture
+def db_path(tmp_path, encryption_key, monkeypatch):
+    # Mock environment and cipher so tests don't create .env files
+    monkeypatch.setenv("ENCRYPTION_KEY", encryption_key.decode())
+    monkeypatch.setattr("database._CIPHER", None)
     return str(tmp_path / "test_profile.db")
 
 
@@ -43,24 +54,19 @@ def test_insert_target_profile_stores_all_fields(db_path):
     )
     assert row_id == 1
 
-    conn = sqlite3.connect(db_path)
-    conn.row_factory = sqlite3.Row
-    row = conn.execute("SELECT * FROM target_profile WHERE id = ?", (row_id,)).fetchone()
-    conn.close()
-
-    assert row["first_name"] == "Jane"
-    assert row["last_name"] == "Doe"
-    assert row["middle_name"] == "Q"
-    assert row["birth_year"] == 1990
-    assert row["email_address"] == "jane@example.com"
-    assert row["phone_number"] == "555-123-4567"
-    assert row["current_city"] == "Austin"
-    assert row["current_state"] == "TX"
-    assert row["current_zip_code"] == "78701"
-    assert row["historical_zip_codes"] == "94105, 10001"
-    assert json.loads(row["relational_entities"])[0]["name"] == "Alex Doe"
-
+    # PII is encrypted at rest, so raw SQLite reads see ciphertext.
+    # Verify through the high-level API which decrypts on return.
     profile = database.get_latest_target_profile(db_path)
+    assert profile["first_name"] == "Jane"
+    assert profile["last_name"] == "Doe"
+    assert profile["middle_name"] == "Q"
+    assert profile["birth_year"] == 1990
+    assert profile["email_address"] == "jane@example.com"
+    assert profile["phone_number"] == "555-123-4567"
+    assert profile["current_city"] == "Austin"
+    assert profile["current_state"] == "TX"
+    assert profile["current_zip_code"] == "78701"
+    assert profile["historical_zip_codes"] == "94105, 10001"
     assert profile["relational_entities"][0]["shared_phone_numbers"] == ["555-1111"]
 
 
@@ -68,15 +74,11 @@ def test_insert_target_profile_allows_missing_optional_fields(db_path):
     database.init_db(db_path)
     row_id = database.insert_target_profile(db_path, {"first_name": "Jane", "last_name": "Doe"})
 
-    conn = sqlite3.connect(db_path)
-    conn.row_factory = sqlite3.Row
-    row = conn.execute("SELECT * FROM target_profile WHERE id = ?", (row_id,)).fetchone()
-    conn.close()
-
-    assert row["first_name"] == "Jane"
-    assert row["last_name"] == "Doe"
-    assert row["birth_year"] is None
-    assert row["email_address"] is None
+    profile = database.get_latest_target_profile(db_path)
+    assert profile["first_name"] == "Jane"
+    assert profile["last_name"] == "Doe"
+    assert profile["birth_year"] is None
+    assert profile["email_address"] is None
 
 
 def test_get_latest_target_profile_returns_none_when_empty(db_path):
@@ -102,11 +104,11 @@ def test_insert_target_profile_is_parameterized_against_injection(db_path):
 
     conn = sqlite3.connect(db_path)
     tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-    row = conn.execute("SELECT first_name FROM target_profile").fetchone()
     conn.close()
 
+    profile = database.get_latest_target_profile(db_path)
     assert "target_profile" in tables
-    assert row[0] == malicious
+    assert profile["first_name"] == malicious
 
 
 def test_parse_historical_zips_handles_comma_separated():

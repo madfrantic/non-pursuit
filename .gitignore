@@ -2,6 +2,7 @@ venv/
 __pycache__/
 *.pyc
 .pytest_cache/
+.env  # Encryption key -- NEVER commit this, even if empty
 
 # Local user data -- broker requests, notes, and now self-search exposure
 # answers. Real personal data belongs on the user's machine only, never in
