@@ -9,6 +9,8 @@ icalendar>=6.0,<8.0
 python-dotenv>=1.0.0
 cryptography>=41.0.0  # App-layer encryption for PII at rest in SQLite (Fernet)
 reportlab>=4.0.0  # PDF export of the campaign/exposure report (data_export.build_pdf_export)
+fpdf2>=2.7,<3.0  # PDF export of the OSINT dossier (pdf_generator.generate_osint_pdf) — pure
+                 # Python, no system binaries, unlike pdfkit/wkhtmltopdf
 requests>=2.31,<3.0  # used by Results' IP/ISP lookup (calls ipinfo.io), and to fetch the WhatsMyName site list
 aiohttp>=3.9,<4.0  # concurrent account-existence checks in utils/footprint_scanner.py
 pytest>=8.0,<9.0  # dev dependency: run with `pytest tests/`

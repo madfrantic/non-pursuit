@@ -3,6 +3,8 @@ Master Dashboard: the statutory countdowns, the relational exposure map,
 and the discovered-accounts worklist on one page.
 """
 import asyncio
+from datetime import datetime
+
 import streamlit as st
 
 import config
@@ -15,6 +17,7 @@ import database
 from components import letters as letters_component
 from applog import get_logger
 from osint_aggregator import run_full_osint_sweep
+import pdf_generator
 import profile_state
 import presentation_mode
 
@@ -167,6 +170,9 @@ def render(brokers_df):
                     st.session_state.osint_findings = asyncio.run(run_full_osint_sweep(_osint_profile()))
                     my_bar.progress(100, text="Recon sweep complete.")
                 st.session_state.pop("audit_zip", None)
+                # Both derived artifacts are now stale -- drop the cached
+                # dossier so the next render rebuilds it from this sweep.
+                st.session_state.pop("osint_dossier_pdf", None)
             except Exception as exc:
                 _log.error("OSINT sweep failed: %s", exc)
                 st.error("The sweep could not be completed.")
@@ -196,6 +202,33 @@ def render(brokers_df):
     c2.metric("🔴 Critical Breaches", email_count)
     c3.metric("👤 Exposed Handles", fp_count)
     c4.metric("📬 Deletion Targets", len(brokers_df))
+
+    # Building the dossier costs a few hundred milliseconds, which is fine
+    # once per sweep and wasteful on every unrelated widget rerun -- so it
+    # is cached against the findings that produced it and dropped when a
+    # new sweep lands. A failure here must never take down the dashboard
+    # the presenter is standing in front of.
+    if "osint_dossier_pdf" not in st.session_state:
+        try:
+            st.session_state.osint_dossier_pdf = pdf_generator.build_dossier_bytes(
+                _osint_profile(), findings
+            )
+        except Exception as exc:
+            _log.error("Dossier PDF generation failed: %s", exc)
+            st.session_state.osint_dossier_pdf = None
+
+    if st.session_state.get("osint_dossier_pdf"):
+        st.download_button(
+            "📄 Download Intelligence Dossier (PDF)",
+            data=st.session_state.osint_dossier_pdf,
+            file_name=f"non_pursuit_osint_dossier_{datetime.now().strftime('%Y%m%d')}.pdf",
+            mime="application/pdf",
+            type="primary",
+            use_container_width=True,
+            help="Target profile, email exposures and account footprint as one shareable report.",
+        )
+    else:
+        st.caption("⚠️ The PDF dossier could not be generated for these results.")
 
     st.markdown("---")
 

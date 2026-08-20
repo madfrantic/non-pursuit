@@ -2,6 +2,8 @@
 import asyncio
 from typing import Dict, Any
 
+import profile_state
+
 MOCK_PROFILE = {
     "name": "Jane Doe",
     "email": "jane.doe@example.com",
@@ -13,11 +15,14 @@ MOCK_PROFILE = {
 async def get_mock_osint_findings() -> Dict[str, Any]:
     """Return impressive mock OSINT findings for presentation."""
     await asyncio.sleep(1.5)  # Dramatic effect
-    return {
-        "summary": {
-            "total_exposures": 4,
-        },
-        "vectors": {
+    # Every vector is returned twice -- once under "vectors" and once at
+    # the top level -- because that is the shape run_full_osint_sweep()
+    # produces (it ends with **results) and the shape the Master Dashboard
+    # reads: the metric row reads findings["vectors"][...], while each
+    # section render reads findings[...] directly. Returning only "vectors"
+    # showed the headline counts but left every section reading
+    # "Unavailable", which is exactly the wrong thing to happen on stage.
+    vectors = {
             "footprint": {
                 "status": "success",
                 "module": "footprint",
@@ -101,12 +106,29 @@ async def get_mock_osint_findings() -> Dict[str, Any]:
                     "registered": "2012-03-20",
                 },
             },
+    }
+    return {
+        "summary": {
+            "total_exposures": 4,
         },
+        "vectors": vectors,
+        **vectors,
     }
 
 
 def populate_demo_profile(state):
-    """Populate session state with realistic mock profile data."""
+    """Populate session state with realistic mock profile data.
+
+    Writes the pf_* form fields *and* the canonical profile. Filling only
+    the form fields left the dossier reading an empty profile until the
+    presenter walked over to the Profile tab and pressed Save -- so
+    enabling presentation mode and going straight to the dossier showed
+    "Missing required fields", which is the one thing it exists to avoid.
+
+    Safe to call from the sidebar because the sidebar renders before the
+    page body: assigning to a pf_* key after its widget has been created
+    in the same run is what Streamlit rejects.
+    """
     state["pf_first_name"] = "Jane"
     state["pf_last_name"] = "Doe"
     state["pf_middle_name"] = ""
@@ -123,3 +145,14 @@ def populate_demo_profile(state):
     state["pf_shared_addresses"] = ""
     state["pf_shared_phones"] = ""
     state["pf_shared_loyalty"] = ""
+
+    profile_state.sync_profile(state, {
+        "full_name": f"{MOCK_PROFILE['name']}",
+        "email": MOCK_PROFILE["email"],
+        "handle": MOCK_PROFILE["handle"],
+        "domain": MOCK_PROFILE["domain"],
+        "city": "New York",
+        "state": MOCK_PROFILE["state"],
+        "zip_code": "10001",
+        "phone": "(555) 123-4567",
+    })

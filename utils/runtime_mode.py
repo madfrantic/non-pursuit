@@ -37,14 +37,95 @@ _TRUTHY = {"1", "true", "yes", "on"}
 
 SESSION_DB_PREFIX = "np_session_"
 
+# --- manual runtime override -----------------------------------------
+# A presenter demoing the app needs to show how the UI adapts between the
+# desktop build and the restricted cloud build without restarting the
+# process under a different environment variable. The override below is
+# that switch, and it is deliberately narrow: it steers only which
+# *deployment shape* the UI describes (desktop vs cloud). It cannot turn
+# demo mode on or off, because demo mode decides where PII is written and
+# whether a shared host runs a real scan -- neither of which should ever
+# be reachable from a widget in a visitor's browser.
+OVERRIDE_AUTO = "auto"
+OVERRIDE_DESKTOP = "desktop"
+OVERRIDE_CLOUD = "cloud"
+_VALID_OVERRIDES = {OVERRIDE_AUTO, OVERRIDE_DESKTOP, OVERRIDE_CLOUD}
+_OVERRIDE_STATE_KEY = "runtime_override"
+
+_fallback_override = OVERRIDE_AUTO
+
+
+def set_runtime_override(value: str) -> None:
+    """Pin the reported runtime to desktop or cloud, or hand it back to
+    environment detection with OVERRIDE_AUTO. Anything unrecognized falls
+    back to auto rather than raising -- a bad value from a widget should
+    degrade to real detection, not break the page."""
+    global _fallback_override
+    normalized = (value or OVERRIDE_AUTO).strip().lower()
+    if normalized not in _VALID_OVERRIDES:
+        normalized = OVERRIDE_AUTO
+
+    state = _session_state()
+    if state is not None:
+        state[_OVERRIDE_STATE_KEY] = normalized
+    else:
+        _fallback_override = normalized
+
+
+def get_runtime_override() -> str:
+    """The active override, or OVERRIDE_AUTO when detection is in charge.
+
+    Stored per Streamlit session so two visitors to a hosted build can't
+    flip each other's view, with a module-level fallback for the
+    no-runtime case (tests, export scripts) -- same split as db_path().
+    """
+    state = _session_state()
+    if state is not None:
+        value = state.get(_OVERRIDE_STATE_KEY, OVERRIDE_AUTO)
+        return value if value in _VALID_OVERRIDES else OVERRIDE_AUTO
+    return _fallback_override
+
+
+def reset_runtime_override() -> None:
+    """Hand the runtime back to detection. Only tests need this.
+
+    Clears both stores, not just the module fallback: an AppTest earlier
+    in the same pytest process leaves a live script context behind, so
+    _session_state() can return a real dict long after the test that
+    created it -- and an override stranded there would leak into every
+    later test.
+    """
+    global _fallback_override
+    _fallback_override = OVERRIDE_AUTO
+    state = _session_state()
+    if state is not None:
+        try:
+            state.pop(_OVERRIDE_STATE_KEY, None)
+        except Exception:
+            pass
+
 
 def is_demo_mode() -> bool:
-    """True when this process is serving the hosted demo build."""
+    """True when this process is serving the hosted demo build.
+
+    Intentionally not affected by the runtime override -- see the note
+    above set_runtime_override().
+    """
     return os.getenv(DEMO_ENV_VAR, "false").strip().lower() in _TRUTHY
 
 
 def is_cloud_deployment() -> bool:
-    """True when running in cloud/web environment (Streamlit Cloud, Docker, etc.)."""
+    """True when running in cloud/web environment (Streamlit Cloud, Docker, etc.).
+
+    A manual override wins over environment detection so the presenter can
+    demonstrate both shapes from one running process.
+    """
+    override = get_runtime_override()
+    if override == OVERRIDE_CLOUD:
+        return True
+    if override == OVERRIDE_DESKTOP:
+        return False
+
     deployment = os.getenv(DEPLOYMENT_ENV_VAR, "local").strip().lower()
     # Detect cloud environment via environment variables or Streamlit indicators
     is_streamlit_cloud = "STREAMLIT_SHARING_MODE" in os.environ
@@ -158,6 +239,9 @@ def facial_recognition_enabled() -> bool:
 
 def mode_badge() -> tuple[str, str]:
     """(label, help text) for the sidebar indicator."""
+    # Demo mode is checked first and is never overridable: when it's on,
+    # the feature gates really are off, so claiming desktop capability
+    # here would be a lie the rest of the app then contradicts.
     if is_demo_mode():
         return (
             "🟡 Demo sandbox mode",
@@ -165,14 +249,19 @@ def mode_badge() -> tuple[str, str]:
             "close the tab. Browser automation and live scanning are disabled on "
             "the hosted build.",
         )
-    elif is_cloud_deployment():
+
+    forced = get_runtime_override() != OVERRIDE_AUTO
+    suffix = " (manually forced — not auto-detected)" if forced else ""
+    if is_cloud_deployment():
         return (
             "☁️ WEB / CLOUD RUNTIME",
-            "Passive OSINT enabled (Gravatar, PGP, CertSpotter). Heavy network sweeps disabled to prevent IP limits.",
+            "Passive OSINT enabled (Gravatar, PGP, CertSpotter). Heavy network sweeps "
+            "disabled to prevent IP limits." + suffix,
         )
     return (
         "🖥️ DESKTOP RUNTIME",
-        "Full active sweeps enabled (700+ site username checks, deep socket scans, local export packaging).",
+        "Full active sweeps enabled (700+ site username checks, deep socket scans, "
+        "local export packaging)." + suffix,
     )
 
 

@@ -210,6 +210,37 @@ else:
 # ---------------------------------------------------------------------------
 st.sidebar.markdown("---")
 
+# Lets a presenter show both deployment shapes from one running process.
+# Applied before the badge and capabilities matrix render below, so the
+# whole sidebar reflects the forced mode on this same run.
+_RUNTIME_CHOICES = {
+    "Auto-Detect": runtime_mode.OVERRIDE_AUTO,
+    "🖥️ Desktop (Full)": runtime_mode.OVERRIDE_DESKTOP,
+    "☁️ Cloud (Restricted)": runtime_mode.OVERRIDE_CLOUD,
+}
+_runtime_labels = list(_RUNTIME_CHOICES)
+_current_override = runtime_mode.get_runtime_override()
+_runtime_choice = st.sidebar.radio(
+    "Force Runtime Environment",
+    _runtime_labels,
+    index=_runtime_labels.index(
+        next(
+            (label for label, value in _RUNTIME_CHOICES.items() if value == _current_override),
+            "Auto-Detect",
+        )
+    ),
+    key="runtime_override_choice",
+    help=(
+        "Override environment detection to demonstrate how capabilities adapt. "
+        "Does not change where data is stored — demo mode is still decided by the "
+        "environment it's deployed into."
+    ),
+)
+_selected_override = _RUNTIME_CHOICES[_runtime_choice]
+if _selected_override != _current_override:
+    runtime_mode.set_runtime_override(_selected_override)
+    st.rerun()
+
 try:
     _badge_label, _badge_help = runtime_mode.mode_badge()
     st.sidebar.info(_badge_label)
