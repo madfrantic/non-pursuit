@@ -106,14 +106,37 @@ def _render_osint_vector(result, title):
 
 
 def render(brokers_df):
-    st.title("🛡️ Master Intelligence Dossier")
+    # Clear ghost results on page load/navigation to eliminate stale cache
+    if not st.session_state.get("_master_page_loaded"):
+        st.cache_data.clear()
+        # Purge stale result keys from session
+        for ghost_key in ["osint_findings_appended", "facial_recognition_matches"]:
+            st.session_state.pop(ghost_key, None)
+        st.session_state._master_page_loaded = True
+
+    st.title("🔍 Intelligence Dossier")
     st.caption(
         "Unified Executive Summary encompassing online identity, data exposures, "
         "public footprint, and statutory action plans."
     )
 
+    # Runtime mode callout banner
+    if runtime_mode.is_cloud_deployment():
+        st.warning(
+            "☁️ **WEB / CLOUD RUNTIME** — Passive OSINT enabled (Gravatar, PGP, CertSpotter). "
+            "Heavy network sweeps disabled to prevent IP limits.",
+            icon="☁️"
+        )
+    elif runtime_mode.is_local_mode():
+        st.info(
+            "🖥️ **DESKTOP RUNTIME** — Full active sweeps enabled (700+ site username checks, "
+            "deep socket scans, local export packaging).",
+            icon="🖥️"
+        )
+
+    # Always read fresh profile state (not stale from input widget cache)
     profile = profile_state.get_profile(st.session_state)
-    
+
     # Cloud mode warning and restriction
     if runtime_mode.is_cloud_deployment() and not st.session_state.get("presentation_mode"):
         st.warning(
@@ -126,7 +149,7 @@ def render(brokers_df):
             st.session_state.presentation_mode = True
             st.rerun()
     else:
-        if st.button("🚀 Run Full Spectrum Recon", type="primary", use_container_width=True):
+        if st.button("⚡ Execute Master Recon", type="primary", use_container_width=True):
             progress_text = "Running comprehensive recon sweep across all modules concurrently..."
             my_bar = st.progress(0, text=progress_text)
             try:
@@ -154,14 +177,14 @@ def render(brokers_df):
     total_exposure = summary.get("total_exposures", 0)
     
     c1, c2, c3, c4 = st.columns(4)
-    c1.metric("📊 Exposure Score", total_exposure)
+    c1.metric("📊 Exposure Score", f"🔴 {total_exposure}" if total_exposure > 2 else f"🟡 {total_exposure}" if total_exposure > 0 else f"🟢 {total_exposure}")
     c2.metric("🔴 Critical Breaches", email_count)
-    c3.metric("👤 Profiles Found", fp_count)
-    c4.metric("📜 Deletion Targets", len(brokers_df))
+    c3.metric("👤 Exposed Handles", fp_count)
+    c4.metric("📬 Deletion Targets", len(brokers_df))
 
     st.markdown("---")
-    
-    st.subheader("👤 Section 1: Online Identity & Media")
+
+    st.subheader("👤 Section 1: Online Identity & Media Exposure")
     with st.container(border=True):
         c1, c2 = st.columns(2)
         with c1:

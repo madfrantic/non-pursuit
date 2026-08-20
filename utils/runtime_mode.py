@@ -167,12 +167,71 @@ def mode_badge() -> tuple[str, str]:
         )
     elif is_cloud_deployment():
         return (
-            "☁️ Cloud/Web mode (restricted)",
-            "Running on cloud infrastructure. Heavy OSINT scans are disabled to prevent "
-            "IP bans and timeouts. Use Presentation Mode for safe demos.",
+            "☁️ WEB / CLOUD RUNTIME",
+            "Passive OSINT enabled (Gravatar, PGP, CertSpotter). Heavy network sweeps disabled to prevent IP limits.",
         )
     return (
-        "🟢 Local active mode",
-        "Full local build. Everything is stored on this machine in data/tracker.db "
-        "and nothing is uploaded anywhere.",
+        "🖥️ DESKTOP RUNTIME",
+        "Full active sweeps enabled (700+ site username checks, deep socket scans, local export packaging).",
     )
+
+
+def get_capabilities_matrix() -> dict:
+    """Return a capabilities matrix showing which features are enabled/disabled."""
+    if is_cloud_deployment():
+        return {
+            "🟢 Enabled": [
+                "Gravatar/Libravatar lookup",
+                "PGP key server search",
+                "SSL certificate enumeration",
+                "SEC filings search",
+                "FEC campaign contributions",
+                "Court docket lookup",
+                "Data broker identification",
+            ],
+            "🔴 Disabled": [
+                "Full username sweep (700+ sites)",
+                "WhatsMyName active scanning",
+                "Spokeo auto-search (browser)",
+                "Biometric face matching",
+                "Email notification checks",
+            ],
+        }
+    elif is_demo_mode():
+        return {
+            "🟢 Enabled": [
+                "Mock OSINT results (instant)",
+                "Profile entry & storage",
+                "Statutory letter generation",
+                "Session-only data export",
+            ],
+            "🔴 Disabled": [
+                "Live scanning",
+                "Browser automation",
+                "Persistent storage",
+                "Biometric matching",
+            ],
+        }
+    else:
+        return {
+            "🟢 Fully Enabled": [
+                "Full username sweep (700+ sites)",
+                "WhatsMyName active scanning",
+                "Spokeo auto-search (browser)",
+                "Gravatar/Libravatar lookup",
+                "PGP key server search",
+                "SSL certificate enumeration",
+                "SEC filings search",
+                "FEC campaign contributions",
+                "Court docket lookup",
+                "Biometric face matching",
+                "Persistent local storage (SQLite)",
+                "Email notification checks",
+            ],
+            "ℹ️ Notes": [
+                "All data stored locally in data/tracker.db",
+                "Nothing uploaded or shared",
+                "Can handle 700+ concurrent requests",
+                "Supports desktop browser automation",
+            ],
+        }

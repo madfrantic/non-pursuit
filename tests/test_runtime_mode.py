@@ -109,7 +109,7 @@ def test_demo_mode_disables_unsafe_features(monkeypatch):
 
 def test_mode_badge_reflects_current_mode(monkeypatch):
     label, _ = runtime_mode.mode_badge()
-    assert "Local" in label
+    assert "DESKTOP" in label or "Local" in label
     set_demo(monkeypatch, "true")
     label, _ = runtime_mode.mode_badge()
     assert "Demo" in label

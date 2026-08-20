@@ -145,6 +145,8 @@ def _save_profile():
 
 
 def render():
+    st.title("👤 Profile & Setup")
+    st.caption("Enter your personal and contact details. All data is encrypted at rest (Fernet) and stored locally.")
     _seed_profile_fields()
 
     with st.container(border=True):
@@ -251,13 +253,13 @@ def render():
     active = total - complete
 
     with st.container(border=True):
-        st.markdown("##### 📈 Your campaign so far")
+        st.markdown("##### 📬 Your Opt-Out Campaign")
 
         col1, col2, col3, col4 = st.columns(4)
-        col1.metric("Overdue", overdue)
-        col2.metric("Active", active)
-        col3.metric("Complete", complete)
-        col4.metric("Total tracked", total)
+        col1.metric("🔴 Overdue", overdue)
+        col2.metric("🟡 Active", active)
+        col3.metric("🟢 Complete", complete)
+        col4.metric("📊 Total tracked", total)
 
         if overdue:
             st.error(f"🚨 {overdue} request(s) are past their statutory deadline -- check the Campaign Tracker to follow up.")
