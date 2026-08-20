@@ -75,7 +75,9 @@ def _seed_profile_fields():
 
 def _load_demo_profile():
     city, _, state = config.DEMO_PROFILE["location"].partition(", ")
-    st.session_state.pf_first_name, _, st.session_state.pf_last_name = config.DEMO_PROFILE["name"].partition(" ")
+    first_name, _, last_name = config.DEMO_PROFILE["name"].partition(" ")
+    st.session_state.pf_first_name = first_name
+    st.session_state.pf_last_name = last_name
     st.session_state.pf_middle_name = ""
     st.session_state.pf_email = config.DEMO_PROFILE["email"]
     st.session_state.pf_phone = ""
