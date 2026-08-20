@@ -1,12 +1,17 @@
 [theme]
-base = "dark"
-primaryColor = "#3B82F6"
-backgroundColor = "#0F172A"
-secondaryBackgroundColor = "#111827"
-textColor = "#F9FAFB"
+primaryColor = "#D4AF37"          # Detective Brass / Badge Gold (Kept)
+backgroundColor = "#111B33"       # Lighter Patrol Blue
+secondaryBackgroundColor = "#1E2F54" # Lighter Precinct Slate
+textColor = "#F8FAFC"             # Crisp Paper White (Kept)
+font = "serif"                     # Authoritative Case-File Typography (Kept)
 
 [server]
 headless = true
+enableCORS = false
+enableXsrfProtection = true
+
+[browser]
+gatherUsageStats = false
 
 [logger]
 level = "error"

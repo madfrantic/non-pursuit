@@ -123,6 +123,136 @@ def render(brokers_df):
         "public footprint, and statutory action plans."
     )
 
+    # Always read fresh profile state (not stale from input widget cache)
+    profile = profile_state.get_profile(st.session_state)
+
+    # --- Task 1: Dynamic greeting header ---
+    subject_name = (profile.get("full_name") or "").strip()
+    if subject_name:
+        st.markdown(f"## 🕵️‍♂️ Case File Active: Hello, {subject_name}")
+    else:
+        st.markdown("## 🕵️‍♂️ Case File Active: Hello, Subject Unknown")
+
+    # --- Combined Telemetry & Harvest Vector Card ---
+    with st.container(border=True):
+        st.markdown("##### 🌐 Client Telemetry & Collection Vector Analysis")
+        st.caption("Live passive environmental detection merged with forensic breakdown of how each data point is harvested.")
+
+        # Collect telemetry safely
+        if st.session_state.get("presentation_mode"):
+            client_ip = "198.51.100.42 [Mock Gateway]"
+            reverse_dns = "pool-198-51-100-42.nycmny.fios.verizon.net"
+            geo_info = "New York, NY [US-EAST]"
+            user_agent = "Chrome 128 / macOS Sequoia 15.1"
+            os_family = "macOS 15.1 (Sequoia)"
+            browser_engine = "Blink / V8"
+            accept_lang = "en-US, en;q=0.9"
+            referrer = "Direct / None"
+            dnt_status = "DNT: 0 (Not Set)"
+        else:
+            try:
+                headers = st.context.headers
+                client_ip = headers.get("X-Forwarded-For", headers.get("x-forwarded-for", "127.0.0.1 / Localhost"))
+                reverse_dns = headers.get("X-Client-Hostname", headers.get("x-client-hostname", "Localhost / Loopback"))
+                geo_info = headers.get("X-Timezone", headers.get("x-timezone", "Local Network / Subnet"))
+                raw_ua = headers.get("User-Agent", headers.get("user-agent", "Unknown"))
+                user_agent = raw_ua[:60] if raw_ua else "Unknown"
+                # Parse OS and browser from UA string
+                if "Mac" in raw_ua:
+                    os_family = "macOS"
+                elif "Windows" in raw_ua:
+                    os_family = "Windows"
+                elif "Linux" in raw_ua:
+                    os_family = "Linux"
+                else:
+                    os_family = "Unknown OS"
+                if "Chrome" in raw_ua:
+                    browser_engine = "Blink / V8"
+                elif "Firefox" in raw_ua:
+                    browser_engine = "Gecko"
+                elif "Safari" in raw_ua:
+                    browser_engine = "WebKit"
+                else:
+                    browser_engine = "Unknown Engine"
+                accept_lang = headers.get("Accept-Language", headers.get("accept-language", "Not Disclosed"))
+                if len(accept_lang) > 40:
+                    accept_lang = accept_lang[:40] + "…"
+                referrer = headers.get("Referer", headers.get("referer", "Direct / None"))
+                dnt_val = headers.get("DNT", headers.get("dnt", ""))
+                gpc_val = headers.get("Sec-GPC", headers.get("sec-gpc", ""))
+                if gpc_val == "1":
+                    dnt_status = "GPC: ✅ Active"
+                elif dnt_val == "1":
+                    dnt_status = "DNT: ✅ Active"
+                else:
+                    dnt_status = "DNT/GPC: ❌ Not Set"
+            except Exception:
+                client_ip = "127.0.0.1 / Localhost"
+                reverse_dns = "Localhost / Loopback"
+                geo_info = "Local Network / Subnet"
+                user_agent = "Unavailable"
+                os_family = "Unknown"
+                browser_engine = "Unknown"
+                accept_lang = "Not Disclosed"
+                referrer = "Direct / None"
+                dnt_status = "Standard Masked"
+
+        # --- Live Exposure Findings ---
+        telemetry_block = f"""
+🌐 **PUBLIC NETWORK & ROUTING**
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🌐 **Interface IP:** `{client_ip}`
+🏷️ **rDNS Host:** `{reverse_dns}`
+📍 **Inferred Region:** `{geo_info}`
+
+💻 **DEVICE & PLATFORM FINGERPRINT**
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+💻 **Platform / OS:** `{os_family}`
+🧭 **Browser Engine:** `{browser_engine}`
+🔧 **Raw User-Agent:** `{user_agent}`
+
+🕵️ **SESSION CONTEXT & PRIVACY HEADERS**
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🛡️ **Global Privacy Control (GPC):** {dnt_status}
+🗣️ **Accepted Languages:** `{accept_lang}`
+🔗 **HTTP Referrer Origin:** `{referrer}`
+"""
+        st.markdown("### 🚨 LIVE EXPOSURE FINDINGS")
+        st.markdown(telemetry_block)
+
+        # --- Right / Collapsible: Forensic Breakdown ---
+        with st.expander("🔬 How Tracking Works — Forensic Collection Vector Breakdown"):
+            vec_net, vec_hw, vec_session = st.columns(3)
+
+            with vec_net:
+                st.markdown("**🌐 Network & Routing Vector**")
+                st.info(
+                    "📡 **Vector:** HTTP Handshake & Remote Headers "
+                    "(`X-Forwarded-For`, `Remote_Addr`)\n\n"
+                    "⚠️ **Risk:** Tied directly to physical ISP routing hub "
+                    "without a VPN/proxy. Correlates across every site visit."
+                )
+
+            with vec_hw:
+                st.markdown("**🧭 Hardware & Platform Fingerprint**")
+                st.info(
+                    "🧩 **Vector:** Client `User-Agent` Header & "
+                    "Navigator DOM Properties\n\n"
+                    "⚠️ **Risk:** Combined entropy (OS + browser + engine + "
+                    "screen resolution) creates a persistent browser "
+                    "fingerprint across sessions — even without cookies."
+                )
+
+            with vec_session:
+                st.markdown("**🕵️ Active Session Context & Leaks**")
+                st.info(
+                    "🔍 **Vector:** Passive HTTP Request Metadata "
+                    "(`Accept-Language`, `Referer`, `DNT`, `Sec-GPC`)\n\n"
+                    "⚠️ **Risk:** Reveals localized geographic preference "
+                    "and cross-site browsing origin. DNT/GPC is advisory only — "
+                    "most commercial trackers ignore it."
+                )
+
     # PROMINENT ENVIRONMENT MODE BANNER
     mode_cols = st.columns([1, 3])
     with mode_cols[0]:
@@ -141,42 +271,33 @@ def render(brokers_df):
         else:
             st.caption("**DESKTOP RUNTIME** — Full active OSINT enabled. All email vectors available (700+ sites, Gravatar, PGP, breaches).")
 
-    # Always read fresh profile state (not stale from input widget cache)
-    profile = profile_state.get_profile(st.session_state)
-
     # Validate email is present for email OSINT
     email_valid = profile.get("email", "").strip() and "@" in profile.get("email", "")
 
-    # Cloud mode warning and restriction
-    if runtime_mode.is_cloud_deployment() and not st.session_state.get("presentation_mode"):
-        st.warning(
-            "⚠️ Cloud/Web Mode: Full OSINT scans are disabled here to prevent IP bans and timeouts. "
-            "Enable 🎭 Presentation Mode in the sidebar to see instant mock results, or run locally "
-            "with `./demo.sh` for full scanning capabilities."
-        )
-        if st.button("🎭 Enable Presentation Mode", type="secondary", use_container_width=True):
-            presentation_mode.populate_demo_profile(st.session_state)
-            st.session_state.presentation_mode = True
-            st.rerun()
-    else:
-        if st.button("⚡ Execute Master Recon", type="primary", use_container_width=True):
-            progress_text = "Running comprehensive recon sweep across all modules concurrently..."
-            my_bar = st.progress(0, text=progress_text)
-            try:
-                if st.session_state.get("presentation_mode"):
-                    st.session_state.osint_findings = asyncio.run(presentation_mode.get_mock_osint_findings())
-                    my_bar.progress(100, text="Mock recon sweep complete (Presentation Mode).")
+    # Execution button
+    if st.button("⚡ Execute Master Recon", type="primary", use_container_width=True):
+        progress_text = "Running comprehensive recon sweep across all modules concurrently..."
+        my_bar = st.progress(0, text=progress_text)
+        try:
+            if st.session_state.get("presentation_mode"):
+                st.session_state.osint_findings = asyncio.run(presentation_mode.get_mock_osint_findings())
+                my_bar.progress(100, text="Mock recon sweep complete (Presentation Mode).")
+            else:
+                is_cloud = runtime_mode.is_cloud_deployment()
+                st.session_state.osint_findings = asyncio.run(
+                    run_full_osint_sweep(_osint_profile(), passive_only=is_cloud)
+                )
+                if is_cloud:
+                    my_bar.progress(100, text="Passive recon sweep complete (Heavy scans skipped in Cloud Mode).")
                 else:
-                    st.session_state.osint_findings = asyncio.run(run_full_osint_sweep(_osint_profile()))
-                    my_bar.progress(100, text="Recon sweep complete.")
-                st.session_state.pop("audit_zip", None)
-                # Both derived artifacts are now stale -- drop the cached
-                # dossier so the next render rebuilds it from this sweep.
-                st.session_state.pop("osint_dossier_pdf", None)
-            except Exception as exc:
-                _log.error("OSINT sweep failed: %s", exc)
-                st.error("The sweep could not be completed.")
-                my_bar.empty()
+                    my_bar.progress(100, text="Full active recon sweep complete.")
+                    
+            st.session_state.pop("audit_zip", None)
+            st.session_state.pop("osint_dossier_pdf", None)
+        except Exception as exc:
+            _log.error("OSINT sweep failed: %s", exc)
+            st.error("The sweep could not be completed.")
+            my_bar.empty()
 
     findings = st.session_state.get("osint_findings")
     if not findings:

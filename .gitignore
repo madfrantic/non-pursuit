@@ -24,3 +24,4 @@ logs/
 # app only ever reads the small derived asset in assets/.
 /LOGOBRAND.png
 /LOGOBRAND_2.png
+*.png

@@ -88,7 +88,7 @@ async def _run_email(email: str) -> list:
         return []  # Return empty list instead of exception object
 
 
-async def run_full_osint_sweep(profile_data: Dict[str, Any]) -> Dict[str, Any]:
+async def run_full_osint_sweep(profile_data: Dict[str, Any], passive_only: bool = False) -> Dict[str, Any]:
     """
     Execute all passive OSINT modules concurrently.
     """
@@ -104,7 +104,14 @@ async def run_full_osint_sweep(profile_data: Dict[str, Any]) -> Dict[str, Any]:
     github_task = scan_github(handle)
     infrastructure_task = scan_infrastructure(domain)
     
-    footprint_task = _run_footprint(handle)
+    # In passive-only mode (cloud), we skip the heavy WhatsMyName footprint scan
+    if passive_only:
+        async def _mock_footprint():
+            return []
+        footprint_task = _mock_footprint()
+    else:
+        footprint_task = _run_footprint(handle)
+        
     email_task = _run_email(email)
 
     raw_results = await asyncio.gather(

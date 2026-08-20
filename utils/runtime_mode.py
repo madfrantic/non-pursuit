@@ -49,61 +49,37 @@ SESSION_DB_PREFIX = "np_session_"
 OVERRIDE_AUTO = "auto"
 OVERRIDE_DESKTOP = "desktop"
 OVERRIDE_CLOUD = "cloud"
+
 _VALID_OVERRIDES = {OVERRIDE_AUTO, OVERRIDE_DESKTOP, OVERRIDE_CLOUD}
 _OVERRIDE_STATE_KEY = "runtime_override"
-
 _fallback_override = OVERRIDE_AUTO
 
+def get_runtime_override() -> str:
+    """Retrieve runtime override from session state, defaulting to auto."""
+    import streamlit as st
+    if hasattr(st, "session_state") and _OVERRIDE_STATE_KEY in st.session_state:
+        return st.session_state[_OVERRIDE_STATE_KEY]
+    return _fallback_override
 
-def set_runtime_override(value: str) -> None:
-    """Pin the reported runtime to desktop or cloud, or hand it back to
-    environment detection with OVERRIDE_AUTO. Anything unrecognized falls
-    back to auto rather than raising -- a bad value from a widget should
-    degrade to real detection, not break the page."""
+def set_runtime_override(mode: str) -> None:
+    """Set manual runtime override."""
     global _fallback_override
-    normalized = (value or OVERRIDE_AUTO).strip().lower()
+    import streamlit as st
+    normalized = (mode or OVERRIDE_AUTO).strip().lower()
     if normalized not in _VALID_OVERRIDES:
         normalized = OVERRIDE_AUTO
-
-    state = _session_state()
-    if state is not None:
-        state[_OVERRIDE_STATE_KEY] = normalized
+    if hasattr(st, "session_state"):
+        st.session_state[_OVERRIDE_STATE_KEY] = normalized
     else:
         _fallback_override = normalized
 
-
-def get_runtime_override() -> str:
-    """The active override, or OVERRIDE_AUTO when detection is in charge.
-
-    Stored per Streamlit session so two visitors to a hosted build can't
-    flip each other's view, with a module-level fallback for the
-    no-runtime case (tests, export scripts) -- same split as db_path().
-    """
-    state = _session_state()
-    if state is not None:
-        value = state.get(_OVERRIDE_STATE_KEY, OVERRIDE_AUTO)
-        return value if value in _VALID_OVERRIDES else OVERRIDE_AUTO
-    return _fallback_override
-
-
 def reset_runtime_override() -> None:
-    """Hand the runtime back to detection. Only tests need this.
-
-    Clears both stores, not just the module fallback: an AppTest earlier
-    in the same pytest process leaves a live script context behind, so
-    _session_state() can return a real dict long after the test that
-    created it -- and an override stranded there would leak into every
-    later test.
-    """
+    """Reset override to automatic detection."""
     global _fallback_override
     _fallback_override = OVERRIDE_AUTO
-    state = _session_state()
-    if state is not None:
-        try:
-            state.pop(_OVERRIDE_STATE_KEY, None)
-        except Exception:
-            pass
-
+    import streamlit as st
+    if hasattr(st, "session_state") and _OVERRIDE_STATE_KEY in st.session_state:
+        del st.session_state[_OVERRIDE_STATE_KEY]
 
 def is_demo_mode() -> bool:
     """True when this process is serving the hosted demo build.
@@ -113,24 +89,20 @@ def is_demo_mode() -> bool:
     """
     return os.getenv(DEMO_ENV_VAR, "false").strip().lower() in _TRUTHY
 
-
 def is_cloud_deployment() -> bool:
-    """True when running in cloud/web environment (Streamlit Cloud, Docker, etc.).
-
-    A manual override wins over environment detection so the presenter can
-    demonstrate both shapes from one running process.
-    """
+    """Check if running in cloud/restricted mode, respecting manual override."""
     override = get_runtime_override()
-    if override == OVERRIDE_CLOUD:
-        return True
     if override == OVERRIDE_DESKTOP:
         return False
-
-    deployment = os.getenv(DEPLOYMENT_ENV_VAR, "local").strip().lower()
-    # Detect cloud environment via environment variables or Streamlit indicators
-    is_streamlit_cloud = "STREAMLIT_SHARING_MODE" in os.environ
-    is_cloud_var = deployment in {"cloud", "web", "production"}
-    return is_streamlit_cloud or is_cloud_var
+    if override == OVERRIDE_CLOUD:
+        return True
+        
+    # Automatic fallback detection
+    if os.getenv("DEPLOYMENT_ENV", "").lower() in ("cloud", "web", "production"):
+        return True
+    if os.getenv("STREAMLIT_SHARING_MODE") is not None:
+        return True
+    return False
 
 
 def is_local_mode() -> bool:

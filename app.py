@@ -58,18 +58,71 @@ def _image_data_uri(path):
         encoded = base64.b64encode(f.read()).decode("ascii")
     return f"data:image/png;base64,{encoded}"
 
-# Theming lives in .streamlit/config.toml. The only custom CSS left here is
-# a font-size bump for the sidebar nav: real emoji render as plain
-# characters (unlike Material Symbols, which Streamlit wraps in their own
-# styled span) -- they scale with the label's own font-size, so bumping
-# that is what makes them pop.
+# Custom 70s NYPD 'SIU-Light' & Giant Emojis CSS
 st.markdown(
     """
     <style>
+        /* Sidebar nav emoji scaling */
         [data-testid="stSidebar"] [data-testid="stRadioOption"] [data-testid="stMarkdownContainer"] p {
             font-size: 1.2rem;
             line-height: 1.8;
         }
+
+        /* Increase global text size in main dashboard */
+        [data-testid="stMarkdownContainer"] p, 
+        [data-testid="stMarkdownContainer"] h1, 
+        [data-testid="stMarkdownContainer"] h2, 
+        [data-testid="stMarkdownContainer"] h3 {
+            font-size: 1.1rem;
+        }
+        
+        /* Make st.metric headers, values, and deltas giant and bold */
+        [data-testid="stMetricValue"] {
+            font-size: 3.5rem !important;
+            font-weight: bold;
+            font-family: monospace;
+        }
+        [data-testid="stMetricLabel"] {
+            font-size: 1.5rem !important;
+            font-weight: bold;
+        }
+        [data-testid="stMetricDelta"] {
+            font-size: 1.2rem !important;
+        }
+        
+        /* TARGETING ALL APPLIED EMOJIS - GLOBAL "HUGE EMOJI" RULE */
+        span:is(:has(svg, [aria-label]), :not(:has(*))) {
+          font-size: 2.5rem !important;
+          vertical-align: middle;
+        }
+        
+        /* Specific bump for st.header / st.subheader with emojis */
+        h1 span, h2 span, h3 span {
+            font-size: 3rem !important;
+            line-height: 1 !important;
+        }
+
+        /* Specific bump for metric emojis (like threat circles) */
+        [data-testid="stMetricLabel"] span,
+        [data-testid="stMetricValue"] span {
+            font-size: 2.8rem !important;
+        }
+
+        /* Bordered Case-File Styling for Metric Containers (lighter blue) */
+        [data-testid="stVerticalBlock"] > div:has(> [data-testid="stMetric"]) {
+           background: linear-gradient(180deg, #243B6A 0%, #1E2F54 100%);
+           border: 2px solid #314A81;
+           border-top: 5px solid #D4AF37;
+           border-radius: 6px;
+           padding: 20px;
+           margin-bottom: 25px;
+           box-shadow: 0 4px 10px rgba(0, 0, 0, 0.4);
+        }
+
+        /* Hide Streamlit default cruft */
+        #MainMenu {visibility: hidden;}
+        footer {visibility: hidden;}
+        .block-container {padding-top: 1rem; padding-bottom: 0rem;}
     </style>
     """,
     unsafe_allow_html=True,
@@ -210,51 +263,38 @@ else:
 # ---------------------------------------------------------------------------
 st.sidebar.markdown("---")
 
-# Lets a presenter show both deployment shapes from one running process.
-# Applied before the badge and capabilities matrix render below, so the
-# whole sidebar reflects the forced mode on this same run.
-_RUNTIME_CHOICES = {
-    "Auto-Detect": runtime_mode.OVERRIDE_AUTO,
-    "🖥️ Desktop (Full)": runtime_mode.OVERRIDE_DESKTOP,
-    "☁️ Cloud (Restricted)": runtime_mode.OVERRIDE_CLOUD,
-}
-_runtime_labels = list(_RUNTIME_CHOICES)
-_current_override = runtime_mode.get_runtime_override()
-_runtime_choice = st.sidebar.radio(
-    "Force Runtime Environment",
-    _runtime_labels,
-    index=_runtime_labels.index(
-        next(
-            (label for label, value in _RUNTIME_CHOICES.items() if value == _current_override),
-            "Auto-Detect",
-        )
-    ),
-    key="runtime_override_choice",
-    help=(
-        "Override environment detection to demonstrate how capabilities adapt. "
-        "Does not change where data is stored — demo mode is still decided by the "
-        "environment it's deployed into."
-    ),
-)
-_selected_override = _RUNTIME_CHOICES[_runtime_choice]
-if _selected_override != _current_override:
-    runtime_mode.set_runtime_override(_selected_override)
-    st.rerun()
+with st.sidebar:
+    st.markdown("### ⚙️ SYSTEM RUNTIME CONTROL")
+    
+    # Map friendly names to internal modes
+    mode_options = {
+        "Auto-Detect": "auto",
+        "🖥️ Desktop (Full Power)": "desktop",
+        "☁️ Online / Cloud (Passive)": "cloud"
+    }
+    
+    current_override = runtime_mode.get_runtime_override()
+    # Find active index
+    index = list(mode_options.values()).index(current_override) if current_override in mode_options.values() else 0
 
-try:
-    _badge_label, _badge_help = runtime_mode.mode_badge()
-    st.sidebar.info(_badge_label)
+    selected_label = st.radio(
+        "Select Operating Environment:",
+        options=list(mode_options.keys()),
+        index=index,
+        help="Manually switch between unrestricted desktop execution (700+ sites) and passive online scanning to demonstrate environment handling."
+    )
+    
+    # Update override on selection change
+    chosen_mode = mode_options[selected_label]
+    if chosen_mode != current_override:
+        runtime_mode.set_runtime_override(chosen_mode)
+        st.rerun()
 
-    with st.sidebar.expander("📋 Capabilities Matrix"):
-        caps = runtime_mode.get_capabilities_matrix()
-        for section, features in caps.items():
-            st.markdown(f"**{section}**")
-            for feature in features:
-                st.caption(f"• {feature}")
-            st.markdown("")
-except Exception as e:
-    st.sidebar.caption(f"⚙️ Runtime info unavailable")
-    pass
+    # Display active badge
+    if runtime_mode.is_cloud_deployment():
+        st.warning("☁️ **ONLINE RUNTIME ACTIVE**\n- Passive Recon (Gravatar, PGP, Certs)\n- Heavy sweeps disabled (Cloud IP Guard)")
+    else:
+        st.success("🖥️ **DESKTOP RUNTIME ACTIVE**\n- Full Active Sweeps Enabled\n- Unrestricted 700+ site sockets")
 
 if runtime_mode.is_demo_mode():
     if st.sidebar.button("⚡ Load presentation demo", width="stretch", type="primary",
@@ -325,14 +365,33 @@ if _audit_requests:
         )
 
 st.markdown(
-    f"""
-    <div style="width: 100%; display: flex; align-items: center; justify-content: flex-start;
-                gap: 0.4rem; padding: 0.5rem 0 1rem 0;">
-        <img src="{_image_data_uri(config.APP_LOGO_PATH)}" style="height: 170px;" alt="">
-        <img src="{_image_data_uri(config.APP_WORDMARK_PATH)}" style="height: 150px;" alt="{config.APP_TITLE}">
+    """
+    <div style="
+        background: linear-gradient(180deg, #1A2744 0%, #111B33 100%);
+        border: 2px solid #D4AF37;
+        border-radius: 4px;
+        padding: 16px 20px;
+        margin-bottom: 24px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+    ">
+        <div>
+            <div style="font-family: 'Courier New', Courier, monospace; color: #D4AF37; font-size: 0.75rem; letter-spacing: 2.5px; text-transform: uppercase;">
+                NEW YORK POLICE DEPT // SPECIAL INVESTIGATIONS UNIT
+            </div>
+            <div style="font-family: 'Georgia', serif; color: #F8FAFC; font-size: 1.75rem; font-weight: 700; letter-spacing: 1px; margin-top: 2px;">
+                🛡️ NON-PURSUIT : DIVISION OF OSINT
+            </div>
+        </div>
+        <div style="text-align: right; font-family: 'Courier New', Courier, monospace; border-left: 2px solid #314A81; padding-left: 18px;">
+            <div style="color: #D4AF37; font-weight: 700; font-size: 0.85rem;">FILE: CONFIDENTIAL</div>
+            <div style="color: #F8FAFC; font-size: 0.7rem; letter-spacing: 1px;">DIRECTIVE § 1798 / NY-SHIELD</div>
+        </div>
     </div>
     """,
-    unsafe_allow_html=True,
+    unsafe_allow_html=True
 )
 
 

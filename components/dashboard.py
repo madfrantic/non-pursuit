@@ -139,7 +139,9 @@ def render():
 
             target_cols = st.columns(2)
             target_cols[0].text_input("👤 Username / handle", key="pf_handle", placeholder="Optional")
-            target_cols[1].text_input("🌐 Domain", key="pf_domain", placeholder="Optional, e.g. example.com")
+            target_cols[1].number_input(
+                "🎂 Born", min_value=1900, max_value=2026, step=1, format="%d", key="pf_birth_year", placeholder="YYYY"
+            )
 
             location_cols = st.columns(2)
             location_cols[0].text_input("🏙️ City", key="pf_city", placeholder="New York")
@@ -148,9 +150,7 @@ def render():
             with st.expander("🕰️ Previous names & addresses"):
                 extra_cols = st.columns(2)
                 extra_cols[0].text_input("👤 Middle", key="pf_middle_name", placeholder="Optional")
-                extra_cols[1].number_input(
-                    "🎂 Born", min_value=1900, max_value=2026, step=1, format="%d", key="pf_birth_year", placeholder="YYYY"
-                )
+                extra_cols[1].text_input("🌐 Domain", key="pf_domain", placeholder="Optional, e.g. example.com")
                 st.text_input("📮 ZIP", key="pf_zip", placeholder="Optional")
                 st.text_area("📮 Prior ZIPs", key="pf_historical_zips", placeholder="94105, 10001", height=80)
 
@@ -161,7 +161,7 @@ def render():
                 st.text_area("📞 Shared Landlines / Phone Numbers", key="pf_shared_phones", placeholder="One per line", height=90)
                 st.text_area("🛍️ Shared Store Card / Loyalty Vectors (Optional)", key="pf_shared_loyalty", placeholder="Retailer or loyalty-account relationship", height=90)
 
-            submitted = st.form_submit_button("💾 Save", type="primary", width="stretch")
+            submitted = st.form_submit_button("🚀 Save & Execute Master Recon", type="primary", use_container_width=True)
             if submitted:
                 if not st.session_state.pf_first_name or not st.session_state.pf_last_name:
                     st.error("First and last name are required.")
@@ -171,7 +171,7 @@ def render():
                     _save_profile()
                     # Force immediate navigation to results page
                     st.session_state.pending_nav = _MODE_RESULTS
-                    st.toast("Profile saved! Navigating to results…")
+                    st.toast("Profile saved! Launching recon…")
                     st.rerun()
 
     if runtime_mode.facial_recognition_enabled():
