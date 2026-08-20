@@ -51,6 +51,10 @@ def _osint_status(result):
 
 
 def _render_osint_records(result):
+    if not result or not isinstance(result, dict):
+        st.caption("⚠️ No data available.")
+        return
+
     records = result.get("records", [])
     if result.get("module") == "infrastructure":
         records = result.get("certificates", [])
@@ -66,28 +70,37 @@ def _render_osint_records(result):
         if not isinstance(record, dict):
             st.write(str(record))
             continue
-        label = next(
-            (record.get(key) for key in (
-                "entity_name", "case_name", "contributor_name", "email", "subdomain", "domain", "platform", "service"
-            ) if record.get(key)),
-            "Finding",
-        )
-        detail = " · ".join(
-            str(record[key]) for key in (
-                "filing_type", "filing_date", "court", "docket_number", "repository", "issuer", "registrar", "target_identifier", "confidence", "reason"
-            ) if record.get(key)
-        )
-        with st.container(border=True):
-            st.markdown(f"**{label}**")
-            if detail:
-                st.caption(detail)
-            url = record.get("url") or record.get("court_url") or record.get("profile_url")
-            if url:
-                st.link_button("Open source", url, width="content")
+        try:
+            label = next(
+                (record.get(key) for key in (
+                    "entity_name", "case_name", "contributor_name", "email", "subdomain", "domain", "platform", "service"
+                ) if record.get(key)),
+                "Finding",
+            )
+            detail = " · ".join(
+                str(record[key]) for key in (
+                    "filing_type", "filing_date", "court", "docket_number", "repository", "issuer", "registrar", "target_identifier", "confidence", "reason"
+                ) if record.get(key)
+            )
+            with st.container(border=True):
+                st.markdown(f"**{label}**")
+                if detail:
+                    st.caption(detail)
+                url = record.get("url") or record.get("court_url") or record.get("profile_url")
+                if url:
+                    st.link_button("Open source", url, width="content")
+        except Exception as e:
+            _log.warning("Error rendering record: %s", e)
+            continue
 
 
 def _render_osint_vector(result, title):
-    badge = _OSINT_STATUS_LABELS[_osint_status(result)]
+    if not result:
+        st.markdown(f"##### {title}  ·  `⚪ Unavailable`")
+        st.caption("No data retrieved.")
+        return
+    status_key = _osint_status(result)
+    badge = _OSINT_STATUS_LABELS.get(status_key, "⚪ Unavailable")
     st.markdown(f"##### {title}  ·  `{badge}`")
     _render_osint_records(result)
 
@@ -101,21 +114,33 @@ def render(brokers_df):
 
     profile = profile_state.get_profile(st.session_state)
     
-    if st.button("🚀 Run Full Spectrum Recon", type="primary", use_container_width=True):
-        progress_text = "Running comprehensive recon sweep across all modules concurrently..."
-        my_bar = st.progress(0, text=progress_text)
-        try:
-            if st.session_state.get("presentation_mode"):
-                st.session_state.osint_findings = asyncio.run(presentation_mode.get_mock_osint_findings())
-                my_bar.progress(100, text="Mock recon sweep complete (Presentation Mode).")
-            else:
-                st.session_state.osint_findings = asyncio.run(run_full_osint_sweep(_osint_profile()))
-                my_bar.progress(100, text="Recon sweep complete.")
-            st.session_state.pop("audit_zip", None)
-        except Exception as exc:
-            _log.error("OSINT sweep failed: %s", exc)
-            st.error("The sweep could not be completed.")
-            my_bar.empty()
+    # Cloud mode warning and restriction
+    if runtime_mode.is_cloud_deployment() and not st.session_state.get("presentation_mode"):
+        st.warning(
+            "⚠️ Cloud/Web Mode: Full OSINT scans are disabled here to prevent IP bans and timeouts. "
+            "Enable 🎭 Presentation Mode in the sidebar to see instant mock results, or run locally "
+            "with `./demo.sh` for full scanning capabilities."
+        )
+        if st.button("🎭 Enable Presentation Mode", type="secondary", use_container_width=True):
+            presentation_mode.populate_demo_profile(st.session_state)
+            st.session_state.presentation_mode = True
+            st.rerun()
+    else:
+        if st.button("🚀 Run Full Spectrum Recon", type="primary", use_container_width=True):
+            progress_text = "Running comprehensive recon sweep across all modules concurrently..."
+            my_bar = st.progress(0, text=progress_text)
+            try:
+                if st.session_state.get("presentation_mode"):
+                    st.session_state.osint_findings = asyncio.run(presentation_mode.get_mock_osint_findings())
+                    my_bar.progress(100, text="Mock recon sweep complete (Presentation Mode).")
+                else:
+                    st.session_state.osint_findings = asyncio.run(run_full_osint_sweep(_osint_profile()))
+                    my_bar.progress(100, text="Recon sweep complete.")
+                st.session_state.pop("audit_zip", None)
+            except Exception as exc:
+                _log.error("OSINT sweep failed: %s", exc)
+                st.error("The sweep could not be completed.")
+                my_bar.empty()
 
     findings = st.session_state.get("osint_findings")
     if not findings:

@@ -32,6 +32,7 @@ from pathlib import Path
 import config
 
 DEMO_ENV_VAR = "NON_PURSUIT_DEMO_MODE"
+DEPLOYMENT_ENV_VAR = "DEPLOYMENT_ENV"
 _TRUTHY = {"1", "true", "yes", "on"}
 
 SESSION_DB_PREFIX = "np_session_"
@@ -40,6 +41,20 @@ SESSION_DB_PREFIX = "np_session_"
 def is_demo_mode() -> bool:
     """True when this process is serving the hosted demo build."""
     return os.getenv(DEMO_ENV_VAR, "false").strip().lower() in _TRUTHY
+
+
+def is_cloud_deployment() -> bool:
+    """True when running in cloud/web environment (Streamlit Cloud, Docker, etc.)."""
+    deployment = os.getenv(DEPLOYMENT_ENV_VAR, "local").strip().lower()
+    # Detect cloud environment via environment variables or Streamlit indicators
+    is_streamlit_cloud = "STREAMLIT_SHARING_MODE" in os.environ
+    is_cloud_var = deployment in {"cloud", "web", "production"}
+    return is_streamlit_cloud or is_cloud_var
+
+
+def is_local_mode() -> bool:
+    """True when running locally on the user's machine."""
+    return not is_cloud_deployment() and not is_demo_mode()
 
 
 def _session_state():
@@ -149,6 +164,12 @@ def mode_badge() -> tuple[str, str]:
             "Records live only in your browser session and are discarded when you "
             "close the tab. Browser automation and live scanning are disabled on "
             "the hosted build.",
+        )
+    elif is_cloud_deployment():
+        return (
+            "☁️ Cloud/Web mode (restricted)",
+            "Running on cloud infrastructure. Heavy OSINT scans are disabled to prevent "
+            "IP bans and timeouts. Use Presentation Mode for safe demos.",
         )
     return (
         "🟢 Local active mode",

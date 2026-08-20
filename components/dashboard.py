@@ -134,12 +134,11 @@ def _save_profile():
             }] if st.session_state.pf_associated_name.strip() else []),
         },
     )
-    # Clear OSINT cache and findings on profile update to reflect fresh scan data from new/changed profile
+    # Scorched-earth cache clear: remove all stale data on profile update
     st.cache_data.clear()
-    st.session_state.pop("osint_findings", None)
-    st.session_state.pop("footprint_results", None)
-    st.session_state.pop("email_results", None)
-    st.session_state.pop("audit_zip", None)
+    for key in list(st.session_state.keys()):
+        if any(x in key for x in ["osint", "footprint", "email_results", "audit", "exposure", "facial"]):
+            st.session_state.pop(key, None)
     # Signal to Master Dashboard: new or changed profile, trigger auto-scan.
     # The flag is consumed after scan completes so we don't rescan on every rerun.
     st.session_state.profile_saved_auto_scan = True
@@ -190,8 +189,10 @@ def render():
                     st.error("That email address doesn't look valid.")
                 else:
                     _save_profile()
-                    st.toast("Profile saved!")
-                    _switch_to(_MODE_RESULTS)
+                    # Force immediate navigation to results page
+                    st.session_state.pending_nav = _MODE_RESULTS
+                    st.toast("Profile saved! Navigating to results…")
+                    st.rerun()
 
     if runtime_mode.facial_recognition_enabled():
         with st.container(border=True):

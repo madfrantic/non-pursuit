@@ -95,9 +95,19 @@ for key, default in {
     "_auto_scan_in_progress": False,
     "master_face_image_bytes": None,
     "presentation_mode": False,
+    "_session_initialized": False,
 }.items():
     if key not in st.session_state:
         st.session_state[key] = default
+
+# Scorched-earth initialization: clear ghost data from previous sessions
+if not st.session_state.get("_session_initialized"):
+    st.session_state._session_initialized = True
+    # Clear all potential stale OSINT/scan data
+    for ghost_key in list(st.session_state.keys()):
+        if any(x in ghost_key for x in ["osint", "footprint", "email_results", "audit", "exposure", "facial"]):
+            st.session_state.pop(ghost_key, None)
+    st.cache_data.clear()
 
 
 # ---------------------------------------------------------------------------
