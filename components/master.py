@@ -137,6 +137,9 @@ def render(brokers_df):
     # Always read fresh profile state (not stale from input widget cache)
     profile = profile_state.get_profile(st.session_state)
 
+    # Validate email is present for email OSINT
+    email_valid = profile.get("email", "").strip() and "@" in profile.get("email", "")
+
     # Cloud mode warning and restriction
     if runtime_mode.is_cloud_deployment() and not st.session_state.get("presentation_mode"):
         st.warning(
@@ -167,7 +170,15 @@ def render(brokers_df):
 
     findings = st.session_state.get("osint_findings")
     if not findings:
-        st.info("Enter your identity details in the **🛡️ Profile** tab, then click the button above to run the full spectrum recon.")
+        missing = []
+        if not profile.get("full_name"):
+            missing.append("Full name")
+        if not email_valid:
+            missing.append("Valid email address")
+        if missing:
+            st.info(f"📋 Missing required fields: {', '.join(missing)}. Enter your details in the **👤 Profile** tab.")
+        else:
+            st.info("Click the button above to run the full spectrum recon.")
         return
 
     summary = findings.get("summary", {})
@@ -203,7 +214,15 @@ def render(brokers_df):
                 
     st.subheader("🔐 Section 2: Data Exposures & Breaches")
     with st.container(border=True):
-        _render_osint_vector(findings.get("email", {}), "Email & Identity Exposure")
+        # Email exposure section with fallback for missing data
+        email_vector = findings.get("email", {})
+        if not email_vector or email_vector.get("status") == "unavailable":
+            st.markdown("##### 📧 Email & Identity Exposure  ·  `⚪ Unavailable`")
+            st.caption("Email scan unavailable or no email provided.")
+        else:
+            _render_osint_vector(email_vector, "Email & Identity Exposure")
+
+        # GitHub exposure section
         _render_osint_vector(findings.get("github", {}), "Developer & Code Exposure")
 
     st.subheader("🏛️ Section 3: Legal, Financial & Corporate Footprint")

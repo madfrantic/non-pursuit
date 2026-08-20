@@ -10,6 +10,11 @@ from osint.fec import scan_fec
 from osint.github import scan_github
 from osint.infrastructure import scan_infrastructure
 
+import wmn_dataset
+import footprint_scanner
+import email_scanner
+import config
+
 _log = get_logger("osint_aggregator")
 
 
@@ -32,7 +37,9 @@ def _normalize_result(module: str, result: Any) -> Dict[str, Any]:
     if isinstance(result, Exception):
         return _unavailable(module, result)
     if not isinstance(result, dict):
-        return _unavailable(module, TypeError("scanner returned a non-dict result"))
+        if isinstance(result, list):
+            return {"module": module, "status": STATUS_SUCCESS if result else STATUS_EMPTY, "records": result, "count": len(result)}
+        return _unavailable(module, TypeError("scanner returned unexpected type"))
 
     normalized = dict(result)
     normalized.setdefault("module", module)
@@ -48,51 +55,100 @@ def _normalize_result(module: str, result: Any) -> Dict[str, Any]:
     return normalized
 
 
+async def _run_footprint(handle: str) -> list:
+    """Scan handle across WhatsMyName dataset with resilient error handling."""
+    if not handle:
+        return []
+    try:
+        dataset, _ = await asyncio.to_thread(wmn_dataset.ensure_dataset, config.WMN_DATASET_PATH, False, config.FOOTPRINT_TIMEOUT_SECONDS)
+        sites = wmn_dataset.select_sites(dataset, deep=True)
+        results = await footprint_scanner._scan(handle, sites, config.FOOTPRINT_CONCURRENCY, config.FOOTPRINT_TIMEOUT_SECONDS, None, config.FOOTPRINT_PER_HOST_CONCURRENCY)
+        # Ensure we always return a list
+        return results if isinstance(results, list) else []
+    except asyncio.TimeoutError:
+        _log.warning("Footprint scan timed out for %s", handle)
+        return []  # Return empty list, not exception
+    except Exception as exc:
+        _log.error("Footprint scan failed: %s", exc)
+        return []  # Return empty list instead of exception object
+
+async def _run_email(email: str) -> list:
+    """Scan email through passive OSINT vectors with resilient error handling."""
+    if not email or "@" not in email:
+        return []
+    try:
+        results = await asyncio.to_thread(email_scanner.scan_email, email)
+        # Ensure we always return a list, even if it's empty
+        return results if isinstance(results, list) else []
+    except asyncio.TimeoutError:
+        _log.warning("Email scan timed out for %s", email)
+        return []  # Return empty list, not exception
+    except Exception as exc:
+        _log.error("Email scan failed: %s", exc)
+        return []  # Return empty list instead of exception object
+
+
 async def run_full_osint_sweep(profile_data: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Execute all 5 passive OSINT modules concurrently.
-    Returns results keyed by vector type: corporate, legal, finance, developer, infrastructure.
+    Execute all passive OSINT modules concurrently.
     """
     full_name = profile_data.get("name", "").strip()
     handle = profile_data.get("handle", "").strip()
     domain = profile_data.get("domain", "").strip()
     state = profile_data.get("state", "").strip()
+    email = profile_data.get("email", "").strip()
 
-    # Run all 5 scans concurrently
     sec_task = scan_sec(full_name)
     courtlistener_task = scan_courtlistener(full_name)
     fec_task = scan_fec(full_name, state if state else None)
     github_task = scan_github(handle)
     infrastructure_task = scan_infrastructure(domain)
+    
+    footprint_task = _run_footprint(handle)
+    email_task = _run_email(email)
 
     raw_results = await asyncio.gather(
         sec_task, courtlistener_task, fec_task, github_task, infrastructure_task,
+        footprint_task, email_task,
         return_exceptions=True,
     )
-    sec_result, cl_result, fec_result, gh_result, infra_result = (
+    
+    sec_result, cl_result, fec_result, gh_result, infra_result, fp_result, em_result = (
         _normalize_result(module, result)
         for module, result in zip(
-            ("sec", "courtlistener", "fec", "github", "infrastructure"),
+            ("sec", "courtlistener", "fec", "github", "infrastructure", "footprint", "email"),
             raw_results,
         )
     )
 
-    # Aggregate into unified response
     results = {
         "sec": sec_result,
         "courtlistener": cl_result,
         "fec": fec_result,
         "github": gh_result,
         "infrastructure": infra_result,
+        "footprint": fp_result,
+        "email": em_result,
     }
 
+    total_exposures = sum([
+        sec_result.get("count", 0),
+        cl_result.get("count", 0),
+        fec_result.get("count", 0),
+        gh_result.get("count", 0),
+        infra_result.get("cert_count", 0),
+        fp_result.get("count", 0),
+        em_result.get("count", 0),
+    ])
+
     return {
-        "timestamp": None,  # Caller can set this
+        "timestamp": None,
         "profile": {
             "name": full_name,
             "handle": handle,
             "domain": domain,
             "state": state,
+            "email": email,
         },
         "vectors": {
             "corporate": {
@@ -126,21 +182,29 @@ async def run_full_osint_sweep(profile_data: Dict[str, Any]) -> Dict[str, Any]:
                 "domain_info": infra_result.get("domain_info", {}),
                 "count": infra_result.get("cert_count", 0),
             },
+            "footprint": {
+                "module": "footprint",
+                "status": fp_result.get("status", STATUS_UNAVAILABLE),
+                "records": fp_result.get("records", []),
+                "count": fp_result.get("count", 0),
+            },
+            "email": {
+                "module": "email",
+                "status": em_result.get("status", STATUS_UNAVAILABLE),
+                "records": em_result.get("records", []),
+                "count": em_result.get("count", 0),
+            },
         },
         "summary": {
-            "total_exposures": sum([
-                sec_result.get("count", 0),
-                cl_result.get("count", 0),
-                fec_result.get("count", 0),
-                gh_result.get("count", 0),
-                infra_result.get("cert_count", 0),
-            ]),
+            "total_exposures": total_exposures,
             "vectors_available": sum([
                 1 if sec_result.get("status") == STATUS_SUCCESS else 0,
                 1 if cl_result.get("status") == STATUS_SUCCESS else 0,
                 1 if fec_result.get("status") == STATUS_SUCCESS else 0,
                 1 if gh_result.get("status") == STATUS_SUCCESS else 0,
                 1 if infra_result.get("status") == STATUS_SUCCESS else 0,
+                1 if fp_result.get("status") == STATUS_SUCCESS else 0,
+                1 if em_result.get("status") == STATUS_SUCCESS else 0,
             ]),
         },
         **results,
