@@ -212,21 +212,20 @@ else:
 # ---------------------------------------------------------------------------
 st.sidebar.markdown("---")
 
-_badge_label, _badge_help = runtime_mode.mode_badge()
-if runtime_mode.is_cloud_deployment():
-    st.sidebar.warning(_badge_label, icon="☁️")
-elif runtime_mode.is_local_mode():
-    st.sidebar.success(_badge_label, icon="🖥️")
-else:
-    st.sidebar.info(_badge_label, icon="🟡")
+try:
+    _badge_label, _badge_help = runtime_mode.mode_badge()
+    st.sidebar.info(_badge_label)
 
-with st.sidebar.expander("📋 Capabilities Matrix"):
-    caps = runtime_mode.get_capabilities_matrix()
-    for section, features in caps.items():
-        st.markdown(f"**{section}**")
-        for feature in features:
-            st.caption(f"• {feature}")
-        st.markdown("")
+    with st.sidebar.expander("📋 Capabilities Matrix"):
+        caps = runtime_mode.get_capabilities_matrix()
+        for section, features in caps.items():
+            st.markdown(f"**{section}**")
+            for feature in features:
+                st.caption(f"• {feature}")
+            st.markdown("")
+except Exception as e:
+    st.sidebar.caption(f"⚙️ Runtime info unavailable")
+    pass
 
 if runtime_mode.is_demo_mode():
     if st.sidebar.button("⚡ Load presentation demo", width="stretch", type="primary",
