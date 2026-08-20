@@ -25,6 +25,8 @@ import streamlit as st
 import requests
 
 import config
+import runtime_mode
+import database
 import exposure_store
 import spokeo_automation
 from applog import get_logger
@@ -78,7 +80,7 @@ def _record_if_changed(category, value, persisted):
     too so the staleness caption reflects it on this same run."""
     current = persisted.get(category)
     if not current or current["value"] != value:
-        exposure_store.record_check(config.EXPOSURE_DB_PATH, category, value)
+        exposure_store.record_check(runtime_mode.db_path(), category, value)
         persisted[category] = {"value": value, "checked_at": datetime.now().strftime("%Y-%m-%d")}
     return persisted[category]
 
@@ -90,7 +92,7 @@ def _staleness_note(entry):
     days = exposure_store.days_since_checked(entry["checked_at"])
     day_word = "day" if days == 1 else "days"
     if exposure_store.is_stale(entry["checked_at"], config.RECHECK_STALE_DAYS):
-        return f":material/schedule: Recheck due — last checked {days} {day_word} ago"
+        return f"⏰ Recheck due — last checked {days} {day_word} ago"
     return "Checked today" if days == 0 else f"Last checked {days} {day_word} ago"
 
 
@@ -157,18 +159,8 @@ def _parse_device_info(user_agent):
 
 
 def render(brokers_df):
-    st.markdown(
-        """
-        <div class="np-hero">
-            <div class="np-card-label">Results</div>
-            <h3 style="margin: 0 0 0.4rem 0;">Review your exposure and decide what deserves action first</h3>
-            <p class="np-quiet" style="margin: 0;">
-                Confirm the listings you find, keep track of stale checks, and move from research into a clear removal plan.
-            </p>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+    st.title("Your results")
+    st.caption("Confirm the listings you find, keep track of stale checks, and move from research into a clear removal plan.")
 
     name = st.session_state.user_name
     location = st.session_state.user_location
@@ -177,13 +169,15 @@ def render(brokers_df):
 
     if not name:
         st.warning("Enter your name on the **Dashboard** first, then come back here to see your results.")
+        if st.button("👤 Go to Dashboard", type="primary"):
+            _switch_to("📊 Dashboard")
         return
 
     if brokers_df.empty:
         st.error("Unable to load broker data. Check data/brokers.csv.")
         return
 
-    persisted = exposure_store.get_all_checks(config.EXPOSURE_DB_PATH)
+    persisted = exposure_store.get_all_checks(runtime_mode.db_path())
     client_context = _get_client_context()
     user_agent = st.context.headers.get("User-Agent", "")
     device_label = _parse_device_info(user_agent)
@@ -199,7 +193,7 @@ def render(brokers_df):
         st.markdown(f"**Time:** {checked_at}")
         st.caption(f"IP address: {client_context['ip']}")
         st.caption(f"ISP / provider: {client_context['org']}")
-        with st.expander(":material/visibility: How does a site learn this from a single visit?"):
+        with st.expander("👁️ How does a site learn this from a single visit?"):
             st.markdown(
                 "No login, no cookies, no permission prompt needed — this is available to *any* site "
                 "you visit, including every data broker in this app:\n\n"
@@ -219,7 +213,7 @@ def render(brokers_df):
                 "real IP for the VPN provider's, so sites see the VPN server's location instead of yours."
             )
 
-    with st.expander(":material/emoji_flags: Check your state's resources first"):
+    with st.expander("🚩 Check your state's resources first"):
         st.caption(
             "A real, state-specific starting point where one exists — more states get added here as "
             "their own resources are verified, never guessed ahead of time."
@@ -228,35 +222,21 @@ def render(brokers_df):
             "Your state", list(config.STATE_RESOURCES.keys()), key="results_state_choice", label_visibility="collapsed",
         )
         resource = config.STATE_RESOURCES[state_choice]
-        st.markdown(
-            f'<div class="np-info-box" style="font-size: 0.85em;">{resource["blurb"]}</div>',
-            unsafe_allow_html=True,
-        )
+        st.info(resource["blurb"])
         if "action_url" in resource:
             st.link_button(resource["action_label"], resource["action_url"])
         elif "action_mode" in resource:
             if st.button(resource["action_label"], key="state_resource_action"):
                 _switch_to(resource["action_mode"])
 
-    st.markdown("---")
-
-    action_col, next_col = st.columns([2, 1])
-    with action_col.container(border=True):
-        st.subheader(":material/flag: What to do next")
-        st.caption("Use the evidence you confirm here to prioritize deletion letters, follow-up searches, or alerts.")
-    with next_col.container(border=True):
-        st.subheader(":material/bolt: Suggested path")
-        st.caption("1. Confirm listings\n2. Check the risk cards\n3. Send a deletion request")
-
     exposure_placeholder = st.empty()
-    st.markdown("---")
 
     broker_domains = [domain_from_url(u) for u in brokers_df["search_url"] if u]
     if broker_domains:
         with st.container(border=True):
-            st.subheader(":material/travel_explore: One-click search")
+            st.subheader("🌐 One-click search")
             st.link_button(
-                ":material/travel_explore: Search for yourself across every broker at once",
+                "🌐 Search for yourself across every broker at once",
                 build_combined_dork_url(name, location, broker_domains),
                 type="primary",
                 width="stretch",
@@ -267,25 +247,38 @@ def render(brokers_df):
                 "Good for a quick overview; use each broker's own button below for a cleaner, one-at-a-time result."
             )
 
+            historical_zips = database.parse_historical_zips(
+                (database.get_latest_target_profile(runtime_mode.db_path()) or {}).get("historical_zip_codes")
+            )
+            if historical_zips:
+                st.caption(
+                    "Broker records are often keyed to a past address rather than your current one — "
+                    "search under each former ZIP code from your profile too:"
+                )
+                for zip_code in historical_zips:
+                    st.link_button(
+                        f"🌐 Search under {zip_code}",
+                        build_combined_dork_url(name, zip_code, broker_domains),
+                        width="stretch",
+                    )
+
     with st.container(border=True):
-        st.subheader(":material/notifications_active: Stay alerted automatically")
+        st.subheader("🔔 Stay alerted automatically")
         st.caption(
             "Two free services that watch for you continuously, instead of waiting for your next manual "
             "check here — worth setting up once."
         )
         alert_cols = st.columns(2)
         alert_cols[0].link_button(
-            ":material/mail: Get emailed on future breaches", config.HIBP_NOTIFY_URL, width="stretch",
+            "✉️ Get emailed on future breaches", config.HIBP_NOTIFY_URL, width="stretch",
         )
         alert_cols[0].caption("HaveIBeenPwned's own free notify-me — register your email once.")
         alert_cols[1].link_button(
-            ":material/search: Get alerted on new web mentions", config.GOOGLE_ALERTS_URL, width="stretch",
+            "🔍 Get alerted on new web mentions", config.GOOGLE_ALERTS_URL, width="stretch",
         )
         alert_cols[1].caption(f'Google Alerts — search `"{name}"` and save it as an alert.')
 
-    st.markdown("---")
-    with st.container(border=True):
-        st.subheader(":material/analytics: Exposure by category")
+    st.subheader("📊 Exposure by category")
     st.caption(
         "Each card is a real signal, not a computed score: broker listings come from your confirmations "
         "below, the rest from what you report after checking the real link — same honest data, brought "
@@ -367,7 +360,7 @@ def render(brokers_df):
     with st.container(border=True):
         card_cols = st.columns([4, 2])
         card_cols[0].markdown("### 🔑 SSN / identity theft")
-        card_cols[1].badge("Not checkable", icon=":material/block:", color="gray")
+        card_cols[1].badge("Not checkable", icon="🚫", color="gray")
         st.caption(
             "There's no free, safe way to automatically check this — anything that claims to is either "
             "paid or guessing. If you're concerned: check your credit report for free at "
@@ -386,7 +379,7 @@ def render(brokers_df):
     social_state.badge(social_label, icon=social_icon, color=social_color)
 
     st.markdown("---")
-    st.subheader(":material/apartment: Broker-by-broker detail")
+    st.subheader("🏢 Broker-by-broker detail")
 
     for _, broker in brokers_df.iterrows():
         broker_name = broker["broker_name"]
@@ -401,11 +394,31 @@ def render(brokers_df):
             days = days_since_verified(last_verified)
             age_text = f"{days} days ago" if days is not None else "date unknown"
             row_cols[0].caption(
-                f":material/warning: This broker's contact info was last verified {age_text} "
+                f"⚠️ This broker's contact info was last verified {age_text} "
                 "— the email/opt-out link above may be out of date."
             )
 
-        if is_automated:
+        if is_automated and not runtime_mode.browser_automation_enabled():
+            # Auto-search drives a headed Chrome via Playwright, which has no
+            # display to launch into inside a container. Rather than let it
+            # fail mid-demo, narrate what the local build does.
+            if row_cols[1].button("🤖 Auto-search", key=f"autosearch_{broker_name}"):
+                st.session_state[f"demo_autosearch_{broker_name}"] = True
+            if st.session_state.get(f"demo_autosearch_{broker_name}"):
+                with st.container(border=True):
+                    st.caption("🛡️ Live browser automation runs locally in the desktop build.")
+                    st.markdown(
+                        f"""On the local build, **Auto-search** would now:
+1. Launch your own Chrome against **{broker_name}**
+2. Search for **{name}** in **{location}**
+3. Dismiss the cookie/consent banner
+4. Wait while you review the results yourself
+5. Capture the record URL you click into, and prefill it on the Letters page
+
+Nothing is automated here on the hosted demo — no browser is launched and no
+request leaves this server."""
+                    )
+        elif is_automated:
             if row_cols[1].button("🤖 Auto-search", key=f"autosearch_{broker_name}"):
                 with st.spinner(
                     f"Chrome is open and searching {broker_name} — review the results there, "
@@ -424,7 +437,7 @@ def render(brokers_df):
         elif broker["search_url"]:
             broker_domain = domain_from_url(broker["search_url"])
             dork_url = build_broker_dork_url(name, location, broker_domain)
-            row_cols[1].link_button(":material/travel_explore: Targeted search", dork_url, key=f"selfsearch_link_{broker_name}")
+            row_cols[1].link_button("🌐 Targeted search", dork_url, key=f"selfsearch_link_{broker_name}")
         else:
             row_cols[1].caption("No search link on file")
 
@@ -457,7 +470,6 @@ def render(brokers_df):
     broker_label, broker_color, broker_icon = _broker_risk_badge(found_count, checked_broker_count, total_count)
     broker_badge_placeholder.badge(broker_label, icon=broker_icon, color=broker_color)
 
-    st.markdown("---")
     summary_cols = st.columns(3)
     with summary_cols[0]:
         st.metric("Brokers confirmed", f"{found_count} / {total_count}", help="How many broker listings you have confirmed so far.")
@@ -485,7 +497,7 @@ def render(brokers_df):
 
     with exposure_placeholder.container():
         if combined_total == 0:
-            st.markdown("## :material/help: Not checked yet")
+            st.markdown("## ❓ Not checked yet")
             st.info("Nothing confirmed yet — check items off below as you verify them.")
         elif combined_found == 0:
             st.markdown("## 🎉 All clear so far")
@@ -503,11 +515,10 @@ def render(brokers_df):
         if stale_count:
             item_word = "item" if stale_count == 1 else "items"
             st.caption(
-                f":material/schedule: {stale_count} {item_word} haven't been rechecked in "
+                f"⏰ {stale_count} {item_word} haven't been rechecked in "
                 f"{config.RECHECK_STALE_DAYS}+ days — worth a fresh look below."
             )
 
-    st.markdown("---")
     st.subheader("Other real ways to check yourself")
     link_cols = st.columns(4)
     search_engines = {
@@ -517,9 +528,8 @@ def render(brokers_df):
         "Yahoo": f"https://search.yahoo.com/search?p={name.replace(' ', '+')}",
     }
     for idx, (engine_name, url) in enumerate(search_engines.items()):
-        link_cols[idx].link_button(f"🔍 {engine_name}", url)
+        link_cols[idx].link_button(engine_name, url, icon="🔍")
 
-    st.markdown("---")
     if found_count > 0:
         st.success(
             f"You're listed on {found_count} broker(s). Head to **Data Broker Deletion Letters** "

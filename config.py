@@ -64,11 +64,10 @@ CA_DROP_URL = "https://privacy.ca.gov"
 STATE_RESOURCES = {
     "California": {
         "blurb": (
-            "The state's own deletion tool, <strong>DROP</strong>, reaches every "
-            "<em>registered</em> data broker with one request, and brokers have been "
-            "required to process DROP requests since Aug 1, 2026. Start there — use "
-            "Non-Pursuit for brokers that aren't registered, or to escalate if a "
-            "broker misses its window."
+            "The state's own deletion tool, **DROP**, reaches every *registered* data "
+            "broker with one request, and brokers have been required to process DROP "
+            "requests since Aug 1, 2026. Start there — use Non-Pursuit for brokers "
+            "that aren't registered, or to escalate if a broker misses its window."
         ),
         "action_label": "Open DROP (privacy.ca.gov)",
         "action_url": CA_DROP_URL,
@@ -117,6 +116,22 @@ PROFILE_DB_PATH = "data/tracker.db"
 # web-mention monitoring, point users at the real ones.
 GOOGLE_ALERTS_URL = "https://www.google.com/alerts"
 HIBP_NOTIFY_URL = "https://haveibeenpwned.com/NotifyMe"
+
+# Digital footprint scanner (utils/footprint_scanner.py). The WhatsMyName
+# site list is fetched on first use and cached here rather than committed --
+# it's CC BY-SA 4.0, so not vendoring it keeps ShareAlike'd content out of
+# git history, and the list genuinely churns as sites die and detection
+# strings get fixed upstream. Gitignored alongside the rest of data/.
+WMN_DATASET_PATH = "data/wmn-data.json"
+
+# Discovered accounts live in the same local SQLite file as everything else.
+FOOTPRINT_DB_PATH = "data/tracker.db"
+
+# Bounded concurrency for a scan. 15 is high enough that the ~50-site fast
+# scan finishes in a few seconds, low enough that a full ~700-site sweep
+# doesn't arrive at any one edge firewall as a burst.
+FOOTPRINT_CONCURRENCY = 15
+FOOTPRINT_TIMEOUT_SECONDS = 15
 
 # Diagnostic log, separate from data/ (which is user data, backed up via the
 # JSON/CSV/PDF exports and never written to by anything but the user's own

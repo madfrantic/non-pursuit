@@ -1,99 +1,92 @@
 """
 Data Broker Deletion Letters — its own module (extracted from app.py) so
 its logic lives in exactly one place regardless of what else calls it.
+
+Reads the identity info entered on the Dashboard rather than collecting
+it again -- only the record URL (specific to whichever broker/letter this
+is) gets entered here.
 """
 import io
 import zipfile
 from datetime import datetime
 
 import streamlit as st
-from jinja2 import Environment, FileSystemLoader
 
 import config
 import exposure_store
+import runtime_mode
+from letter_compiler import compile_demand_letter
 from mailto_builder import build_mailto_link, mailto_length, is_mailto_safe
 from tracker import add_request
+from validators import is_valid_url
 
 
-def _is_valid_email(value: str) -> bool:
-    import re
-    return bool(re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", value.strip())) if value else False
-
-
-def _is_valid_url(value: str) -> bool:
-    return value.strip().lower().startswith(("http://", "https://")) if value else False
-
-
-def _render_letter(env, broker_name, user_name, user_location, user_email, record_url):
-    template = env.get_template("ccpa_deletion_demand.j2")
-    return template.render(
-        broker_name=broker_name,
-        user_name=user_name,
-        user_location=user_location,
-        user_email=user_email,
+def _render_letter(broker_name, user_name, user_location, user_email, record_url):
+    """Thin adapter over the shared compiler -- the statutory text itself
+    lives in utils/letter_compiler.py so the audit-trail ZIP renders from
+    the identical code path."""
+    return compile_demand_letter(
+        broker_name,
+        {"name": user_name, "location": user_location, "email": user_email},
         record_url=record_url,
-        current_date=datetime.now().strftime("%B %d, %Y"),
     )
 
 
 def render(brokers_df):
-    st.header(":material/mail: CCPA Data Deletion Demand Letters")
-    st.markdown(
-        "Generate formal deletion demand letters for data brokers under "
-        "California Civil Code § 1798.105."
-    )
+    st.title("✉️ Data broker deletion letters")
+    st.caption("Generate formal deletion demand letters for data brokers under California Civil Code § 1798.105.")
 
-    col1, col2 = st.columns(2)
-    with col1:
-        user_name = st.text_input("Full Name", value=st.session_state.user_name, placeholder="Enter your full legal name")
-        user_email = st.text_input("Email Address", value=st.session_state.user_email, placeholder="your.email@example.com")
-    with col2:
-        user_location = st.text_input("Location", value=st.session_state.user_location, placeholder="City, State")
-        record_url = st.text_input("Record URL", value=st.session_state.record_url, placeholder="https://broker.com/record/...")
+    user_name = st.session_state.user_name
+    user_email = st.session_state.user_email
+    user_location = st.session_state.user_location
 
-    st.session_state.user_name = user_name
-    st.session_state.user_email = user_email
-    st.session_state.user_location = user_location
+    if not (user_name and user_email and user_location):
+        st.warning("Add your name, email, and location on the **Dashboard** first -- these letters are personalized and need a real contact for the broker to respond to.")
+        if st.button("👤 Go to Dashboard", type="primary"):
+            st.session_state.pending_nav = "📊 Dashboard"
+            st.rerun()
+        return
+
+    with st.container(border=True):
+        info_cols = st.columns([3, 1])
+        info_cols[0].markdown(f"**{user_name}**  \n{user_location} · {user_email}")
+        if info_cols[1].button("Edit on Dashboard", icon="✏️", width="stretch"):
+            st.session_state.pending_nav = "📊 Dashboard"
+            st.rerun()
+        record_url = st.text_input(
+            "Record URL",
+            value=st.session_state.record_url,
+            placeholder="https://broker.com/record/...",
+            help="The specific listing page for you on this broker's site -- captured automatically by Auto-search on Results, or pasted in manually.",
+        )
     st.session_state.record_url = record_url
 
-    errors = []
-    if user_name and len(user_name.strip()) < 2:
-        errors.append("Enter your full name.")
-    if user_email and not _is_valid_email(user_email):
-        errors.append("That email address doesn't look valid.")
-    if record_url and not _is_valid_url(record_url):
-        errors.append("Record URL should start with http:// or https://")
+    if record_url and not is_valid_url(record_url):
+        st.warning("Record URL should start with http:// or https://")
 
-    for e in errors:
-        st.warning(e)
-
-    ready = bool(user_name and user_email and user_location and record_url) and not errors
-
-    st.markdown("---")
+    ready = bool(record_url) and is_valid_url(record_url)
 
     if brokers_df.empty:
         st.error("Unable to load broker data. Check data/brokers.csv.")
         return
 
     batch_mode = st.toggle("Batch mode (select multiple brokers)", value=False)
-    env = Environment(loader=FileSystemLoader("templates"))
 
     if not ready:
-        st.info("Fill in your name, email, location, and record URL above to generate letters.")
+        st.info("Add a record URL above to generate letters.")
 
     elif not batch_mode:
         broker_options = brokers_df["broker_name"].tolist()
-        selected_broker = st.selectbox("Select Target Data Broker", broker_options)
+        selected_broker = st.selectbox("Select target data broker", broker_options)
         broker_info = brokers_df[brokers_df["broker_name"] == selected_broker].iloc[0]
         broker_email = broker_info["compliance_email"]
         optout_url = broker_info["optout_url"]
         broker_notes = broker_info["notes"]
 
         if broker_notes:
-            st.markdown(f'<div class="np-info-box">📝 {broker_notes}</div>', unsafe_allow_html=True)
+            st.info(broker_notes, icon="📝")
 
         search_url = broker_info["search_url"]
-        st.markdown("---")
         st.subheader("🔍 Step 1: Confirm you're actually listed")
 
         if st.session_state.listed_confirmed.get(selected_broker, False):
@@ -114,19 +107,17 @@ def render(brokers_df):
             )
             if confirmed_listed:
                 st.session_state.listed_confirmed[selected_broker] = True
-                exposure_store.record_check(config.EXPOSURE_DB_PATH, f"broker:{selected_broker}", "Found exposure")
+                exposure_store.record_check(runtime_mode.db_path(), f"broker:{selected_broker}", "Found exposure")
 
         if not confirmed_listed:
             st.info("Check the box above once you've confirmed you're listed to generate the letter.")
         else:
-            rendered_letter = _render_letter(env, selected_broker, user_name, user_location, user_email, record_url)
+            rendered_letter = _render_letter(selected_broker, user_name, user_location, user_email, record_url)
 
-            st.markdown("---")
-            st.subheader("📄 Generated Demand Letter")
+            st.subheader("📄 Generated demand letter")
             st.code(rendered_letter, language=None)
             st.caption("Use the copy icon in the corner above, or download below.")
 
-            st.markdown("---")
             st.subheader("🚀 Actions")
 
             col_a, col_b, col_c = st.columns(3)
@@ -136,7 +127,7 @@ def render(brokers_df):
                     subject = f"CCPA Data Deletion Demand - {user_name}"
                     safe = is_mailto_safe(broker_email, subject, rendered_letter, config.MAILTO_SAFE_LENGTH)
                     mailto_link = build_mailto_link(broker_email, subject, rendered_letter)
-                    st.link_button("📧 Open Email Client", mailto_link, disabled=not safe)
+                    st.link_button("✉️ Open email client", mailto_link, disabled=not safe)
                     st.caption(f"To: {broker_email}")
                     if not safe:
                         st.warning(
@@ -149,7 +140,8 @@ def render(brokers_df):
 
             with col_b:
                 st.download_button(
-                    label="📥 Download as TXT",
+                    label="Download as TXT",
+                    icon="📥",
                     data=rendered_letter,
                     file_name=f"ccpa_demand_{selected_broker.replace(' ', '_').lower()}_{datetime.now().strftime('%Y%m%d')}.txt",
                     mime="text/plain",
@@ -157,13 +149,12 @@ def render(brokers_df):
 
             with col_c:
                 if optout_url:
-                    st.link_button("🔗 Official Opt-Out Form", optout_url)
+                    st.link_button("🔗 Official opt-out form", optout_url)
                     st.caption("Opens in new tab")
 
-            st.markdown("---")
-            if st.button("➕ Log this request in the Campaign Tracker"):
+            if st.button("Log this request in the Campaign Tracker", icon="➕"):
                 add_request(
-                    config.TRACKER_DB_PATH,
+                    runtime_mode.db_path(),
                     broker_name=selected_broker,
                     channel="Email" if broker_email else "Opt-out form",
                     response_window_days=config.CCPA_RESPONSE_WINDOW_DAYS,
@@ -175,7 +166,6 @@ def render(brokers_df):
         selected_brokers = st.multiselect("Select target brokers", broker_options, default=broker_options[:3])
 
         if selected_brokers:
-            st.markdown("---")
             st.subheader("🔍 Step 1: Confirm you're actually listed on each broker")
             st.caption(
                 "Search each broker's site for your own name before including it in the batch — "
@@ -201,16 +191,14 @@ def render(brokers_df):
                 if row_cols[2].checkbox("Confirmed listed", key=f"batch_confirmed_{broker_name}"):
                     confirmed_brokers.append(broker_name)
                     st.session_state.listed_confirmed[broker_name] = True
-                    exposure_store.record_check(config.EXPOSURE_DB_PATH, f"broker:{broker_name}", "Found exposure")
-
-            st.markdown("---")
+                    exposure_store.record_check(runtime_mode.db_path(), f"broker:{broker_name}", "Found exposure")
 
             if not confirmed_brokers:
                 st.info("Check off at least one broker above once you've confirmed you're listed there.")
             else:
                 letters = {}
                 for broker_name in confirmed_brokers:
-                    letters[broker_name] = _render_letter(env, broker_name, user_name, user_location, user_email, record_url)
+                    letters[broker_name] = _render_letter(broker_name, user_name, user_location, user_email, record_url)
 
                 with st.expander(f"Preview ({len(letters)} letters)"):
                     for broker_name, letter_text in letters.items():
@@ -227,19 +215,20 @@ def render(brokers_df):
                 col_a, col_b = st.columns(2)
                 with col_a:
                     st.download_button(
-                        "📥 Download all as ZIP",
+                        "Download all as ZIP",
+                        icon="📥",
                         data=zip_buffer,
                         file_name=f"ccpa_demands_{datetime.now().strftime('%Y%m%d')}.zip",
                         mime="application/zip",
                     )
                 with col_b:
-                    if st.button(f"➕ Log all {len(letters)} in the Campaign Tracker"):
+                    if st.button(f"Log all {len(letters)} in the Campaign Tracker", icon="➕"):
                         progress_bar = st.progress(0)
                         for idx, broker_name in enumerate(confirmed_brokers):
                             broker_info = brokers_df[brokers_df["broker_name"] == broker_name].iloc[0]
                             channel = "Email" if broker_info["compliance_email"] else "Opt-out form"
                             add_request(
-                                config.TRACKER_DB_PATH,
+                                runtime_mode.db_path(),
                                 broker_name=broker_name,
                                 channel=channel,
                                 response_window_days=config.CCPA_RESPONSE_WINDOW_DAYS,

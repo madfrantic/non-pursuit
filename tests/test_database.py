@@ -97,3 +97,25 @@ def test_insert_target_profile_is_parameterized_against_injection(db_path):
 
     assert "target_profile" in tables
     assert row[0] == malicious
+
+
+def test_parse_historical_zips_handles_comma_separated():
+    assert database.parse_historical_zips("94105, 10001") == ["94105", "10001"]
+
+
+def test_parse_historical_zips_handles_newline_separated():
+    assert database.parse_historical_zips("94105\n10001") == ["94105", "10001"]
+
+
+def test_parse_historical_zips_dedupes_preserving_order():
+    assert database.parse_historical_zips("94105, 10001, 94105") == ["94105", "10001"]
+
+
+def test_parse_historical_zips_strips_whitespace_and_blanks():
+    assert database.parse_historical_zips(" 94105 ,, 10001 \n\n") == ["94105", "10001"]
+
+
+def test_parse_historical_zips_returns_empty_list_for_none_or_blank():
+    assert database.parse_historical_zips(None) == []
+    assert database.parse_historical_zips("") == []
+    assert database.parse_historical_zips("   ") == []

@@ -8,5 +8,6 @@ playwright>=1.62,<2.0
 icalendar>=6.0,<8.0
 python-dotenv>=1.0.0
 reportlab>=4.0.0  # PDF export of the campaign/exposure report (data_export.build_pdf_export)
-requests>=2.31,<3.0  # used by Results' IP/ISP lookup (calls ipinfo.io)
+requests>=2.31,<3.0  # used by Results' IP/ISP lookup (calls ipinfo.io), and to fetch the WhatsMyName site list
+aiohttp>=3.9,<4.0  # concurrent account-existence checks in utils/footprint_scanner.py
 pytest>=8.0,<9.0  # dev dependency: run with `pytest tests/`

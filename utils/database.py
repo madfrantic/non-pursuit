@@ -83,3 +83,19 @@ def insert_target_profile(db_path: str, data: dict) -> int:
         )
         conn.commit()
         return cursor.lastrowid
+
+
+def parse_historical_zips(raw: str | None) -> list[str]:
+    """Split the free-form historical_zip_codes field (the Dashboard form
+    accepts "one per line or comma-separated") into a clean, ordered,
+    deduplicated list of ZIP strings -- so a broker search can be re-run
+    once per former address without also re-parsing this everywhere it's
+    needed."""
+    if not raw:
+        return []
+    zips = []
+    for chunk in raw.replace(",", "\n").splitlines():
+        zip_code = chunk.strip()
+        if zip_code and zip_code not in zips:
+            zips.append(zip_code)
+    return zips

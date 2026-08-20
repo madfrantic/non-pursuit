@@ -1,0 +1,26 @@
+# Render.com blueprint for the hosted demo build.
+#
+# Deploys the demo, never the production utility. NON_PURSUIT_DEMO_MODE is
+# pinned true here for the same reason it is in the Dockerfile: a shared
+# host must not hold one visitor's records where another can reach them,
+# and the browser-automation and live-scanning paths are unsafe from a
+# shared IP.
+#
+# There is deliberately no persistent disk attached. Session databases live
+# in the container's temp directory and are meant to disappear.
+services:
+  - type: web
+    name: non-pursuit-demo
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: free
+    healthCheckPath: /_stcore/health
+    envVars:
+      - key: NON_PURSUIT_DEMO_MODE
+        value: "true"
+      - key: STREAMLIT_SERVER_HEADLESS
+        value: "true"
+      - key: STREAMLIT_SERVER_ADDRESS
+        value: "0.0.0.0"
+      - key: STREAMLIT_BROWSER_GATHER_USAGE_STATS
+        value: "false"

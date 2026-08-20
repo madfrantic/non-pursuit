@@ -8,6 +8,12 @@ __pycache__/
 # git history.
 data/tracker.db
 
+# WhatsMyName site list, downloaded on first scan and cached locally. Not
+# committed: it's CC BY-SA 4.0 (c) Micah Hoffman, so keeping it out of git
+# avoids redistributing ShareAlike'd content, and the list churns upstream
+# often enough that a pinned copy would rot while still looking current.
+data/wmn-data.json
+
 # Diagnostic log -- can end up holding identifying details caught in an
 # exception message, same reasoning as data/tracker.db above.
 logs/

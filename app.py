@@ -1,6 +1,7 @@
 import base64
 import sys
 import os
+from datetime import datetime
 
 import streamlit as st
 import pandas as pd
@@ -13,15 +14,20 @@ if UTILS_DIR not in sys.path:
 from tracker import add_request, get_all_requests, update_status, delete_request, purge_expired_notes, STATUS_OPTIONS
 from calendar_export import build_ics
 from data_export import build_json_export, build_csv_export, build_pdf_export
+import audit_packager
 import database
+import demo_data
+import discovered_accounts
 import exposure_store
 import config
+import runtime_mode
 
 from components import letters as letters_component
 from components import dashboard as dashboard_component
 from components import results as results_component
+from components import footprint as footprint_component
 
-database.init_db(config.PROFILE_DB_PATH)
+database.init_db(runtime_mode.db_path())
 
 
 # ---------------------------------------------------------------------------
@@ -51,65 +57,17 @@ def _image_data_uri(path):
     return f"data:image/png;base64,{encoded}"
 
 # Theming lives in .streamlit/config.toml. The only custom CSS left here is
-# for the "Broker Notes" info box and letter-preview box, which Streamlit's
-# theme doesn't reach on its own — kept in sync with config.py's palette so
-# changing one color in config.py and matching it in config.toml is the only
-# thing needed to re-theme the app.
+# a font-size bump for the sidebar nav: real emoji render as plain
+# characters (unlike Material Symbols, which Streamlit wraps in their own
+# styled span) -- they scale with the label's own font-size, so bumping
+# that is what makes them pop.
 st.markdown(
-    f"""
+    """
     <style>
-        .stApp {{
-            padding-top: 0.5rem;
-        }}
-        .np-info-box {{
-            background-color: {config.SECONDARY_BACKGROUND_COLOR};
-            color: {config.TEXT_COLOR};
-            padding: 12px 16px;
-            border-left: 4px solid {config.PRIMARY_COLOR};
-            border-radius: 4px;
-            margin-bottom: 12px;
-        }}
-        .np-overdue {{
-            color: {config.ERROR_COLOR};
-            font-weight: bold;
-        }}
-        .np-hero {{
-            background: linear-gradient(135deg, rgba(37, 99, 235, 0.16), rgba(96, 165, 250, 0.06));
-            border: 1px solid rgba(96, 165, 250, 0.24);
-            border-radius: 18px;
-            padding: 1.15rem 1.25rem;
-            margin-bottom: 1rem;
-        }}
-        .np-card-label {{
-            display: inline-block;
-            padding: 0.2rem 0.55rem;
-            border-radius: 999px;
-            background: rgba(37, 99, 235, 0.16);
-            color: #bfdbfe;
-            font-size: 0.78rem;
-            font-weight: 600;
-            margin-bottom: 0.45rem;
-        }}
-        .np-step-pill {{
-            display: inline-block;
-            padding: 0.35rem 0.7rem;
-            border-radius: 999px;
-            background: rgba(15, 23, 42, 0.7);
-            border: 1px solid rgba(148, 163, 184, 0.22);
-            margin-right: 0.45rem;
-            margin-top: 0.35rem;
-            font-size: 0.82rem;
-        }}
-        .np-quiet {{
-            color: #94a3b8;
-        }}
-        /* Real emoji render as plain characters (unlike Material Symbols,
-        which Streamlit wraps in their own styled span) -- they scale with
-        the label's own font-size, so bumping that is what makes them pop. */
-        [data-testid="stSidebar"] [data-testid="stRadioOption"] [data-testid="stMarkdownContainer"] p {{
+        [data-testid="stSidebar"] [data-testid="stRadioOption"] [data-testid="stMarkdownContainer"] p {
             font-size: 1.2rem;
             line-height: 1.8;
-        }}
+        }
     </style>
     """,
     unsafe_allow_html=True,
@@ -122,7 +80,7 @@ st.markdown(
 # A fresh session (new tab/browser) starts blank unless a baseline profile
 # was already saved on the Dashboard -- in that case, seed the quick fields
 # from it so returning users don't have to retype their info every visit.
-_saved_profile = database.get_latest_target_profile(config.PROFILE_DB_PATH)
+_saved_profile = database.get_latest_target_profile(runtime_mode.db_path())
 _seeded_name = ""
 _seeded_location = ""
 _seeded_email = ""
@@ -216,10 +174,11 @@ st.sidebar.markdown(
 st.sidebar.markdown("---")
 
 mode = st.sidebar.radio(
-    "Select Tool",
+    "Select tool",
     [
         "📊 Dashboard",
         "🔍 Results",
+        "🌐 Online Footprint",
         "✉️ Data Broker Deletion Letters",
         "⚖️ NY Expungement Guidance",
         "🚫 Google De-Indexing",
@@ -228,6 +187,60 @@ mode = st.sidebar.radio(
     key="nav_mode",
     label_visibility="visible",
 )
+
+# ---------------------------------------------------------------------------
+# Sidebar: runtime mode, demo seeding, audit package
+# ---------------------------------------------------------------------------
+st.sidebar.markdown("---")
+
+_badge_label, _badge_help = runtime_mode.mode_badge()
+st.sidebar.caption(_badge_label, help=_badge_help)
+
+if runtime_mode.is_demo_mode():
+    if st.sidebar.button("⚡ Load presentation demo", width="stretch", type="primary",
+                         help="Seed this session with a synthetic campaign already in progress."):
+        seeded = demo_data.seed_demo_campaign(runtime_mode.db_path())
+        database.insert_target_profile(runtime_mode.db_path(), demo_data.DEMO_PROFILE)
+        st.session_state.user_name = demo_data.DEMO_NAME
+        st.session_state.user_location = demo_data.DEMO_LOCATION
+        st.session_state.user_email = demo_data.DEMO_EMAIL
+        st.session_state.record_url = demo_data.DEMO_RECORD_URL
+        st.session_state.demo_loaded = True
+        st.toast(
+            f"Loaded {seeded['requests']} requests and {seeded['accounts']} accounts.",
+            icon="⚡",
+        )
+        st.rerun()
+
+# The audit package is assembled entirely in memory, so it works
+# identically on the local build and a hosted container with no writable
+# disk. Built on demand rather than every rerun -- it compiles a letter per
+# broker, which is wasted work on every unrelated widget interaction.
+_audit_requests = get_all_requests(runtime_mode.db_path())
+if _audit_requests:
+    if st.sidebar.button("📦 Build audit trail (.ZIP)", width="stretch",
+                         help="Bundle demands, deadlines and verification logs into one archive."):
+        st.session_state.audit_zip = audit_packager.build_audit_package(
+            requests=_audit_requests,
+            discovered=discovered_accounts.get_all(runtime_mode.db_path()),
+            exposure_checks=exposure_store.get_all_checks(runtime_mode.db_path()),
+            target_profile={
+                "name": st.session_state.user_name,
+                "location": st.session_state.user_location,
+                "email": st.session_state.user_email,
+            },
+            record_url=st.session_state.record_url,
+            default_window=config.CCPA_RESPONSE_WINDOW_DAYS,
+        )
+
+    if st.session_state.get("audit_zip"):
+        st.sidebar.download_button(
+            "📥 Download audit trail",
+            data=st.session_state.audit_zip,
+            file_name=f"non_pursuit_audit_{datetime.now().strftime('%Y%m%d')}.zip",
+            mime="application/zip",
+            width="stretch",
+        )
 
 st.markdown(
     f"""
@@ -250,15 +263,17 @@ if mode == "📊 Dashboard":
 elif mode == "🔍 Results":
     results_component.render(brokers_df)
 
+elif mode == "🌐 Online Footprint":
+    footprint_component.render()
+
 elif mode == "✉️ Data Broker Deletion Letters":
     letters_component.render(brokers_df)
 
 elif mode == "⚖️ NY Expungement Guidance":
-    st.header(":material/gavel: New York Criminal Record Expungement Guidance")
-    st.markdown("Navigate New York Criminal Procedure Law (CPL) pathways for record sealing and expungement.")
-    st.markdown("---")
+    st.title("⚖️ New York criminal record expungement guidance")
+    st.caption("Navigate New York Criminal Procedure Law (CPL) pathways for record sealing and expungement.")
 
-    st.subheader("Step 1: Case Outcome")
+    st.subheader("Step 1: Case outcome")
     case_outcome = st.selectbox(
         "What was the outcome of your criminal case?",
         ["Case was dismissed / acquitted", "Convicted of a crime", "Convicted of a violation / non-criminal offense"],
@@ -280,11 +295,10 @@ elif mode == "⚖️ NY Expungement Guidance":
             3. Contact the court where your case was heard
             """
         )
-        st.link_button("📚 Official NY Courts Guide", config.NY_COURT_EXPUNGEMENT_URL)
+        st.link_button("Official NY courts guide", config.NY_COURT_EXPUNGEMENT_URL, icon="📚")
 
     elif case_outcome == "Convicted of a crime":
-        st.markdown("---")
-        st.subheader("Step 2: Waiting Period")
+        st.subheader("Step 2: Waiting period")
         time_since_conviction = st.selectbox(
             "How long has it been since your conviction?",
             ["Less than 10 years", "10+ years"],
@@ -306,7 +320,7 @@ elif mode == "⚖️ NY Expungement Guidance":
                 3. Attend court hearing if required
                 """
             )
-            st.link_button("📚 Official NY Courts Guide", config.NY_COURT_EXPUNGEMENT_URL)
+            st.link_button("Official NY courts guide", config.NY_COURT_EXPUNGEMENT_URL, icon="📚")
         else:
             st.warning("### You do not currently qualify for CPL 160.59")
             st.markdown(
@@ -321,7 +335,6 @@ elif mode == "⚖️ NY Expungement Guidance":
             )
 
     else:
-        st.markdown("---")
         st.success("### Your record may already be sealed")
         st.markdown(
             """
@@ -335,12 +348,12 @@ elif mode == "⚖️ NY Expungement Guidance":
             - Check with the court where your case was heard
             """
         )
-        st.link_button("📚 Official NY Courts Guide", config.NY_COURT_EXPUNGEMENT_URL)
+        st.link_button("Official NY courts guide", config.NY_COURT_EXPUNGEMENT_URL, icon="📚")
 
-    st.markdown("---")
     st.info(
-        "⚠️ **Disclaimer:** This tool provides general guidance only. For legal advice regarding "
-        "your specific situation, consult with a qualified New York criminal defense attorney."
+        "**Disclaimer:** This tool provides general guidance only. For legal advice regarding "
+        "your specific situation, consult with a qualified New York criminal defense attorney.",
+        icon="⚠️",
     )
 
 
@@ -348,15 +361,17 @@ elif mode == "⚖️ NY Expungement Guidance":
 # MODE 3: Google De-Indexing
 # ---------------------------------------------------------------------------
 elif mode == "🚫 Google De-Indexing":
-    st.header(":material/search_off: Google PII Removal Request")
-    st.markdown("Request removal of personally identifiable information from Google Search results.")
-    st.markdown("---")
+    st.title("🚫 Google PII removal request")
+    st.caption("Request removal of personally identifiable information from Google Search results.")
 
     g_name = st.session_state.user_name
     g_email = st.session_state.user_email
 
     if not g_name or not g_email:
         st.warning("Enter your name and email on the **Dashboard** first — this request is personalized and needs a real contact for verification.")
+        if st.button("👤 Go to Dashboard", type="primary"):
+            st.session_state.pending_nav = "📊 Dashboard"
+            st.rerun()
     else:
         st.subheader("URLs to request removal for")
         st.caption("Paste each Google search result URL containing your PII, one per line.")
@@ -368,8 +383,7 @@ elif mode == "🚫 Google De-Indexing":
         )
         pii_urls = [u.strip() for u in pii_urls_raw.splitlines() if u.strip()]
 
-        st.markdown("---")
-        st.subheader("Standardized PII Justification Statement")
+        st.subheader("Standardized PII justification statement")
 
         if pii_urls:
             url_block = "\n".join(f"- {u}" for u in pii_urls)
@@ -399,45 +413,40 @@ I have attached evidence of the search results containing this information and r
         st.code(justification_text, language=None)
         st.caption("Use the copy icon in the corner above to copy this text.")
 
-    st.markdown("---")
-
-    st.subheader("🚀 Submit to Google")
-    st.link_button("🔗 Google PII Removal Portal", config.GOOGLE_PII_REMOVAL_URL)
+    st.subheader("Submit to Google")
+    st.link_button("Google PII removal portal", config.GOOGLE_PII_REMOVAL_URL, icon="🔗")
     st.caption("Opens Google's official removal request form")
 
-    st.markdown("---")
+    with st.expander("Before submitting", icon="✅"):
+        st.markdown(
+            """
+            **Required information:**
+            - URLs of the pages containing your PII
+            - Screenshots of the search results
+            - Your contact information for verification
+            - Specific type of PII (address, phone, SSN, etc.)
 
-    st.subheader("📝 Before Submitting")
-    st.markdown(
-        """
-        **Required Information:**
-        - URLs of the pages containing your PII
-        - Screenshots of the search results
-        - Your contact information for verification
-        - Specific type of PII (address, phone, SSN, etc.)
+            **Processing time:**
+            - Google typically reviews requests within a few days
+            - You will receive email confirmation of the decision
+            - Approved removals take effect within 24-48 hours
 
-        **Processing Time:**
-        - Google typically reviews requests within a few days
-        - You will receive email confirmation of the decision
-        - Approved removals take effect within 24-48 hours
-
-        **Important Notes:**
-        - This only removes content from Google Search, not the original website
-        - Contact the website hosting the information directly for complete removal
-        - Keep records of your submission for follow-up
-        """
-    )
+            **Important notes:**
+            - This only removes content from Google Search, not the original website
+            - Contact the website hosting the information directly for complete removal
+            - Keep records of your submission for follow-up
+            """
+        )
 
 
 # ---------------------------------------------------------------------------
 # MODE 4: Campaign Tracker
 # ---------------------------------------------------------------------------
 elif mode == "📈 Campaign Tracker":
-    st.header(":material/monitoring: Campaign Tracker")
-    st.markdown("Every request logged from the other tools shows up here, with its response deadline tracked automatically.")
-    st.markdown("---")
+    st.title("📈 Campaign tracker")
+    st.caption("Every request logged from the other tools shows up here, with its response deadline tracked automatically.")
 
-    with st.expander("➕ Log a request manually"):
+    with st.expander("Log a request manually", icon="➕"):
         with st.form("manual_log_form"):
             m_broker = st.text_input("Broker / recipient name")
             m_channel = st.selectbox("Channel", ["Email", "Opt-out form", "Mail", "Other"])
@@ -445,14 +454,14 @@ elif mode == "📈 Campaign Tracker":
             m_notes = st.text_input("Notes (optional)")
             submitted = st.form_submit_button("Log request")
             if submitted and m_broker:
-                add_request(config.TRACKER_DB_PATH, m_broker, m_channel, int(m_window), m_notes)
+                add_request(runtime_mode.db_path(), m_broker, m_channel, int(m_window), m_notes)
                 st.success(f"Logged {m_broker}.")
 
-    cleared_count = purge_expired_notes(config.TRACKER_DB_PATH, config.PII_RETENTION_DAYS)
+    cleared_count = purge_expired_notes(runtime_mode.db_path(), config.PII_RETENTION_DAYS)
     if cleared_count:
-        st.toast(f"🗑️ Cleared notes on {cleared_count} request(s) completed over {config.PII_RETENTION_DAYS} days ago.")
+        st.toast(f"Cleared notes on {cleared_count} request(s) completed over {config.PII_RETENTION_DAYS} days ago.", icon="🗑️")
 
-    requests_list = get_all_requests(config.TRACKER_DB_PATH)
+    requests_list = get_all_requests(runtime_mode.db_path())
 
     st.caption(
         f"🔒 Notes on completed requests are cleared automatically after {config.PII_RETENTION_DAYS} days — "
@@ -460,7 +469,7 @@ elif mode == "📈 Campaign Tracker":
     )
 
     if not requests_list:
-        st.info("Nothing logged yet. Generate a letter in Mode 1 and click \"Log this request\", or add one manually above.")
+        st.info("Nothing logged yet. Generate a letter under **Data Broker Deletion Letters** and click \"Log this request\", or add one manually above.")
     else:
         overdue_count = sum(1 for r in requests_list if r["is_overdue"])
         c1, c2, c3 = st.columns(3)
@@ -472,22 +481,25 @@ elif mode == "📈 Campaign Tracker":
         open_requests = [r for r in requests_list if r["status"] != "Complete"]
         if open_requests:
             export_cols[0].download_button(
-                "📅 Calendar (.ics)",
+                "Calendar (.ics)",
+                icon="📅",
                 data=build_ics(requests_list),
                 file_name="non_pursuit_deadlines.ics",
                 mime="text/calendar",
                 width="stretch",
             )
         export_cols[1].download_button(
-            ":material/download: All data (.json)",
-            data=build_json_export(requests_list, exposure_store.get_all_checks(config.EXPOSURE_DB_PATH)),
+            "All data (.json)",
+            icon="📥",
+            data=build_json_export(requests_list, exposure_store.get_all_checks(runtime_mode.db_path())),
             file_name="non_pursuit_data_export.json",
             mime="application/json",
             width="stretch",
             help="Everything tracked in this app -- campaign requests and self-search history -- as one portable file you control.",
         )
         export_cols[2].download_button(
-            ":material/table: Requests (.csv)",
+            "Requests (.csv)",
+            icon="📋",
             data=build_csv_export(requests_list),
             file_name="non_pursuit_requests.csv",
             mime="text/csv",
@@ -495,15 +507,14 @@ elif mode == "📈 Campaign Tracker":
             help="Just the campaign requests table, for opening in a spreadsheet.",
         )
         export_cols[3].download_button(
-            ":material/picture_as_pdf: Report (.pdf)",
-            data=build_pdf_export(requests_list, exposure_store.get_all_checks(config.EXPOSURE_DB_PATH)),
+            "Report (.pdf)",
+            icon="📄",
+            data=build_pdf_export(requests_list, exposure_store.get_all_checks(runtime_mode.db_path())),
             file_name="non_pursuit_report.pdf",
             mime="application/pdf",
             width="stretch",
             help="A readable summary to hand to someone else -- an attorney, a family member helping out.",
         )
-
-        st.markdown("---")
 
         for r in requests_list:
             cols = st.columns([3, 2, 2, 2, 2, 1])
@@ -511,7 +522,7 @@ elif mode == "📈 Campaign Tracker":
             cols[1].markdown(f"Sent: {r['date_sent']}")
             deadline_label = f"Due: {r['deadline']}"
             if r["is_overdue"]:
-                cols[2].markdown(f'<span class="np-overdue">⚠️ Overdue ({deadline_label})</span>', unsafe_allow_html=True)
+                cols[2].markdown(f":red[🚨 Overdue ({deadline_label})]")
             else:
                 cols[2].markdown(f"{deadline_label} ({r['days_remaining']}d left)")
 
@@ -520,27 +531,18 @@ elif mode == "📈 Campaign Tracker":
                 key=f"status_{r['id']}", label_visibility="collapsed",
             )
             if new_status != r["status"]:
-                update_status(config.TRACKER_DB_PATH, r["id"], new_status)
+                update_status(runtime_mode.db_path(), r["id"], new_status)
                 st.rerun()
 
             if r["notes"]:
                 cols[4].caption(r["notes"])
 
-            if cols[5].button("🗑️", key=f"delete_{r['id']}"):
-                delete_request(config.TRACKER_DB_PATH, r["id"])
+            if cols[5].button("", icon="🗑️", key=f"delete_{r['id']}", help=f"Delete {r['broker_name']}"):
+                delete_request(runtime_mode.db_path(), r["id"])
                 st.rerun()
 
 
 # ---------------------------------------------------------------------------
 # Footer
 # ---------------------------------------------------------------------------
-st.markdown("---")
-st.markdown(
-    f"""
-    <div style='text-align: center; color: #888; font-size: 12px;'>
-        <p>{config.APP_TITLE} — {config.APP_TAGLINE}</p>
-        <p>For educational purposes only. Not legal advice.</p>
-    </div>
-    """,
-    unsafe_allow_html=True,
-)
+st.caption(f"{config.APP_TITLE} — {config.APP_TAGLINE}. For educational purposes only. Not legal advice.", text_alignment="center")
