@@ -22,9 +22,9 @@ import profile_state
 from tracker import get_all_requests
 from validators import is_valid_email
 
-_MODE_RESULTS = "🛰️ Master Dashboard"
+_MODE_RESULTS = "🔍 Master Intelligence Dossier"
 _MODE_LETTERS = "✉️ Data Broker Deletion Letters"
-_MODE_TRACKER = "📈 Campaign Tracker"
+_MODE_TRACKER = "📬 Opt-Out Tracker"
 
 # Widget key -> target_profile column, for the fields backed by SQLite.
 _PROFILE_FIELDS = {
@@ -134,6 +134,12 @@ def _save_profile():
             }] if st.session_state.pf_associated_name.strip() else []),
         },
     )
+    # Clear OSINT cache and findings on profile update to reflect fresh scan data from new/changed profile
+    st.cache_data.clear()
+    st.session_state.pop("osint_findings", None)
+    st.session_state.pop("footprint_results", None)
+    st.session_state.pop("email_results", None)
+    st.session_state.pop("audit_zip", None)
     # Signal to Master Dashboard: new or changed profile, trigger auto-scan.
     # The flag is consumed after scan completes so we don't rescan on every rerun.
     st.session_state.profile_saved_auto_scan = True
@@ -185,7 +191,7 @@ def render():
                 else:
                     _save_profile()
                     st.toast("Profile saved!")
-                    st.rerun()
+                    _switch_to(_MODE_RESULTS)
 
     if runtime_mode.facial_recognition_enabled():
         with st.container(border=True):
@@ -220,7 +226,7 @@ def render():
 
     action_cols = st.columns([2, 1])
     if action_cols[0].button(
-        "🛰️ Open my Master Dashboard", type="primary", width="stretch",
+        "🔍 Open Master Intelligence Dossier", type="primary", width="stretch",
         disabled=not st.session_state.user_name,
     ):
         _switch_to(_MODE_RESULTS)

@@ -48,6 +48,9 @@ def ensure_profile(state, saved_profile=None):
     """Create the canonical profile once and return the live dictionary."""
     if PROFILE_KEY not in state:
         profile = profile_from_saved(saved_profile)
+        # Restore handle and domain from session state if they were previously entered but not persisted
+        profile["handle"] = state.get("pf_handle") or profile.get("handle", "")
+        profile["domain"] = state.get("pf_domain") or profile.get("domain", "")
         if not saved_profile:
             profile["city"] = "New York"
             profile["state"] = "NY"
