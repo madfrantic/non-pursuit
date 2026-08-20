@@ -23,6 +23,7 @@ import config
 import runtime_mode
 import ny_sealing
 import profile_state
+import presentation_mode
 
 from components import letters as letters_component
 from components import dashboard as dashboard_component
@@ -93,6 +94,7 @@ for key, default in {
     "_auto_scan_last_pair": None,
     "_auto_scan_in_progress": False,
     "master_face_image_bytes": None,
+    "presentation_mode": False,
 }.items():
     if key not in st.session_state:
         st.session_state[key] = default
@@ -166,16 +168,36 @@ st.sidebar.markdown("---")
 mode = st.sidebar.radio(
     "Select tool",
     [
-        "📊 Dashboard",
-        "🛰️ Master Dashboard",
+        "🛡️ Profile",
+        "🔍 Master Intelligence Dossier",
         "✉️ Data Broker Deletion Letters",
         "⚖️ NY Expungement Guidance",
         "🚫 Google De-Indexing",
-        "📈 Campaign Tracker",
+        "📬 Opt-Out Tracker",
     ],
     key="nav_mode",
     label_visibility="visible",
 )
+
+# Presentation mode toggle for safe live demos
+st.sidebar.markdown("---")
+pres_col1, pres_col2 = st.sidebar.columns([0.7, 0.3])
+with pres_col1:
+    pres_enabled = st.toggle(
+        "🎭 Presentation Mode",
+        value=st.session_state.presentation_mode,
+        help="Enable mock data and instant scan results for live demos",
+    )
+    if pres_enabled and not st.session_state.presentation_mode:
+        presentation_mode.populate_demo_profile(st.session_state)
+        st.session_state.presentation_mode = True
+        st.toast("🎭 Presentation mode enabled with demo profile", icon="✨")
+        st.rerun()
+    elif not pres_enabled and st.session_state.presentation_mode:
+        st.session_state.presentation_mode = False
+        st.rerun()
+    else:
+        st.session_state.presentation_mode = pres_enabled
 
 # ---------------------------------------------------------------------------
 # Sidebar: runtime mode, demo seeding, audit package
@@ -268,10 +290,10 @@ st.markdown(
 # ---------------------------------------------------------------------------
 # MODE: Dashboard
 # ---------------------------------------------------------------------------
-if mode == "📊 Dashboard":
+if mode == "🛡️ Profile":
     dashboard_component.render()
 
-elif mode == "🛰️ Master Dashboard":
+elif mode == "🔍 Master Intelligence Dossier":
     master_component.render(brokers_df)
 
 elif mode == "✉️ Data Broker Deletion Letters":
@@ -369,7 +391,7 @@ elif mode == "🚫 Google De-Indexing":
     if not g_name or not g_email:
         st.warning("Enter your name and email on the **Dashboard** first — this request is personalized and needs a real contact for verification.")
         if st.button("👤 Go to Dashboard", type="primary"):
-            st.session_state.pending_nav = "📊 Dashboard"
+            st.session_state.pending_nav = "🛡️ Profile"
             st.rerun()
     else:
         st.subheader("URLs to request removal for")
@@ -441,7 +463,7 @@ I have attached evidence of the search results containing this information and r
 # ---------------------------------------------------------------------------
 # MODE 4: Campaign Tracker
 # ---------------------------------------------------------------------------
-elif mode == "📈 Campaign Tracker":
+elif mode == "📬 Opt-Out Tracker":
     st.title("📈 Campaign tracker")
     st.caption("Every request logged from the other tools shows up here, with its response deadline tracked automatically.")
 

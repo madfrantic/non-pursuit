@@ -1,25 +1,6 @@
 """
 Master Dashboard: the statutory countdowns, the relational exposure map,
 and the discovered-accounts worklist on one page.
-
-Results and Online Footprint used to be separate destinations, which
-split a single question -- "what is exposed, and what is the clock on
-it?" -- across two places the user had to remember to visit. They read
-the same profile and write the same SQLite file, so the split was
-navigational, not structural.
-
-Tabs rather than one long column: this page carries a broker-by-broker
-table, a graphviz chart, and a scan table that can run to hundreds of
-rows, and stacking them vertically is how the old Dashboard buried its
-own results. The deadline strip above the tabs stays visible in every
-tab -- an overdue statutory window is the one thing on this page that
-must not be one click away.
-
-Auto-scanning on profile save: when the Dashboard saves a new or changed
-profile (name, email, phone, location), the Master Dashboard detects it
-via a session flag and automatically runs the reconnaissance sweep. The
-sweep is cached per unique (handle, email) pair, so changing just the
-location doesn't re-scan, but a new handle does.
 """
 import asyncio
 import streamlit as st
@@ -28,25 +9,22 @@ import config
 import runtime_mode
 import discovered_accounts
 import facial_recognition
-import footprint_scanner
-import email_scanner
-import wmn_dataset
-import yandex_osint
 from tracker import get_all_requests
+import database
 
-from components import footprint as footprint_component
-from components import results as results_component
+from components import letters as letters_component
 from applog import get_logger
 from osint_aggregator import run_full_osint_sweep
 import profile_state
+import presentation_mode
 
 _log = get_logger("master")
 
 _OSINT_STATUS_LABELS = {
-    "high": "High",
-    "medium": "Medium",
-    "low": "Low",
-    "unavailable": "Unavailable",
+    "high": "🔴 High",
+    "medium": "🟡 Medium",
+    "low": "🟢 Low",
+    "unavailable": "⚪ Unavailable",
 }
 
 
@@ -57,6 +35,7 @@ def _osint_profile():
         "handle": profile["handle"],
         "domain": profile["domain"],
         "state": profile["state"],
+        "email": profile["email"],
     }
 
 
@@ -89,20 +68,20 @@ def _render_osint_records(result):
             continue
         label = next(
             (record.get(key) for key in (
-                "entity_name", "case_name", "contributor_name", "email", "subdomain", "domain"
+                "entity_name", "case_name", "contributor_name", "email", "subdomain", "domain", "platform", "service"
             ) if record.get(key)),
             "Finding",
         )
         detail = " · ".join(
             str(record[key]) for key in (
-                "filing_type", "filing_date", "court", "docket_number", "repository", "issuer", "registrar"
+                "filing_type", "filing_date", "court", "docket_number", "repository", "issuer", "registrar", "target_identifier", "confidence", "reason"
             ) if record.get(key)
         )
         with st.container(border=True):
             st.markdown(f"**{label}**")
             if detail:
                 st.caption(detail)
-            url = record.get("url") or record.get("court_url")
+            url = record.get("url") or record.get("court_url") or record.get("profile_url")
             if url:
                 st.link_button("Open source", url, width="content")
 
@@ -113,307 +92,85 @@ def _render_osint_vector(result, title):
     _render_osint_records(result)
 
 
-def _render_osint_sweep():
-    """Render the five-vector passive OSINT workspace and export control."""
-    st.caption("Public, passive lookups only. Findings remain in this session until you append them to the audit package.")
-    profile = profile_state.get_profile(st.session_state)
-    st.markdown(
-        f"**Target profile:** {profile['full_name'] or 'No name saved'} · "
-        f"{profile['handle'] or 'No handle'} · {profile['domain'] or 'No domain'}"
+def render(brokers_df):
+    st.title("🛡️ Master Intelligence Dossier")
+    st.caption(
+        "Unified Executive Summary encompassing online identity, data exposures, "
+        "public footprint, and statutory action plans."
     )
 
-    if st.button("Run passive OSINT sweep", type="primary", width="content"):
-        with st.spinner("Running five passive vectors concurrently..."):
-            try:
+    profile = profile_state.get_profile(st.session_state)
+    
+    if st.button("🚀 Run Full Spectrum Recon", type="primary", use_container_width=True):
+        progress_text = "Running comprehensive recon sweep across all modules concurrently..."
+        my_bar = st.progress(0, text=progress_text)
+        try:
+            if st.session_state.get("presentation_mode"):
+                st.session_state.osint_findings = asyncio.run(presentation_mode.get_mock_osint_findings())
+                my_bar.progress(100, text="Mock recon sweep complete (Presentation Mode).")
+            else:
                 st.session_state.osint_findings = asyncio.run(run_full_osint_sweep(_osint_profile()))
-                st.session_state.pop("audit_zip", None)
-            except Exception as exc:
-                _log.error("OSINT sweep failed: %s", exc)
-                st.error("The sweep could not be completed. No findings were saved.")
+                my_bar.progress(100, text="Recon sweep complete.")
+            st.session_state.pop("audit_zip", None)
+        except Exception as exc:
+            _log.error("OSINT sweep failed: %s", exc)
+            st.error("The sweep could not be completed.")
+            my_bar.empty()
 
     findings = st.session_state.get("osint_findings")
     if not findings:
-        st.info("Enter a handle or domain, then run a sweep. A full name is taken from the saved profile.")
+        st.info("Enter your identity details in the **🛡️ Profile** tab, then click the button above to run the full spectrum recon.")
         return
 
-    if st.button("Append raw findings to audit export", width="content"):
-        st.session_state.osint_findings_appended = True
-        st.session_state.pop("audit_zip", None)
-        st.success("Raw findings will be included in the next audit ZIP as audit_summary.json.")
+    summary = findings.get("summary", {})
+    vectors = findings.get("vectors", {})
+    fp_count = vectors.get("footprint", {}).get("count", 0)
+    email_count = vectors.get("email", {}).get("count", 0)
+    total_exposure = summary.get("total_exposures", 0)
+    
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("📊 Exposure Score", total_exposure)
+    c2.metric("🔴 Critical Breaches", email_count)
+    c3.metric("👤 Profiles Found", fp_count)
+    c4.metric("📜 Deletion Targets", len(brokers_df))
 
-    entity_tab, legal_tab, digital_tab = st.tabs([
-        "🏢 Entities & Filings",
-        "🏛️ Legal & Dockets",
-        "💻 Digital & Domain Footprints",
-    ])
-    with entity_tab:
-        _render_osint_vector(findings["sec"], "SEC disclosures")
-        _render_osint_vector(findings["fec"], "FEC disclosures")
-    with legal_tab:
-        _render_osint_vector(findings["courtlistener"], "CourtListener dockets")
-    with digital_tab:
-        _render_osint_vector(findings["github"], "GitHub email exposure")
-        _render_osint_vector(findings["infrastructure"], "crt.sh and RDAP infrastructure")
-
-
-def _render_deadline_strip():
-    """Statutory countdowns, pinned above the tabs."""
-    requests = get_all_requests(runtime_mode.db_path())
-    if not requests:
-        st.info(
-            "No deletion requests logged yet — generate a letter under "
-            "**Data Broker Deletion Letters** and the countdown starts here."
-        )
-        return
-
-    overdue = [r for r in requests if r["is_overdue"]]
-    complete = [r for r in requests if r["status"] == "Complete"]
-    active = [r for r in requests if r["status"] != "Complete"]
-
-    cols = st.columns(4)
-    cols[0].metric("🚨 Overdue", len(overdue))
-    cols[1].metric("⏳ Active", len(active))
-    cols[2].metric("✅ Complete", len(complete))
-    cols[3].metric("📬 Total tracked", len(requests))
-
-    if overdue:
-        st.error(
-            f"🚨 {len(overdue)} request(s) are past the {config.CCPA_RESPONSE_WINDOW_DAYS}-day "
-            "statutory window — that lapse is the enforceable part of this campaign."
-        )
-
-    for request in sorted(active, key=lambda r: r["deadline"]):
-        window = max(request["response_window_days"], 1)
-        elapsed = window - request["days_remaining"]
-        label = f"{request['broker_name']} — due {request['deadline']}"
-        if request["is_overdue"]:
-            label += f" (overdue by {abs(request['days_remaining'])}d)"
-        else:
-            label += f" ({request['days_remaining']}d left)"
-        st.progress(min(max(elapsed / window, 0.0), 1.0), text=label)
-
-
-def _run_auto_scan():
-    """Execute handle + email scans if profile was just saved and scans
-    haven't been run yet for this (handle, email) pair.
-
-    Guarded against Streamlit infinite reruns with session flags:
-    - profile_saved_auto_scan: set by Dashboard when profile is saved
-    - _auto_scan_last_pair: track the last scanned (handle, email) so we
-      don't rescan if only location changed
-    - _auto_scan_in_progress: temporary flag to avoid scan during current rerun
-    """
-    if not st.session_state.get("profile_saved_auto_scan"):
-        return
-
-    # Avoid running scan multiple times in rapid succession
-    if st.session_state.get("_auto_scan_in_progress"):
-        return
-
-    handle = (st.session_state.get("footprint_handle") or "").strip()
-    email = (st.session_state.get("footprint_email") or "").strip()
-    current_pair = (handle, email)
-    last_pair = st.session_state.get("_auto_scan_last_pair")
-
-    if current_pair == last_pair and current_pair != ("", ""):
-        # Same handle and email as last scan, skip to avoid redundant network hits
-        st.session_state.profile_saved_auto_scan = False
-        return
-
-    if not (handle or email):
-        # No handle or email entered yet, nothing to scan
-        st.session_state.profile_saved_auto_scan = False
-        return
-
-    # Mark that we're scanning to avoid Streamlit rerun loops
-    st.session_state._auto_scan_in_progress = True
-
-    try:
-        with st.spinner("🛰️ Scanning for accounts and email associations…"):
-            # Load the full dataset
-            try:
-                dataset, _ = wmn_dataset.ensure_dataset(
-                    config.WMN_DATASET_PATH, refresh=False, timeout=config.FOOTPRINT_TIMEOUT_SECONDS
-                )
-            except Exception as exc:
-                _log.error("Could not load WhatsMyName dataset: %s", exc)
-                st.error("Couldn't load the platform list. Check your internet connection.")
-                return
-
-            sites = wmn_dataset.select_sites(dataset, deep=True)
-            results = []
-
-            # Scan handle if provided
-            if handle:
-                results = footprint_scanner.scan_account(
-                    handle,
-                    sites,
-                    concurrency=config.FOOTPRINT_CONCURRENCY,
-                    timeout=config.FOOTPRINT_TIMEOUT_SECONDS,
-                    per_host=config.FOOTPRINT_PER_HOST_CONCURRENCY,
-                )
-
-            # Scan email if provided
-            email_results = []
-            if email:
-                email_results = email_scanner.scan_email(email)
-
-            # Persist to discovered_accounts table
-            all_discoveries = []
-            all_discoveries.extend(results)
-            all_discoveries.extend(email_scanner.email_discoveries(email_results))
-
-            if all_discoveries:
-                saved = discovered_accounts.save_discoveries(
-                    runtime_mode.db_path(), all_discoveries
-                )
-                st.success(f"✅ Auto-scan complete: {saved} account(s) and associations found.")
-            else:
-                st.info("No accounts or associations found in this scan.")
-
-        st.session_state._auto_scan_last_pair = current_pair
-    finally:
-        st.session_state.profile_saved_auto_scan = False
-        st.session_state._auto_scan_in_progress = False
-
-
-def _render_avatar_verification():
-    """📷 Visual Identity Verification card.
-
-    Display discovered accounts with avatar images and allow users to
-    confirm "this is me" or "false positive" before they're included in
-    the audit export. If a master photo is available, suggests whether the
-    avatar looks like the user based on DeepFace comparison (local, in-memory,
-    never persisted).
-    """
-    accounts = discovered_accounts.get_all(runtime_mode.db_path())
-    if not accounts:
-        st.info("No discovered accounts yet. Save your profile above to start scanning.")
-        return
-
-    st.subheader("📷 Visual Identity Verification")
-    st.caption(
-        "Review the profiles and photos discovered during the scan. "
-        "Mark each as **Confirmed** if it's actually you, or **False Positive** if it's not. "
-        "Only confirmed accounts will be included in your audit exports."
-    )
-
-    master_bytes = st.session_state.get("master_face_image_bytes")
-    deepface_ready = runtime_mode.facial_recognition_enabled() and facial_recognition.facial_recognition_available()
-
-    for idx, account in enumerate(accounts):
-        with st.container(border=True):
-            cols = st.columns([2, 1, 3])
-
-            # Platform and identifier
-            cols[0].markdown(f"**{account['platform']}**")
-            cols[0].caption(f"*{account['target_identifier']}*")
-
-            # Avatar if available
-            avatar_url = account.get("avatar_url")
-            if avatar_url:
-                try:
-                    cols[1].image(avatar_url, width=100)
-                except Exception as e:
-                    cols[1].caption("[Avatar unavailable]")
-
-            # Verification controls: suggestion + toggle
-            verdict_col = cols[2]
-
-            # Biometric suggestion if we have master photo and avatar
-            suggestion_dict = {}
-            if deepface_ready and master_bytes and avatar_url:
-                suggestion_dict = facial_recognition.suggest_verification(master_bytes, avatar_url)
-
-            if suggestion_dict.get("available") and suggestion_dict.get("suggested_label"):
-                verdict_col.markdown(suggestion_dict["suggested_label"])
-                if suggestion_dict.get("verified"):
-                    if verdict_col.button(
-                        f"✅ Confirm suggested match",
-                        key=f"confirm_suggest_{account['id']}",
-                        help="Clicks to Confirmed in the dropdown below.",
-                    ):
-                        discovered_accounts.update_verification(
-                            runtime_mode.db_path(),
-                            account["id"],
-                            discovered_accounts.VERIFIED_CONFIRMED,
-                        )
-                        st.session_state.pop("audit_zip", None)
-                        st.rerun()
-
-            # Manual verification toggle always present
-            current_status = account.get("verification_status", discovered_accounts.VERIFIED_UNREVIEWED)
-            new_status = verdict_col.selectbox(
-                "Your verdict:",
-                options=[
-                    discovered_accounts.VERIFIED_UNREVIEWED,
-                    discovered_accounts.VERIFIED_CONFIRMED,
-                    discovered_accounts.VERIFIED_FALSE_POSITIVE,
-                ],
-                index=[
-                    discovered_accounts.VERIFIED_UNREVIEWED,
-                    discovered_accounts.VERIFIED_CONFIRMED,
-                    discovered_accounts.VERIFIED_FALSE_POSITIVE,
-                ].index(current_status),
-                key=f"verify_{account['id']}",
-                label_visibility="collapsed",
-            )
-
-            if new_status != current_status:
-                discovered_accounts.update_verification(
-                    runtime_mode.db_path(), account["id"], new_status
-                )
-                st.session_state.pop("audit_zip", None)  # Invalidate cached audit
-                st.rerun()
-
-            # Yandex reverse search link if avatar is available
-            if avatar_url:
-                yandex_url = yandex_osint.build_reverse_image_search_url(avatar_url)
-                if yandex_url:
-                    verdict_col.link_button(
-                        "🔍 Reverse search on Yandex",
-                        yandex_url,
-                        help="Open a Yandex reverse-image search for this avatar in a new tab.",
-                    )
-
-
-def render(brokers_df):
-    st.title("🛰️ Master Dashboard")
-    st.caption(
-        "Every exposure signal and every statutory clock in one place — broker listings, "
-        "household linkages, and the accounts a footprint sweep turned up."
-    )
-
-    # Trigger auto-scan if profile was just saved
-    _run_auto_scan()
-
+    st.markdown("---")
+    
+    st.subheader("👤 Section 1: Online Identity & Media")
     with st.container(border=True):
-        st.markdown("##### ⚖️ CCPA statutory countdowns")
-        _render_deadline_strip()
+        c1, c2 = st.columns(2)
+        with c1:
+            _render_osint_vector(findings.get("footprint", {}), "Social & Platform Footprint")
+        with c2:
+            st.markdown("##### 🖼️ Public Media & Avatars")
+            fp_records = findings.get("footprint", {}).get("records", [])
+            em_records = findings.get("email", {}).get("records", [])
+            found_avatars = False
+            for r in fp_records + em_records:
+                if isinstance(r, dict) and r.get("avatar_url"):
+                    st.image(r["avatar_url"], width=64, caption=r.get("platform") or r.get("service"))
+                    found_avatars = True
+            if not found_avatars:
+                st.caption("No avatars discovered.")
+                
+    st.subheader("🔐 Section 2: Data Exposures & Breaches")
+    with st.container(border=True):
+        _render_osint_vector(findings.get("email", {}), "Email & Identity Exposure")
+        _render_osint_vector(findings.get("github", {}), "Developer & Code Exposure")
 
-    exposure_tab, map_tab, accounts_tab, osint_tab = st.tabs([
-        "🏢 Broker exposure",
-        "🕸️ Relational Entity Exposure Map",
-        "👤 Discovered accounts",
-        "🛰️ Passive OSINT sweep",
-    ])
+    st.subheader("🏛️ Section 3: Legal, Financial & Corporate Footprint")
+    with st.container(border=True):
+        sec_col, fec_col, court_col = st.columns(3)
+        with sec_col:
+            _render_osint_vector(findings.get("sec", {}), "SEC Filings")
+        with fec_col:
+            _render_osint_vector(findings.get("fec", {}), "FEC Contributions")
+        with court_col:
+            _render_osint_vector(findings.get("courtlistener", {}), "Court Dockets")
+            
+    with st.container(border=True):
+        _render_osint_vector(findings.get("infrastructure", {}), "Domains & Certificates")
 
-    with exposure_tab:
-        results_component.render(brokers_df, show_title=False)
-
-    with map_tab:
-        results_component.render_entity_map()
-        st.caption(
-            "Add or edit associated individuals under 🔗 Household & Relational Entities "
-            "on the Dashboard."
-        )
-
-    with accounts_tab:
-        # Show avatar verification first, then the scan interface
-        _render_avatar_verification()
-        st.divider()
-        st.markdown("##### or run a manual scan")
-        footprint_component.render(show_title=False)
-
-    with osint_tab:
-        _render_osint_sweep()
+    st.subheader("⚔️ Section 4: Statutory Action Plan")
+    with st.container(border=True):
+        letters_component.render(brokers_df)
