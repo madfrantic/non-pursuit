@@ -191,23 +191,21 @@ mode = st.sidebar.radio(
 
 # Presentation mode toggle for safe live demos
 st.sidebar.markdown("---")
-pres_col1, pres_col2 = st.sidebar.columns([0.7, 0.3])
-with pres_col1:
-    pres_enabled = st.toggle(
-        "🎭 Presentation Mode",
-        value=st.session_state.presentation_mode,
-        help="Enable mock data and instant scan results for live demos",
-    )
-    if pres_enabled and not st.session_state.presentation_mode:
-        presentation_mode.populate_demo_profile(st.session_state)
-        st.session_state.presentation_mode = True
-        st.toast("🎭 Presentation mode enabled with demo profile", icon="✨")
-        st.rerun()
-    elif not pres_enabled and st.session_state.presentation_mode:
-        st.session_state.presentation_mode = False
-        st.rerun()
-    else:
-        st.session_state.presentation_mode = pres_enabled
+pres_enabled = st.sidebar.toggle(
+    "🎭 Presentation Mode",
+    value=st.session_state.presentation_mode,
+    help="Enable mock data and instant scan results for live demos",
+)
+if pres_enabled and not st.session_state.presentation_mode:
+    presentation_mode.populate_demo_profile(st.session_state)
+    st.session_state.presentation_mode = True
+    st.toast("🎭 Presentation mode enabled with demo profile", icon="✨")
+    st.rerun()
+elif not pres_enabled and st.session_state.presentation_mode:
+    st.session_state.presentation_mode = False
+    st.rerun()
+else:
+    st.session_state.presentation_mode = pres_enabled
 
 # ---------------------------------------------------------------------------
 # Sidebar: runtime mode, demo seeding, audit package
