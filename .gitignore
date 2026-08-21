@@ -2,7 +2,12 @@ venv/
 __pycache__/
 *.pyc
 .pytest_cache/
-.env  # Encryption key -- NEVER commit this, even if empty
+# Encryption key -- NEVER commit this, even if empty.
+# The comment lives on its own line on purpose: .gitignore has no
+# inline-comment syntax, so `.env  # ...` is read as a literal
+# filename and silently matches nothing. That typo is how the key
+# reached a public repo.
+.env
 
 # Local user data -- broker requests, notes, and now self-search exposure
 # answers. Real personal data belongs on the user's machine only, never in

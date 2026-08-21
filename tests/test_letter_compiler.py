@@ -104,7 +104,11 @@ def test_compiler_needs_no_working_directory(tmp_path, monkeypatch):
 @pytest.mark.parametrize("broker,expected", [
     ("Spokeo", "spokeo_demand.txt"),
     ("WhitePages", "whitepages_demand.txt"),
-    ("Example Data Broker", "example_data_broker_demand.txt"),
+    # Synthetic on purpose: no broker in brokers.csv currently has spaces
+    # or punctuation in its name, and this is the case that proves the
+    # slug collapses both. It used to name the "Example Data Broker"
+    # placeholder row, which has since been removed from the CSV.
+    ("Acme Data Brokers, Inc.", "acme_data_brokers_inc_demand.txt"),
 ])
 def test_letter_filename_is_filesystem_safe(broker, expected):
     assert letter_filename(broker) == expected

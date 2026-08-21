@@ -21,7 +21,15 @@ def domain_from_url(url: str) -> str:
     return netloc[4:] if netloc.startswith("www.") else netloc
 
 
-def _build_query(domains: list, name: str, location: str) -> str:
+def build_dork_query(name: str, location: str, domains: list) -> str:
+    """The raw query string, e.g. 'site:spokeo.com "Jane Doe" "New York, NY"'.
+
+    Public because the Master Dossier shows the query itself, not just a
+    link: the point is that the operator can read the string, paste it
+    into Google, and verify with their own eyes that a broker still lists
+    them before a demand letter goes out. Argument order matches the
+    build_*_dork_url helpers below.
+    """
     site_clause = " OR ".join(f"site:{d}" for d in domains if d)
     parts = [p for p in [site_clause] if p]
     if name:
@@ -33,7 +41,7 @@ def _build_query(domains: list, name: str, location: str) -> str:
 
 def build_combined_dork_url(name: str, location: str, domains: list) -> str:
     """One Google search restricted to every given broker domain at once."""
-    query = _build_query(domains, name, location)
+    query = build_dork_query(name, location, domains)
     return f"https://www.google.com/search?q={quote_plus(query)}"
 
 

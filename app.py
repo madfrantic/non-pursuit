@@ -58,91 +58,316 @@ def _image_data_uri(path):
         encoded = base64.b64encode(f.read()).decode("ascii")
     return f"data:image/png;base64,{encoded}"
 
-# Custom 70s NYPD 'SIU-Light' & Giant Emojis CSS
+# ---------------------------------------------------------------------------
+# SIU design system
+# ---------------------------------------------------------------------------
+# One injected stylesheet, sharing its palette and type scale with
+# demo_pitch.html so the live app and the pitch deck read as the same
+# artifact. Everything here is presentational: paint-only properties, or
+# non-interactive overlays pinned with pointer-events: none. Nothing can
+# intercept a click or move a widget's hit box.
+#
+# The scale is deliberate rather than blanket. The previous revision set
+# every leaf <span> in the app to 2.5rem to catch emoji, which also hit
+# inline code, status badges and caption fragments -- that was the source
+# of the mismatched sizing. Emoji are now scaled in em, scoped to the
+# contexts where they are decorative (headers, metric labels, sidebar
+# nav), so they track their own header instead of fighting it.
 st.markdown(
     """
     <style>
-        /* Sidebar nav emoji scaling */
-        [data-testid="stSidebar"] [data-testid="stRadioOption"] [data-testid="stMarkdownContainer"] p {
-            font-size: 1.2rem;
-            line-height: 1.8;
+        /* ---------------------------------------------------------------
+           PALETTE + TYPE STACKS  (mirrors demo_pitch.html)
+           --------------------------------------------------------------- */
+        :root {
+            --siu-navy:     #0B1325;
+            --siu-slate:    #152238;
+            --siu-brass:    #D4AF37;
+            --siu-brass-dim:#8A7328;
+            --siu-bone:     #E8E2D4;
+            --siu-bone-dim: #9AA3B2;
+            --siu-evidence: #FF3B30;
+
+            --siu-serif: 'Iowan Old Style', 'Palatino Linotype', Palatino,
+                         'Book Antiqua', Georgia, 'Times New Roman', serif;
+            --siu-mono:  'Courier New', Courier, monospace;
         }
 
-        /* Increase global text size in main dashboard */
-        [data-testid="stMarkdownContainer"] p, 
-        [data-testid="stMarkdownContainer"] h1, 
-        [data-testid="stMarkdownContainer"] h2, 
-        [data-testid="stMarkdownContainer"] h3 {
-            font-size: 1.1rem;
+        /* ---------------------------------------------------------------
+           1. BASE TYPOGRAPHY -- serif carries the authority, Courier
+              carries the metadata. Sizes are absolute so Streamlit's own
+              defaults cannot bleed back through.
+           --------------------------------------------------------------- */
+        html, body, [data-testid="stAppViewContainer"] {
+            font-family: var(--siu-serif);
+            background-color: var(--siu-navy);
         }
-        
-        /* Make st.metric headers, values, and deltas giant and bold */
+        [data-testid="stMain"] [data-testid="stMarkdownContainer"] p,
+        [data-testid="stMain"] [data-testid="stMarkdownContainer"] li {
+            font-family: var(--siu-serif);
+            font-size: 1.12rem;
+            line-height: 1.62;
+            color: var(--siu-bone);
+        }
+
+        /* Headline scale. The old rule flattened h1/h2/h3 to a single
+           1.1rem, which is why the hierarchy read as noise. */
+        [data-testid="stMain"] h1 {
+            font-family: var(--siu-serif) !important;
+            font-size: 2.9rem !important;
+            font-weight: 700;
+            line-height: 1.08;
+            letter-spacing: 0.01em;
+            color: var(--siu-brass);
+            text-shadow: 0 2px 0 rgba(0, 0, 0, 0.45), 0 0 48px rgba(212, 175, 55, 0.18);
+            margin-bottom: 0.2em;
+        }
+        [data-testid="stMain"] h2 {
+            font-family: var(--siu-serif) !important;
+            font-size: 2.1rem !important;
+            font-weight: 700;
+            line-height: 1.14;
+            color: var(--siu-bone);
+        }
+        [data-testid="stMain"] h3 {
+            font-family: var(--siu-serif) !important;
+            font-size: 1.6rem !important;
+            font-weight: 700;
+            line-height: 1.2;
+            color: var(--siu-bone);
+        }
+        /* Sub-headers are metadata: Courier, tracked out, brass. */
+        [data-testid="stMain"] h4,
+        [data-testid="stMain"] h5,
+        [data-testid="stMain"] h6 {
+            font-family: var(--siu-mono) !important;
+            font-size: 1.02rem !important;
+            font-weight: 700;
+            letter-spacing: 0.10em;
+            text-transform: uppercase;
+            color: var(--siu-brass);
+        }
+        /* Emoji ride their header rather than overriding it. */
+        [data-testid="stMain"] :is(h1, h2, h3) span { font-size: 1.05em !important; }
+        [data-testid="stMain"] :is(h4, h5, h6) span { font-size: 1.35em !important; }
+
+        [data-testid="stMain"] [data-testid="stCaptionContainer"],
+        [data-testid="stMain"] [data-testid="stCaptionContainer"] p {
+            font-family: var(--siu-mono) !important;
+            font-size: 0.86rem !important;
+            letter-spacing: 0.03em;
+            color: var(--siu-bone-dim) !important;
+        }
+        /* Inline code and telemetry readouts: mono at reading size, not
+           the 2.5rem the blanket span rule used to give them. */
+        [data-testid="stMain"] code,
+        [data-testid="stMain"] kbd,
+        [data-testid="stMain"] pre {
+            font-family: var(--siu-mono) !important;
+            font-size: 0.92rem !important;
+            color: var(--siu-brass);
+            background: rgba(212, 175, 55, 0.07);
+        }
+
+        /* ---------------------------------------------------------------
+           2. SIDEBAR -- the terminal beside the case file. All Courier.
+           --------------------------------------------------------------- */
+        [data-testid="stSidebar"] {
+            background: linear-gradient(180deg, var(--siu-slate) 0%, var(--siu-navy) 100%);
+            border-right: 1px solid rgba(212, 175, 55, 0.28);
+        }
+        /* The :not() is load-bearing. Streamlit draws its icons as
+           Material Symbols ligatures -- <span>keyboard_double_arrow_left</span>
+           rendered by the icon font -- so forcing Courier onto every
+           descendant printed the ligature names as literal text. */
+        [data-testid="stSidebar"] *:not([data-testid="stIconMaterial"]) {
+            font-family: var(--siu-mono) !important;
+        }
+        [data-testid="stSidebar"] :is(h1, h2, h3, h4, h5, h6) {
+            font-size: 0.92rem !important;
+            font-weight: 700;
+            letter-spacing: 0.20em;
+            text-transform: uppercase;
+            color: var(--siu-brass) !important;
+        }
+        /* Streamlit sizes sidebar body copy with its own !important rule,
+           so this one needs the same weight to land. Courier is wide:
+           tracking stays tight here to keep nav labels on one line. */
+        [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p {
+            font-size: 0.9rem !important;
+            letter-spacing: 0.02em;
+            line-height: 1.65;
+            color: var(--siu-bone);
+        }
+        [data-testid="stSidebar"] [data-testid="stCaptionContainer"] p {
+            font-size: 0.78rem !important;
+            color: var(--siu-bone-dim) !important;
+        }
+        [data-testid="stSidebar"] :is(h1, h2, h3, h4, h5, h6) span,
+        [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p span {
+            font-size: 1.25em !important;
+            vertical-align: -0.08em;
+        }
+
+        /* ---------------------------------------------------------------
+           3. METRICS -- serif numerals, Courier label, tabular figures so
+              the digits stop shifting on rerun.
+           --------------------------------------------------------------- */
         [data-testid="stMetricValue"] {
-            font-size: 3.5rem !important;
-            font-weight: bold;
-            font-family: monospace;
+            font-family: var(--siu-serif) !important;
+            font-size: 3rem !important;
+            font-weight: 700;
+            color: var(--siu-brass);
+            font-variant-numeric: tabular-nums;
+            line-height: 1.05;
         }
-        [data-testid="stMetricLabel"] {
-            font-size: 1.5rem !important;
-            font-weight: bold;
+        [data-testid="stMetricLabel"],
+        [data-testid="stMetricLabel"] p {
+            font-family: var(--siu-mono) !important;
+            font-size: 0.86rem !important;
+            font-weight: 700;
+            letter-spacing: 0.16em;
+            text-transform: uppercase;
+            color: var(--siu-bone-dim) !important;
         }
         [data-testid="stMetricDelta"] {
-            font-size: 1.2rem !important;
+            font-family: var(--siu-mono) !important;
+            font-size: 0.88rem !important;
+            letter-spacing: 0.08em;
         }
-        
-        /* TARGETING ALL APPLIED EMOJIS - GLOBAL "HUGE EMOJI" RULE */
-        span:is(:has(svg, [aria-label]), :not(:has(*))) {
-          font-size: 2.5rem !important;
-          vertical-align: middle;
-        }
-        
-        /* Specific bump for st.header / st.subheader with emojis */
-        h1 span, h2 span, h3 span {
-            font-size: 3rem !important;
-            line-height: 1 !important;
-        }
+        [data-testid="stMetricLabel"] span { font-size: 1.5em !important; }
+        [data-testid="stMetricValue"] span { font-size: 0.9em !important; }
 
-        /* Specific bump for metric emojis (like threat circles) */
-        [data-testid="stMetricLabel"] span,
-        [data-testid="stMetricValue"] span {
-            font-size: 2.8rem !important;
+        /* ---------------------------------------------------------------
+           4. CARDS -- brass edge and the deck's glow.
+           --------------------------------------------------------------- */
+        @keyframes pulse-glow {
+            0%, 100% {
+                box-shadow: 0 0 10px rgba(212, 175, 55, 0.2),
+                            0 4px 10px rgba(0, 0, 0, 0.4);
+                border-color: rgba(212, 175, 55, 0.40);
+            }
+            50% {
+                box-shadow: 0 0 22px rgba(212, 175, 55, 0.38),
+                            0 4px 12px rgba(0, 0, 0, 0.45);
+                border-color: rgba(212, 175, 55, 0.72);
+            }
         }
-
-        /* Bordered Case-File Styling for Metric Containers (lighter blue) */
+        /* Streamlit 1.62 hangs st.container(border=True) off a
+           stLayoutWrapper -- there is no stVerticalBlockBorderWrapper in
+           this version, and a bare stVerticalBlock selector would also
+           catch columns and expander bodies. The direct-child combinator
+           is what keeps this on bordered containers only (every
+           st.container in this repo passes border=True). The BorderWrapper
+           selector is kept as a forward-compat alias. */
+        [data-testid="stMain"] [data-testid="stLayoutWrapper"] > [data-testid="stVerticalBlock"],
+        [data-testid="stMain"] [data-testid="stVerticalBlockBorderWrapper"] {
+            border: 1px solid var(--siu-brass);
+            border-radius: 4px;
+            padding: 20px 22px;
+            background: linear-gradient(180deg, rgba(21, 34, 56, 0.92) 0%, rgba(11, 19, 37, 0.92) 100%);
+            box-shadow: 0 0 10px rgba(212, 175, 55, 0.2);
+            animation: pulse-glow 5.5s ease-in-out infinite;
+        }
+        /* Nested cards keep the edge but drop the animation -- stacked
+           pulses read as noise rather than atmosphere. */
+        [data-testid="stMain"] [data-testid="stLayoutWrapper"] > [data-testid="stVerticalBlock"]
+            [data-testid="stLayoutWrapper"] > [data-testid="stVerticalBlock"] {
+            animation: none;
+            box-shadow: 0 0 10px rgba(212, 175, 55, 0.15);
+        }
+        /* Metric cards: same edge, brass tab across the top. */
         [data-testid="stVerticalBlock"] > div:has(> [data-testid="stMetric"]) {
-           background: linear-gradient(180deg, #243B6A 0%, #1E2F54 100%);
-           border: 2px solid #314A81;
-           border-top: 5px solid #D4AF37;
-           border-radius: 6px;
-           padding: 20px;
-           margin-bottom: 25px;
-           box-shadow: 0 4px 10px rgba(0, 0, 0, 0.4);
+            background: linear-gradient(180deg, rgba(21, 34, 56, 0.95) 0%, rgba(11, 19, 37, 0.95) 100%);
+            border: 1px solid var(--siu-brass);
+            border-top: 4px solid var(--siu-brass);
+            border-radius: 4px;
+            padding: 18px 20px;
+            margin-bottom: 22px;
+            box-shadow: 0 0 10px rgba(212, 175, 55, 0.2);
+            animation: pulse-glow 5.5s ease-in-out infinite;
         }
 
-        /* Hide Streamlit default cruft */
-        #MainMenu {visibility: hidden;}
-        footer {visibility: hidden;}
-        .block-container {padding-top: 1rem; padding-bottom: 0rem;}
-
-        /* ==================================================================
-           CINEMATIC LAYER -- 70s NYPD SIU surveillance-monitor treatment.
-           Purely presentational: every rule below is either non-interactive
-           (pointer-events: none) or a paint-only property, so nothing here
-           can intercept a click or move a widget's hit box.
-           ================================================================== */
-
-        :root {
-            --siu-brass: #D4AF37;
-            --siu-navy: #0B1325;
-            --siu-slate: #152238;
-            --siu-serif: 'Iowan Old Style', 'Palatino Linotype', Palatino, Georgia, 'Times New Roman', serif;
-            --siu-mono: 'Courier New', Courier, monospace;
+        /* ---------------------------------------------------------------
+           5. CONTROLS -- brass, Courier, tracked out like console keys.
+           --------------------------------------------------------------- */
+        /* st.link_button renders an <a>, not a <button> -- without it in
+           this list the "Run" links beside the dork queries fall back to
+           serif while every real button is Courier. */
+        [data-testid="stMain"] button,
+        [data-testid="stMain"] [data-testid="stLinkButton"] a,
+        [data-testid="stSidebar"] button,
+        [data-testid="stSidebar"] [data-testid="stLinkButton"] a {
+            font-family: var(--siu-mono) !important;
+            font-weight: 700;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            border-radius: 3px;
+        }
+        [data-testid="stMain"] button p,
+        [data-testid="stMain"] [data-testid="stLinkButton"] a p { font-size: 0.92rem !important; }
+        [data-testid="stMain"] input,
+        [data-testid="stMain"] textarea,
+        [data-testid="stMain"] [data-baseweb="select"] {
+            font-family: var(--siu-mono) !important;
+        }
+        [data-testid="stMain"] label p {
+            font-family: var(--siu-mono) !important;
+            font-size: 0.86rem !important;
+            letter-spacing: 0.10em;
+            text-transform: uppercase;
+            color: var(--siu-bone-dim) !important;
+        }
+        [data-testid="stMain"] hr {
+            border-color: rgba(212, 175, 55, 0.30);
         }
 
-        /* --- 1. CRT scanline overlay -------------------------------------
-           Fixed to the viewport and painted over the whole app like the
-           feed on a surveillance monitor. pointer-events: none is what
-           keeps the app fully clickable underneath it. */
+        /* Terminal command buttons -- the Google dork vectors in the
+           Master Dossier. Streamlit stamps a widget's key onto its
+           container as st-key-<key>, which is the only hook a widget
+           gives us; components/master.py keys every dork button
+           dork_sweep_global / dork_run_<broker> so this selector can
+           reach them without touching every link button in the app. */
+        [class*="st-key-dork_"] a {
+            font-family: var(--siu-mono) !important;
+            letter-spacing: 0.14em;
+            text-transform: uppercase;
+            color: var(--siu-brass) !important;
+            background: rgba(212, 175, 55, 0.06) !important;
+            border: 1px solid rgba(212, 175, 55, 0.45) !important;
+            border-radius: 2px;
+            transition: background 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
+        }
+        /* Streamlit puts the label in a <p> inside the anchor, and the
+           markdown-paragraph rule above is more specific than an anchor
+           selector -- without this the commands render serif in bone. */
+        [class*="st-key-dork_"] a p {
+            font-family: var(--siu-mono) !important;
+            font-size: 0.92rem !important;
+            font-weight: 700;
+            letter-spacing: inherit;
+            color: inherit !important;
+        }
+        [class*="st-key-dork_"] a:hover {
+            background: rgba(212, 175, 55, 0.16) !important;
+            border-color: var(--siu-brass) !important;
+            box-shadow: 0 0 14px rgba(212, 175, 55, 0.35);
+            color: var(--siu-bone) !important;
+        }
+        /* The global sweep is the primary action: heavier edge, wider
+           tracking, and the brass glow already used on the case cards. */
+        .st-key-dork_sweep_global a {
+            border-width: 2px !important;
+            letter-spacing: 0.22em;
+            padding: 0.6rem 1rem;
+            box-shadow: 0 0 10px rgba(212, 175, 55, 0.2);
+        }
+
+        /* ---------------------------------------------------------------
+           6. CINEMATIC LAYER -- CRT scanlines, terminal flicker, vignette.
+              Every layer is pointer-events: none, so the app underneath
+              stays fully clickable.
+           --------------------------------------------------------------- */
         [data-testid="stApp"]::after,
         .stApp::after {
             content: "";
@@ -159,12 +384,20 @@ st.markdown(
                 transparent 3px
             );
         }
-
-        /* --- 2. Analog terminal flicker ----------------------------------
-           Applied to the single main content wrapper rather than to every
+        /* Vignette: the deck's lens falloff, painted under the scanlines. */
+        [data-testid="stApp"]::before,
+        .stApp::before {
+            content: "";
+            position: fixed;
+            inset: 0;
+            pointer-events: none;
+            z-index: 9998;
+            background: radial-gradient(120% 100% at 50% 40%,
+                        transparent 45%, rgba(0, 0, 0, 0.32) 82%, rgba(0, 0, 0, 0.62) 100%);
+        }
+        /* Flicker rides the single main content wrapper rather than every
            text node: one compositor layer instead of hundreds, and the
-           dips are brief and shallow (never below 0.985) so body copy
-           stays legible while reading. */
+           dips never fall below 0.985 so body copy stays legible. */
         @keyframes flicker {
             0%, 91%, 100% { opacity: 1; }
             92%           { opacity: 0.985; }
@@ -176,99 +409,17 @@ st.markdown(
             animation: flicker 9s linear infinite;
         }
 
-        /* --- 3. Glowing brass borders ------------------------------------
-           Bordered st.container blocks (the OSINT result cards) and the
-           metric cards breathe a low brass glow. */
-        @keyframes pulse-glow {
-            0%, 100% {
-                box-shadow: 0 0 10px rgba(212, 175, 55, 0.2),
-                            0 4px 10px rgba(0, 0, 0, 0.4);
-                border-color: rgba(212, 175, 55, 0.35);
-            }
-            50% {
-                box-shadow: 0 0 22px rgba(212, 175, 55, 0.38),
-                            0 4px 12px rgba(0, 0, 0, 0.45);
-                border-color: rgba(212, 175, 55, 0.60);
-            }
-        }
-        /* Streamlit 1.62 hangs st.container(border=True) off a
-           stLayoutWrapper -- there is no stVerticalBlockBorderWrapper in
-           this version, and a bare stVerticalBlock selector would also
-           catch columns and expander bodies. The direct-child combinator
-           is what makes this hit bordered containers and nothing else
-           (every st.container in this repo passes border=True). The
-           BorderWrapper selector is kept as a forward-compat alias. */
-        [data-testid="stMain"] [data-testid="stLayoutWrapper"] > [data-testid="stVerticalBlock"],
-        [data-testid="stMain"] [data-testid="stVerticalBlockBorderWrapper"] {
-            border: 1px solid rgba(212, 175, 55, 0.35);
-            border-radius: 6px;
-            background: linear-gradient(180deg, rgba(30, 47, 84, 0.55) 0%, rgba(17, 27, 51, 0.55) 100%);
-            animation: pulse-glow 5.5s ease-in-out infinite;
-        }
-        /* Nested cards keep the border but drop the animation -- stacked
-           pulses read as noise rather than atmosphere. */
-        [data-testid="stMain"] [data-testid="stLayoutWrapper"] > [data-testid="stVerticalBlock"]
-            [data-testid="stLayoutWrapper"] > [data-testid="stVerticalBlock"] {
-            animation: none;
-            box-shadow: 0 0 10px rgba(212, 175, 55, 0.15);
-        }
-        [data-testid="stVerticalBlock"] > div:has(> [data-testid="stMetric"]) {
-            animation: pulse-glow 5.5s ease-in-out infinite;
-        }
-
-        /* --- 4. Dossier typography ---------------------------------------
-           Serif carries the authority in headline sizes; Courier carries
-           the metadata (h4/h5/h6, captions, code) the way the case-file
-           banner already does. */
-        [data-testid="stMain"] h1,
-        [data-testid="stMain"] h2,
-        [data-testid="stMain"] h3,
-        [data-testid="stSidebar"] h1,
-        [data-testid="stSidebar"] h2,
-        [data-testid="stSidebar"] h3 {
-            font-family: var(--siu-serif) !important;
-            letter-spacing: 0.02em;
-        }
-        [data-testid="stMain"] h4,
-        [data-testid="stMain"] h5,
-        [data-testid="stMain"] h6,
-        [data-testid="stSidebar"] h4,
-        [data-testid="stSidebar"] h5,
-        [data-testid="stSidebar"] h6 {
-            font-family: var(--siu-mono) !important;
-            font-size: 1.05rem !important;
-            letter-spacing: 0.04em;
-            color: #E8E2D4;
-        }
-        /* The global giant-emoji rule sizes every bare span at 2.5rem,
-           which dwarfs a 1.05rem Courier sub-header. Scaled to sit on the
-           cap height instead -- delete this block to restore the
-           uniformly giant emojis. */
-        [data-testid="stMain"] :is(h4, h5, h6) span,
-        [data-testid="stSidebar"] :is(h4, h5, h6) span {
-            font-size: 1.5rem !important;
-        }
-        /* Emoji spans inside headers must not inherit Courier -- the
-           existing giant-emoji rule sizes them, this keeps them drawing
-           from the system emoji font. */
-        [data-testid="stMain"] :is(h1, h2, h3, h4, h5, h6) span,
-        [data-testid="stSidebar"] :is(h1, h2, h3, h4, h5, h6) span {
-            font-family: inherit;
-        }
-
-        /* SIU case-file banner: mono kicker, serif title, brass glow. */
+        /* ---------------------------------------------------------------
+           7. NAMED COMPONENTS -- case-file banner (app.py) and dossier
+              section rules (components/master.py).
+           --------------------------------------------------------------- */
         .siu-banner {
             animation: pulse-glow 5.5s ease-in-out infinite;
         }
         .siu-banner .siu-kicker,
-        .siu-banner .siu-file {
-            font-family: var(--siu-mono) !important;
-        }
-        .siu-banner .siu-title {
-            font-family: var(--siu-serif) !important;
-        }
+        .siu-banner .siu-file { font-family: var(--siu-mono) !important; }
+        .siu-banner .siu-title { font-family: var(--siu-serif) !important; }
 
-        /* Dossier section headers rendered by components/master.py. */
         .siu-section {
             margin: 34px 0 14px;
             border-top: 1px solid rgba(212, 175, 55, 0.30);
@@ -283,16 +434,22 @@ st.markdown(
         }
         .siu-section .siu-section-name {
             font-family: var(--siu-serif);
-            font-size: 1.6rem;
+            font-size: 1.7rem;
             font-weight: 700;
-            color: #F8FAFC;
-            letter-spacing: 0.02em;
+            color: var(--siu-bone);
+            letter-spacing: 0.01em;
             margin-top: 2px;
         }
 
-        /* --- Accessibility guard ----------------------------------------
-           Motion sensitivity outranks atmosphere: the scanlines stay
-           (they are static), every animation stops. */
+        /* ---------------------------------------------------------------
+           8. CHROME + ACCESSIBILITY
+           --------------------------------------------------------------- */
+        #MainMenu {visibility: hidden;}
+        footer {visibility: hidden;}
+        .block-container {padding-top: 1rem; padding-bottom: 0rem;}
+
+        /* Motion sensitivity outranks atmosphere: scanlines and vignette
+           stay (both static), every animation stops. */
         @media (prefers-reduced-motion: reduce) {
             [data-testid="stMain"] .block-container,
             [data-testid="stMain"] [data-testid="stLayoutWrapper"] > [data-testid="stVerticalBlock"],

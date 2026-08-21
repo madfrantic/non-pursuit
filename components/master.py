@@ -16,6 +16,12 @@ import database
 
 from components import letters as letters_component
 from applog import get_logger
+from google_dork import (
+    build_broker_dork_url,
+    build_combined_dork_url,
+    build_dork_query,
+    domain_from_url,
+)
 from osint_aggregator import run_full_osint_sweep
 import pdf_generator
 import profile_state
@@ -95,6 +101,99 @@ def _render_osint_records(result):
         except Exception as e:
             _log.warning("Error rendering record: %s", e)
             continue
+
+
+def _broker_domain(row):
+    """Bare domain for a broker row, preferring its search URL.
+
+    brokers.csv carries both a search_url and an optout_url, and pandas
+    hands back a float NaN for blank cells -- hence the isinstance check
+    rather than a plain truthiness test.
+    """
+    for column in ("search_url", "optout_url"):
+        value = row.get(column)
+        if isinstance(value, str) and value.strip():
+            domain = domain_from_url(value.strip())
+            if domain:
+                return domain
+    return ""
+
+
+def _render_verification_vectors(brokers_df):
+    """Google dork strings for confirming exposure by hand, per broker.
+
+    These are search *strings*, not scrapes -- no request leaves the
+    machine until the operator chooses to run one. The query is shown as
+    text rather than hidden behind a link on purpose: confirming a
+    listing exists with your own eyes is the step that precedes a
+    deletion demand, and CCPA § 1798.105 asks a broker to delete a record
+    the requester can actually point to.
+    """
+    st.markdown("### 🔍 MANUAL VERIFICATION VECTOR")
+    st.caption(
+        "Paste a query into Google to confirm the broker still lists you. "
+        "Nothing here contacts the broker -- these are search strings only."
+    )
+
+    profile = profile_state.get_profile(st.session_state)
+    name = (profile.get("full_name") or "").strip()
+    location = ", ".join(
+        value.strip() for value in (profile.get("city"), profile.get("state"))
+        if isinstance(value, str) and value.strip()
+    )
+
+    if not name:
+        st.warning(
+            "Enter your full name on the 👤 Profile tab -- a dork without a name "
+            "returns the whole broker site, not your listing."
+        )
+        return
+
+    if brokers_df is None or brokers_df.empty:
+        st.caption("No brokers on file to build queries against.")
+        return
+
+    rows = [(row["broker_name"], _broker_domain(row)) for _, row in brokers_df.iterrows()]
+    rows = [(broker_name, domain) for broker_name, domain in rows if domain]
+
+    if not rows:
+        st.caption("No broker domains on file -- check the search_url column in brokers.csv.")
+        return
+
+    domains = [domain for _, domain in rows]
+
+    with st.container(border=True):
+        # Each button carries its own query in the tooltip. The string is
+        # what makes this verifiable -- an operator has to be able to read
+        # the operators being run in their name before trusting a result --
+        # so it stays reachable even though the button now does the work.
+        st.link_button(
+            "[ ↗ EXECUTE GLOBAL SWEEP ]",
+            build_combined_dork_url(name, location, domains),
+            key="dork_sweep_global",
+            help=build_dork_query(name, location, domains),
+            width="stretch",
+        )
+        st.caption(
+            f"One search across all {len(rows)} broker domains. "
+            "Hover any command to read the exact query it runs."
+        )
+        st.divider()
+
+        # Three across keeps the commands on one line at desktop width and
+        # collapses to a stack on narrow viewports without extra CSS.
+        for index in range(0, len(rows), 3):
+            for column, (broker_name, domain) in zip(
+                st.columns(3), rows[index:index + 3]
+            ):
+                with column:
+                    st.link_button(
+                        f"[ ↗ {broker_name.upper()} ]",
+                        build_broker_dork_url(name, location, domain),
+                        key=f"dork_run_{broker_name}",
+                        help=build_dork_query(name, location, [domain]),
+                        width="stretch",
+                    )
 
 
 def _section_header(number, icon, name):
@@ -427,6 +526,8 @@ def render(brokers_df):
             
     with st.container(border=True):
         _render_osint_vector(findings.get("infrastructure", {}), "Domains & Certificates")
+
+    _render_verification_vectors(brokers_df)
 
     _section_header(4, "⚔️", "Statutory Action Plan")
     with st.container(border=True):

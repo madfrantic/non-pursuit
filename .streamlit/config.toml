@@ -1,9 +1,12 @@
 [theme]
-primaryColor = "#D4AF37"          # Detective Brass / Badge Gold (Kept)
-backgroundColor = "#111B33"       # Lighter Patrol Blue
-secondaryBackgroundColor = "#1E2F54" # Lighter Precinct Slate
-textColor = "#F8FAFC"             # Crisp Paper White (Kept)
-font = "serif"                     # Authoritative Case-File Typography (Kept)
+# Palette is shared verbatim with demo_pitch.html so the live app and the
+# pitch deck read as one artifact. Change these and the CSS custom
+# properties in app.py together -- they are two halves of one theme.
+primaryColor = "#D4AF37"             # Detective Brass / Badge Gold
+backgroundColor = "#0B1325"          # Midnight Cruiser Navy
+secondaryBackgroundColor = "#152238" # Precinct Slate
+textColor = "#F8FAFC"                # Crisp Paper White
+font = "serif"                       # Authoritative Case-File Typography
 
 [server]
 headless = true
