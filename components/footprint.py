@@ -22,6 +22,7 @@ import streamlit as st
 
 import config
 import runtime_mode
+import usage_metrics
 import demo_data
 import discovered_accounts
 import email_scanner
@@ -229,8 +230,10 @@ def render(show_title=True):
 
     if scan_clicked and not runtime_mode.live_scanning_enabled():
         if handle.strip():
+            usage_metrics.record_event(config.USAGE_METRICS_DB_PATH, usage_metrics.FOOTPRINT_SCAN_RUN)
             st.session_state.footprint_results = _run_mock_scan(handle.strip())
         if email.strip():
+            usage_metrics.record_event(config.USAGE_METRICS_DB_PATH, usage_metrics.EMAIL_SCAN_RUN)
             st.session_state.email_results = email_scanner.scan_email(email.strip())
         st.rerun()
 
@@ -255,9 +258,11 @@ def render(show_title=True):
                     f"skipped: {', '.join(missing)}"
                 )
 
+            usage_metrics.record_event(config.USAGE_METRICS_DB_PATH, usage_metrics.FOOTPRINT_SCAN_RUN)
             st.session_state.footprint_results = _run_scan(handle, sites)
 
         if email.strip():
+            usage_metrics.record_event(config.USAGE_METRICS_DB_PATH, usage_metrics.EMAIL_SCAN_RUN)
             st.session_state.email_results = email_scanner.scan_email(email.strip())
 
         st.rerun()

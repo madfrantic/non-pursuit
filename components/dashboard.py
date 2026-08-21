@@ -15,6 +15,7 @@ import streamlit as st
 
 import config
 import runtime_mode
+import usage_metrics
 import database
 import exposure_store
 import facial_recognition
@@ -138,6 +139,7 @@ def _save_profile():
             }] if st.session_state.pf_associated_name.strip() else []),
         },
     )
+    usage_metrics.record_event(config.USAGE_METRICS_DB_PATH, usage_metrics.PROFILE_SAVED)
     # Scorched-earth cache clear: remove all stale data on profile update
     st.cache_data.clear()
     for key in list(st.session_state.keys()):

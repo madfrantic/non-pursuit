@@ -15,6 +15,7 @@ import streamlit as st
 import config
 import exposure_store
 import runtime_mode
+import usage_metrics
 import database
 from letter_compiler import compile_demand_letter
 from mailto_builder import build_mailto_link, mailto_length, is_mailto_safe
@@ -204,13 +205,18 @@ def render(brokers_df):
                     st.caption("No compliance email on file for this broker — use the opt-out form instead.")
 
             with col_b:
-                st.download_button(
+                # The counter goes on the download, not on _render_letter():
+                # that helper re-renders the preview on every rerun, so
+                # counting there would measure widget interactions rather
+                # than letters the user actually took away.
+                if st.download_button(
                     label="Download as TXT",
                     icon="📥",
                     data=rendered_letter,
                     file_name=f"ccpa_demand_{selected_broker.replace(' ', '_').lower()}_{datetime.now().strftime('%Y%m%d')}.txt",
                     mime="text/plain",
-                )
+                ):
+                    usage_metrics.record_event(config.USAGE_METRICS_DB_PATH, usage_metrics.LETTER_GENERATED)
 
             with col_c:
                 if optout_url:
@@ -224,6 +230,7 @@ def render(brokers_df):
                     channel="Email" if broker_email else "Opt-out form",
                     response_window_days=config.CCPA_RESPONSE_WINDOW_DAYS,
                 )
+                usage_metrics.record_event(config.USAGE_METRICS_DB_PATH, usage_metrics.REQUEST_LOGGED)
                 st.success(f"Logged {selected_broker} in the tracker.")
 
     else:
@@ -296,13 +303,21 @@ def render(brokers_df):
 
                 col_a, col_b = st.columns(2)
                 with col_a:
-                    st.download_button(
+                    # Counted per letter, not per click -- a batch of twelve
+                    # is twelve demands generated, and recording it as 1
+                    # would understate the batch path against the single one.
+                    if st.download_button(
                         "Download all as ZIP",
                         icon="📥",
                         data=zip_buffer,
                         file_name=f"ccpa_demands_{datetime.now().strftime('%Y%m%d')}.zip",
                         mime="application/zip",
-                    )
+                    ):
+                        usage_metrics.record_event(
+                            config.USAGE_METRICS_DB_PATH,
+                            usage_metrics.LETTER_GENERATED,
+                            count=len(letters),
+                        )
                 with col_b:
                     if st.button(f"Log all {len(letters)} in the Campaign Tracker", icon="➕"):
                         progress_bar = st.progress(0)
@@ -316,6 +331,11 @@ def render(brokers_df):
                                 response_window_days=config.CCPA_RESPONSE_WINDOW_DAYS,
                             )
                             progress_bar.progress((idx + 1) / len(confirmed_brokers))
+                        usage_metrics.record_event(
+                            config.USAGE_METRICS_DB_PATH,
+                            usage_metrics.REQUEST_LOGGED,
+                            count=len(confirmed_brokers),
+                        )
                         st.success(f"Logged {len(letters)} requests in the tracker.")
         else:
             st.info("Select at least one broker.")

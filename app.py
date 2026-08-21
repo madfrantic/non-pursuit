@@ -785,6 +785,7 @@ elif mode == "⚖️ NY Expungement":
             },
         }
         result = ny_sealing.eligibility(payload)
+        usage_metrics.record_event(config.USAGE_METRICS_DB_PATH, usage_metrics.SEALING_SCREENED)
         if result["status"] == ny_sealing.STATUS_SEALED:
             st.success(f"Screening result: {result['status']}")
         elif result["status"] == ny_sealing.STATUS_PENDING:
@@ -908,6 +909,7 @@ elif mode == "📬 Opt-Out Tracker":
             submitted = st.form_submit_button("Log request")
             if submitted and m_broker:
                 add_request(runtime_mode.db_path(), m_broker, m_channel, int(m_window), m_notes)
+                usage_metrics.record_event(config.USAGE_METRICS_DB_PATH, usage_metrics.REQUEST_LOGGED)
                 st.success(f"Logged {m_broker}.")
 
     cleared_count = purge_expired_notes(runtime_mode.db_path(), config.PII_RETENTION_DAYS)
@@ -932,8 +934,12 @@ elif mode == "📬 Opt-Out Tracker":
 
         export_cols = st.columns(4)
         open_requests = [r for r in requests_list if r["status"] != "Complete"]
+        # Each download_button returns True only on the run where it was
+        # clicked, so these collect into one counter increment rather than
+        # four near-identical record_event calls.
+        _exported = False
         if open_requests:
-            export_cols[0].download_button(
+            _exported |= export_cols[0].download_button(
                 "Calendar (.ics)",
                 icon="📅",
                 data=build_ics(requests_list),
@@ -941,7 +947,7 @@ elif mode == "📬 Opt-Out Tracker":
                 mime="text/calendar",
                 width="stretch",
             )
-        export_cols[1].download_button(
+        _exported |= export_cols[1].download_button(
             "All data (.json)",
             icon="📥",
             data=build_json_export(
@@ -954,7 +960,7 @@ elif mode == "📬 Opt-Out Tracker":
             width="stretch",
             help="Everything tracked in this app -- campaign requests and self-search history -- as one portable file you control.",
         )
-        export_cols[2].download_button(
+        _exported |= export_cols[2].download_button(
             "Requests (.csv)",
             icon="📋",
             data=build_csv_export(requests_list),
@@ -963,7 +969,7 @@ elif mode == "📬 Opt-Out Tracker":
             width="stretch",
             help="Just the campaign requests table, for opening in a spreadsheet.",
         )
-        export_cols[3].download_button(
+        _exported |= export_cols[3].download_button(
             "Report (.pdf)",
             icon="📄",
             data=build_pdf_export(requests_list, exposure_store.get_all_checks(runtime_mode.db_path())),
@@ -972,6 +978,8 @@ elif mode == "📬 Opt-Out Tracker":
             width="stretch",
             help="A readable summary to hand to someone else -- an attorney, a family member helping out.",
         )
+        if _exported:
+            usage_metrics.record_event(config.USAGE_METRICS_DB_PATH, usage_metrics.EXPORT_DOWNLOADED)
 
         for r in requests_list:
             cols = st.columns([3, 2, 2, 2, 2, 1])

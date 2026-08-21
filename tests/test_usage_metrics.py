@@ -122,3 +122,19 @@ def test_first_seen_is_preserved_across_increments(db_path):
     conn.close()
     assert row[0] == first
     assert row[1] == 2
+
+
+def test_every_defined_event_is_actually_wired_somewhere():
+    """A defined-but-unfired event renders as a permanent zero in the
+    Usage panel, which reads as "nobody used this feature" rather than
+    "this was never instrumented". That distinction is invisible in the
+    UI, so it gets caught here instead."""
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parent.parent
+    sources = [root / "app.py"] + sorted((root / "components").glob("*.py"))
+    wired = "\n".join(p.read_text() for p in sources)
+
+    unwired = [e for e in metrics.EVENTS
+               if f"usage_metrics.{e.upper()}" not in wired]
+    assert not unwired, f"defined but never recorded: {', '.join(unwired)}"
