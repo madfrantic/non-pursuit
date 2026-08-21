@@ -4,23 +4,23 @@ Configuration for Non-Pursuit.
 
 # Application settings
 APP_TITLE = "Non-Pursuit"
-APP_TAGLINE = "THE SOVEREIGN ENGINE"
+APP_TAGLINE = "They chase. You enforce."
 APP_ICON = "🛡️"  # fallback emoji, kept for any spot the real logo doesn't fit
 APP_LOGO_PATH = "assets/logo_shield.png"
 APP_WORDMARK_PATH = "assets/logo_wordmark.png"
 APP_LAYOUT = "wide"
 
 # Theme settings — also mirrored in .streamlit/config.toml, which is what
-# actually themes the built-in Streamlit widgets. These are read by the
-# small amount of custom CSS we still ship (for the link-button styling
-# Streamlit doesn't cover natively), so update both files together.
+# actually themes the built-in Streamlit widgets. Read by data_export.py
+# and pdf_generator.py to keep exported PDFs on the same palette as the
+# app itself.
 THEME_BASE = "dark"
-PRIMARY_COLOR = "#D4AF37"
-BACKGROUND_COLOR = "#060A14"
-SECONDARY_BACKGROUND_COLOR = "#152238"
-TEXT_COLOR = "#E8E2D4"
-SUCCESS_COLOR = "#D4AF37"
-ERROR_COLOR = "#FF3B30"
+PRIMARY_COLOR = "#2563eb"
+BACKGROUND_COLOR = "#0b1120"
+SECONDARY_BACKGROUND_COLOR = "#16213a"
+TEXT_COLOR = "#e2e8f0"
+SUCCESS_COLOR = "#22c55e"
+ERROR_COLOR = "#ef4444"
 
 # File paths
 BROKERS_CSV_PATH = "data/brokers.csv"

@@ -56,547 +56,6 @@ st.set_page_config(
 
 
 # ---------------------------------------------------------------------------
-# SIU design system
-# ---------------------------------------------------------------------------
-# One injected stylesheet, sharing its palette and type scale with
-# demo_pitch.html so the live app and the pitch deck read as the same
-# artifact. Everything here is presentational: paint-only properties, or
-# non-interactive overlays pinned with pointer-events: none. Nothing can
-# intercept a click or move a widget's hit box.
-#
-# TYPOGRAPHY RESET: every custom font-size / font-family / text-transform /
-# line-height override has been stripped from this block, so all text falls
-# back to Streamlit's default scale and font stack. Colour, tracking, weight
-# and the cinematic layer are untouched.
-#
-# The two emoji rules below are the deliberate exception. Headers across the
-# app carry decorative emoji (st.title("⚖️ ..."), st.markdown("##### 🧬 ...")),
-# and they are scaled in *em* so they track whatever size the rebuild gives
-# their header instead of fighting it. Keep them relative -- an earlier
-# revision used a blanket 2.5rem on every leaf <span>, which also hit inline
-# code, status badges and caption fragments.
-st.markdown(
-    """
-    <style>
-        /* ---------------------------------------------------------------
-           PALETTE + TYPE STACKS  (mirrors demo_pitch.html)
-
-           The two type stacks are intentionally kept but currently
-           unreferenced -- nothing in this block sets font-family any more.
-           They are the starting point for the rebuilt scale.
-           --------------------------------------------------------------- */
-        :root {
-            --siu-navy:     #0B1325;
-            --siu-slate:    #152238;
-            --siu-brass:    #D4AF37;
-            --siu-brass-dim:#8A7328;
-            --siu-bone:     #E8E2D4;
-            --siu-bone-dim: #9AA3B2;
-            --siu-evidence: #FF3B30;
-
-            --siu-serif: 'Iowan Old Style', 'Palatino Linotype', Palatino,
-                         'Book Antiqua', Georgia, 'Times New Roman', serif;
-            --siu-mono:  'Courier New', Courier, monospace;
-        }
-
-        /* ---------------------------------------------------------------
-           1. BASE TEXT -- colour only. Sizing and family are Streamlit's.
-           --------------------------------------------------------------- */
-        html, body, [data-testid="stAppViewContainer"] {
-            background: radial-gradient(120% 90% at 50% 0%, #16233C 0%, var(--siu-navy) 45%, #060A14 100%), var(--siu-navy);
-            font-family: var(--siu-serif);
-        }
-        [data-testid="stMain"] [data-testid="stMarkdownContainer"] p,
-        [data-testid="stMain"] [data-testid="stMarkdownContainer"] li {
-            color: var(--siu-bone);
-            font-family: var(--siu-serif);
-            font-size: 1.15rem;
-            line-height: 1.62;
-        }
-
-        /* Headline colour + the brass glow on h1. No scale of our own. */
-        [data-testid="stMain"] h1 {
-            font-weight: 700;
-            letter-spacing: 0.01em;
-            color: var(--siu-brass);
-            text-shadow: 0 2px 0 rgba(0, 0, 0, 0.45), 0 0 48px rgba(212, 175, 55, 0.18);
-            margin-bottom: 0.2em;
-            font-family: var(--siu-serif);
-        }
-        [data-testid="stMain"] h2 {
-            font-weight: 700;
-            color: var(--siu-bone);
-            font-family: var(--siu-serif);
-        }
-        [data-testid="stMain"] h3 {
-            font-weight: 700;
-            color: var(--siu-bone);
-            font-family: var(--siu-serif);
-        }
-        /* Sub-headers stay metadata-brass, tracked out. */
-        [data-testid="stMain"] h4,
-        [data-testid="stMain"] h5,
-        [data-testid="stMain"] h6 {
-            font-weight: 700;
-            letter-spacing: 0.10em;
-            color: var(--siu-brass);
-            font-family: var(--siu-mono);
-            text-transform: uppercase;
-        }
-        /* KEPT (see module comment): emoji ride their header. Relative
-           units, so these survive whatever scale replaces the old one. */
-        [data-testid="stMain"] :is(h1, h2, h3) span { font-size: 1.05em !important; }
-        [data-testid="stMain"] :is(h4, h5, h6) span { font-size: 1.35em !important; }
-
-        [data-testid="stMain"] [data-testid="stCaptionContainer"],
-        [data-testid="stMain"] [data-testid="stCaptionContainer"] p {
-            letter-spacing: 0.03em;
-            color: var(--siu-bone-dim) !important;
-            font-family: var(--siu-mono);
-            text-transform: uppercase;
-        }
-        /* Inline code and telemetry readouts: brass on a brass wash. The
-           browser's own monospace default carries the family. */
-        [data-testid="stMain"] code,
-        [data-testid="stMain"] kbd,
-        [data-testid="stMain"] pre {
-            color: var(--siu-brass);
-            background: rgba(212, 175, 55, 0.07);
-            font-family: var(--siu-mono);
-        }
-
-        /* ---------------------------------------------------------------
-           2. SIDEBAR -- the terminal beside the case file.
-
-           The blanket `[data-testid="stSidebar"] *:not([data-testid=
-           "stIconMaterial"])` Courier rule is gone with the rest of the
-           font-family overrides. Its :not() was load-bearing and must come
-           back with it: Streamlit draws its icons as Material Symbols
-           ligatures -- <span>keyboard_double_arrow_left</span> rendered by
-           the icon font -- so forcing a font onto every descendant prints
-           the ligature names as literal text. Nothing sets a family here
-           now, so the icons render correctly on their own.
-           --------------------------------------------------------------- */
-        [data-testid="stSidebar"] *:not(i):not([class*="icon"]):not([data-testid="stIconMaterial"]):not([data-testid="stIconMaterial"] *) {
-            font-family: var(--siu-mono);
-        }
-        [data-testid="stSidebar"] {
-            background: linear-gradient(180deg, var(--siu-slate) 0%, var(--siu-navy) 100%);
-            border-right: 1px solid rgba(212, 175, 55, 0.28);
-        }
-        [data-testid="stSidebar"] :is(h1, h2, h3, h4, h5, h6) {
-            font-weight: 700;
-            letter-spacing: 0.20em;
-            color: var(--siu-brass) !important;
-        }
-        [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p {
-            letter-spacing: 0.02em;
-            color: var(--siu-bone);
-        }
-        /* No colour override on sidebar captions. The only one is the
-           SYSTEM RUNTIME CONTROL label, which is deliberately left on
-           Streamlit's own caption colour so it sits at the same baseline
-           as the widget labels around it rather than being painted. */
-        /* The nav radio's own label sits flush with the sidebar padding,
-           while every option below it is indented by its radio button --
-           measured at 30px vs 54px, so the TOOLS emoji hung 24px to the
-           left of the option emoji it should line up with. Scoped by the
-           widget key (key="nav_mode") so no other widget label shifts. */
-        [data-testid="stSidebar"] .st-key-nav_mode [data-testid="stWidgetLabel"] {
-            padding-left: 24px;
-        }
-        /* KEPT (see module comment): sidebar nav emoji, scaled in em. */
-        [data-testid="stSidebar"] :is(h1, h2, h3, h4, h5, h6) span,
-        [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p span {
-            font-size: 1.25em !important;
-            vertical-align: -0.08em;
-        }
-
-        /* ---------------------------------------------------------------
-           3. METRICS -- brass numerals, tabular figures so the digits stop
-              shifting on rerun. Default Streamlit sizing.
-           --------------------------------------------------------------- */
-        [data-testid="stMetricValue"] {
-            font-weight: 700;
-            color: var(--siu-brass);
-            font-variant-numeric: tabular-nums;
-            font-family: var(--siu-serif);
-        }
-        [data-testid="stMetricLabel"],
-        [data-testid="stMetricLabel"] p {
-            font-weight: 700;
-            letter-spacing: 0.16em;
-            color: var(--siu-bone-dim) !important;
-            font-family: var(--siu-mono);
-            text-transform: uppercase;
-            font-size: 0.78rem;
-        }
-        [data-testid="stMetricDelta"] {
-            letter-spacing: 0.08em;
-            font-family: var(--siu-mono);
-        }
-
-        /* ---------------------------------------------------------------
-           4. CARDS -- brass edge and the deck's glow.
-           --------------------------------------------------------------- */
-        @keyframes pulse-glow {
-            0%, 100% {
-                box-shadow: 0 0 10px rgba(212, 175, 55, 0.2),
-                            0 4px 10px rgba(0, 0, 0, 0.4);
-                border-color: rgba(212, 175, 55, 0.40);
-            }
-            50% {
-                box-shadow: 0 0 22px rgba(212, 175, 55, 0.38),
-                            0 4px 12px rgba(0, 0, 0, 0.45);
-                border-color: rgba(212, 175, 55, 0.72);
-            }
-        }
-        /* Streamlit 1.62 hangs st.container(border=True) off a
-           stLayoutWrapper -- there is no stVerticalBlockBorderWrapper in
-           this version, and a bare stVerticalBlock selector would also
-           catch columns and expander bodies. The direct-child combinator
-           is what keeps this on bordered containers only (every
-           st.container in this repo passes border=True). The BorderWrapper
-           selector is kept as a forward-compat alias. */
-        [data-testid="stMain"] [data-testid="stLayoutWrapper"] > [data-testid="stVerticalBlock"],
-        [data-testid="stMain"] [data-testid="stVerticalBlockBorderWrapper"] {
-            border: 1px solid var(--siu-brass);
-            border-radius: 4px;
-            padding: 20px 22px;
-            background: linear-gradient(180deg, rgba(21, 34, 56, 0.92) 0%, rgba(11, 19, 37, 0.92) 100%);
-            box-shadow: 0 0 10px rgba(212, 175, 55, 0.2);
-            animation: pulse-glow 5.5s ease-in-out infinite;
-        }
-        /* Nested cards keep the edge but drop the animation -- stacked
-           pulses read as noise rather than atmosphere. */
-        [data-testid="stMain"] [data-testid="stLayoutWrapper"] > [data-testid="stVerticalBlock"]
-            [data-testid="stLayoutWrapper"] > [data-testid="stVerticalBlock"] {
-            animation: none;
-            box-shadow: 0 0 10px rgba(212, 175, 55, 0.15);
-        }
-        /* Metric cards: same edge, brass tab across the top. */
-        [data-testid="stVerticalBlock"] > div:has(> [data-testid="stMetric"]) {
-            background: linear-gradient(180deg, rgba(21, 34, 56, 0.95) 0%, rgba(11, 19, 37, 0.95) 100%);
-            border: 1px solid var(--siu-brass);
-            border-top: 4px solid var(--siu-brass);
-            border-radius: 4px;
-            padding: 18px 20px;
-            margin-bottom: 22px;
-            box-shadow: 0 0 10px rgba(212, 175, 55, 0.2);
-            animation: pulse-glow 5.5s ease-in-out infinite;
-        }
-
-        /* ---------------------------------------------------------------
-           5. CONTROLS -- brass, tracked out like console keys.
-           --------------------------------------------------------------- */
-        /* st.link_button renders an <a>, not a <button> -- it needs to be
-           in this list for the "Run" links beside the dork queries to pick
-           up the same treatment as every real button. */
-        [data-testid="stMain"] button,
-        [data-testid="stMain"] [data-testid="stLinkButton"] a,
-        [data-testid="stSidebar"] button,
-        [data-testid="stSidebar"] [data-testid="stLinkButton"] a {
-            font-weight: 700;
-            letter-spacing: 0.12em;
-            border-radius: 3px;
-            font-family: var(--siu-mono);
-            text-transform: uppercase;
-        }
-        [data-testid="stMain"] label p {
-            letter-spacing: 0.10em;
-            color: var(--siu-bone-dim) !important;
-            font-family: var(--siu-mono);
-            font-size: 0.82rem;
-            text-transform: uppercase;
-        }
-        /* Animated brass rule matching the pitch deck's draw effect. */
-        @keyframes draw {
-            from { transform: scaleX(0); }
-            to   { transform: scaleX(1); }
-        }
-        [data-testid="stMain"] hr {
-            border-color: rgba(212, 175, 55, 0.30);
-            border-top: 1px solid var(--siu-brass);
-            background: linear-gradient(90deg, var(--siu-brass) 0%, rgba(212,175,55,0.16) 55%, transparent 100%);
-            height: 1px;
-            transform-origin: left center;
-            animation: draw 0.9s cubic-bezier(.22,.61,.36,1) both;
-        }
-
-        /* ---------------------------------------------------------------
-           5b. FORM INPUTS -- dark fills, brass borders, mono text.
-           --------------------------------------------------------------- */
-        [data-testid="stMain"] input,
-        [data-testid="stMain"] textarea,
-        [data-testid="stMain"] [data-baseweb="select"],
-        [data-testid="stMain"] [data-baseweb="input"] {
-            background-color: rgba(21, 34, 56, 0.92) !important;
-            border-color: rgba(212, 175, 55, 0.28) !important;
-            color: var(--siu-bone) !important;
-            font-family: var(--siu-mono);
-        }
-        [data-testid="stMain"] input:focus,
-        [data-testid="stMain"] textarea:focus {
-            border-color: var(--siu-brass) !important;
-            box-shadow: 0 0 8px rgba(212, 175, 55, 0.2);
-        }
-        [data-testid="stMain"] input::placeholder,
-        [data-testid="stMain"] textarea::placeholder {
-            color: var(--siu-bone-dim) !important;
-            font-family: var(--siu-mono);
-            letter-spacing: 0.06em;
-        }
-        /* Form containers: brass border treatment matching cards. */
-        [data-testid="stMain"] [data-testid="stForm"] {
-            border: 1px solid rgba(212, 175, 55, 0.35);
-            border-radius: 4px;
-            padding: 24px;
-            background: linear-gradient(180deg, rgba(21, 34, 56, 0.92) 0%, rgba(11, 19, 37, 0.92) 100%);
-        }
-
-        /* Terminal command buttons -- the Google dork vectors in the
-           Master Dossier. Streamlit stamps a widget's key onto its
-           container as st-key-<key>, which is the only hook a widget
-           gives us; components/master.py keys every dork button
-           dork_sweep_global / dork_run_<broker> so this selector can
-           reach them without touching every link button in the app. */
-        [class*="st-key-dork_"] a {
-            letter-spacing: 0.14em;
-            color: var(--siu-brass) !important;
-            background: rgba(212, 175, 55, 0.06) !important;
-            border: 1px solid rgba(212, 175, 55, 0.45) !important;
-            border-radius: 2px;
-            transition: background 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
-        }
-        /* Streamlit puts the label in a <p> inside the anchor, and the
-           markdown-paragraph rule above is more specific than an anchor
-           selector -- without this the commands render in bone, not brass. */
-        [class*="st-key-dork_"] a p {
-            font-weight: 700;
-            letter-spacing: inherit;
-            color: inherit !important;
-        }
-        [class*="st-key-dork_"] a:hover {
-            background: rgba(212, 175, 55, 0.16) !important;
-            border-color: var(--siu-brass) !important;
-            box-shadow: 0 0 14px rgba(212, 175, 55, 0.35);
-            color: var(--siu-bone) !important;
-        }
-        /* The global sweep is the primary action: heavier edge, wider
-           tracking, and the brass glow already used on the case cards. */
-        .st-key-dork_sweep_global a {
-            border-width: 2px !important;
-            letter-spacing: 0.22em;
-            padding: 0.6rem 1rem;
-            box-shadow: 0 0 10px rgba(212, 175, 55, 0.2);
-        }
-
-        /* Blackout submit -- the Profile form's "Save & Execute Master
-           Recon". type="primary" paints it brass-on-navy by default; this
-           inverts it to brass-on-black. Scoped by the widget key
-           (key="save_master_recon") so no other primary button changes.
-           The nested selectors cover the label too: Streamlit renders it
-           in a <p> inside the <button>, which would otherwise keep the
-           primary button's own text colour. */
-        .st-key-save_master_recon button,
-        .st-key-save_master_recon button:hover,
-        .st-key-save_master_recon button:focus,
-        .st-key-save_master_recon button:active {
-            background-color: #000000 !important;
-            color: #D4AF37 !important;
-            border: 1px solid #D4AF37 !important;
-        }
-        .st-key-save_master_recon button p,
-        .st-key-save_master_recon button div,
-        .st-key-save_master_recon button span {
-            color: #D4AF37 !important;
-        }
-
-        /* ---------------------------------------------------------------
-           6. CINEMATIC LAYER -- CRT scanlines, terminal flicker, vignette.
-              Every layer is pointer-events: none, so the app underneath
-              stays fully clickable.
-           --------------------------------------------------------------- */
-        [data-testid="stApp"]::after,
-        .stApp::after {
-            content: "";
-            position: fixed;
-            inset: 0;
-            pointer-events: none;
-            z-index: 9999;
-            opacity: 0.38;
-            mix-blend-mode: multiply;
-            background: repeating-linear-gradient(
-                180deg,
-                rgba(0, 0, 0, 0.36) 0px,
-                rgba(0, 0, 0, 0.36) 1px,
-                transparent 1px,
-                transparent 3px
-            );
-        }
-        /* Vignette: the deck's lens falloff, painted under the scanlines. */
-        [data-testid="stApp"]::before,
-        .stApp::before {
-            content: "";
-            position: fixed;
-            inset: 0;
-            pointer-events: none;
-            z-index: 9998;
-            background: radial-gradient(120% 100% at 50% 40%,
-                        transparent 45%, rgba(0, 0, 0, 0.32) 82%, rgba(0, 0, 0, 0.62) 100%);
-        }
-        
-        #siu-rollbar {
-            position: fixed;
-            inset: 0;
-            pointer-events: none;
-            z-index: 9997;
-            background: linear-gradient(180deg, transparent, rgba(212,175,55,0.055) 45%, rgba(255,255,255,0.045) 50%, rgba(212,175,55,0.055) 55%, transparent);
-            height: 34%;
-            animation: roll 9s linear infinite;
-            will-change: transform;
-        }
-        @keyframes roll {
-            from { transform: translate3d(0, -140%, 0); }
-            to   { transform: translate3d(0, 420%, 0); }
-        }
-        
-        #siu-grain {
-            position: fixed;
-            inset: 0;
-            pointer-events: none;
-            z-index: 9996;
-            opacity: 0.15;
-            mix-blend-mode: overlay;
-            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='220' height='220' filter='url(%23n)' opacity='.55'/%3E%3C/svg%3E");
-            animation: jitter 0.5s steps(3) infinite;
-        }
-        @keyframes jitter {
-            0%   { transform: translate3d(0, 0, 0); }
-            33%  { transform: translate3d(-1.5%, 1%, 0); }
-            66%  { transform: translate3d(1%, -1.5%, 0); }
-            100% { transform: translate3d(0, 0, 0); }
-        }
-        /* Flicker rides the single main content wrapper rather than every
-           text node: one compositor layer instead of hundreds, and the
-           dips never fall below 0.985 so body copy stays legible. */
-        @keyframes flicker {
-            0%, 91%, 100% { opacity: 1; }
-            92%           { opacity: 0.985; }
-            93%           { opacity: 1; }
-            96%           { opacity: 0.99; }
-            97%           { opacity: 1; }
-        }
-        [data-testid="stMain"] .block-container {
-            animation: flicker 9s linear infinite;
-        }
-
-        /* ---------------------------------------------------------------
-           7. NAMED COMPONENTS -- case-file banner (app.py) and dossier
-              section rules (components/master.py).
-           --------------------------------------------------------------- */
-        .siu-banner {
-            animation: pulse-glow 5.5s ease-in-out infinite;
-        }
-
-        .siu-section {
-            margin: 34px 0 14px;
-            border-top: 1px solid rgba(212, 175, 55, 0.30);
-            padding-top: 14px;
-        }
-        .siu-section .siu-section-no {
-            letter-spacing: 0.28em;
-            color: var(--siu-brass);
-            font-family: var(--siu-mono);
-            font-size: 0.78rem;
-            text-transform: uppercase;
-        }
-        .siu-section .siu-section-name {
-            font-weight: 700;
-            color: var(--siu-bone);
-            letter-spacing: 0.01em;
-            margin-top: 2px;
-            font-family: var(--siu-serif);
-            font-size: 1.4rem;
-        }
-
-        /* ---------------------------------------------------------------
-           7b. EXPANDERS -- mono header, brass accents.
-           --------------------------------------------------------------- */
-        [data-testid="stExpander"] {
-            border: 1px solid rgba(212, 175, 55, 0.20);
-            border-radius: 4px;
-            background: linear-gradient(180deg, rgba(21, 34, 56, 0.7) 0%, rgba(11, 19, 37, 0.7) 100%);
-        }
-        [data-testid="stExpander"] summary {
-            font-family: var(--siu-mono);
-            letter-spacing: 0.12em;
-            text-transform: uppercase;
-            color: var(--siu-bone) !important;
-        }
-        [data-testid="stExpander"] summary:hover {
-            color: var(--siu-brass) !important;
-        }
-        [data-testid="stExpander"] svg {
-            color: var(--siu-brass);
-        }
-
-        /* ---------------------------------------------------------------
-           7c. ALERT BOXES -- navy-tinted backgrounds.
-           --------------------------------------------------------------- */
-        [data-testid="stAlert"] {
-            background: rgba(21, 34, 56, 0.85) !important;
-            border-radius: 4px;
-            font-family: var(--siu-serif);
-        }
-        [data-testid="stAlert"] p {
-            color: var(--siu-bone) !important;
-        }
-
-        /* ---------------------------------------------------------------
-           7d. DATAFRAMES / TABLES -- brass header, dark rows.
-           --------------------------------------------------------------- */
-        [data-testid="stMain"] [data-testid="stDataFrame"] {
-            border: 1px solid rgba(212, 175, 55, 0.20);
-        }
-        [data-testid="stMain"] th {
-            background: rgba(212, 175, 55, 0.12) !important;
-            color: var(--siu-brass) !important;
-            font-family: var(--siu-mono);
-            letter-spacing: 0.08em;
-            text-transform: uppercase;
-        }
-
-        /* ---------------------------------------------------------------
-           8. CHROME + ACCESSIBILITY
-           --------------------------------------------------------------- */
-        #MainMenu {visibility: hidden;}
-        footer {visibility: hidden;}
-        .block-container {padding-top: 1rem; padding-bottom: 0rem;}
-
-        /* Motion sensitivity outranks atmosphere: scanlines and vignette
-           stay (both static), every animation stops. */
-        @media (prefers-reduced-motion: reduce) {
-            [data-testid="stMain"] .block-container,
-            [data-testid="stMain"] [data-testid="stLayoutWrapper"] > [data-testid="stVerticalBlock"],
-            [data-testid="stMain"] [data-testid="stVerticalBlockBorderWrapper"],
-            [data-testid="stVerticalBlock"] > div:has(> [data-testid="stMetric"]),
-            .siu-banner,
-            #siu-rollbar,
-            #siu-grain,
-            [data-testid="stMain"] hr {
-                animation: none !important;
-            }
-        }
-    </style>
-    <div id="siu-rollbar"></div>
-    <div id="siu-grain"></div>
-    """,
-    unsafe_allow_html=True,
-)
-
-
-# ---------------------------------------------------------------------------
 # Session state
 # ---------------------------------------------------------------------------
 # Start each new session with a blank profile for privacy and a fresh slate.
@@ -677,18 +136,11 @@ brokers_df = load_brokers()
 if st.session_state.get("pending_nav") is not None:
     st.session_state.nav_mode = st.session_state.pop("pending_nav")
 
-# The wordmark image that used to sit above this was removed; the tagline
-# is now the sidebar's masthead and takes the space it freed.
-st.sidebar.markdown(
-    f'<h2 style="font-size: 2em; font-weight: bold; margin-bottom: 0; '
-    f'margin-top: 0; text-align: center; text-transform: uppercase;">'
-    f'{config.APP_TAGLINE}</h2>',
-    unsafe_allow_html=True,
-)
+st.logo(config.APP_WORDMARK_PATH, icon_image=config.APP_LOGO_PATH, size="large")
 st.sidebar.markdown("---")
 
 mode = st.sidebar.radio(
-    "**🛠️ TOOLS**",
+    "Tools",
     [
         "🛡️ Profile",
         "🔍 Intelligence Dossier",
@@ -705,7 +157,7 @@ mode = st.sidebar.radio(
 # Presentation mode toggle for safe live demos
 st.sidebar.markdown("---")
 pres_enabled = st.sidebar.toggle(
-    "🎭 PRESENTATION MODE",
+    "🎭 Presentation mode",
     value=st.session_state.presentation_mode,
     help="Enable mock data and instant scan results for live demos",
 )
@@ -726,36 +178,28 @@ else:
 st.sidebar.markdown("---")
 
 with st.sidebar:
-    # Inline <p> rather than st.caption: the caption element carries
-    # Streamlit's own muted colour, which is what kept this off stark
-    # white. font-size is pinned to 0.875rem (14px) so it still sits on
-    # exactly the same baseline as the PRESENTATION MODE toggle label.
-    st.markdown(
-        '<p style="font-size: 0.875rem; font-weight: 700; color: #FFFFFF; '
-        'margin: 0 0 0.25rem 0;">⚙️ SYSTEM RUNTIME CONTROL</p>',
-        unsafe_allow_html=True,
-    )
+    st.caption("⚙️ Runtime environment")
 
     # Map friendly names to internal modes
     mode_options = {
-        "AUTO-DETECT": "auto",
-        "🖥️ Desktop (Full Power)": "desktop",
-        "☁️ Online / Cloud (Passive)": "cloud"
+        "Auto-detect": "auto",
+        "🖥️ Desktop (full power)": "desktop",
+        "☁️ Online / cloud (passive)": "cloud",
     }
-    
+
     current_override = runtime_mode.get_runtime_override()
     # Find active index
     index = list(mode_options.values()).index(current_override) if current_override in mode_options.values() else 0
 
     selected_label = st.radio(
         # Kept as the accessible name for screen readers, hidden visually.
-        "SELECT OPERATING ENVIRONMENT:",
+        "Select operating environment",
         options=list(mode_options.keys()),
         index=index,
         label_visibility="collapsed",
         help="Manually switch between unrestricted desktop execution (700+ sites) and passive online scanning to demonstrate environment handling."
     )
-    
+
     # Update override on selection change
     chosen_mode = mode_options[selected_label]
     if chosen_mode != current_override:
@@ -764,9 +208,9 @@ with st.sidebar:
 
     # Display active badge
     if runtime_mode.is_cloud_deployment():
-        st.warning("☁️ **ONLINE RUNTIME ACTIVE**\n- Passive Recon (Gravatar, PGP, Certs)\n- Heavy sweeps disabled (Cloud IP Guard)")
+        st.warning("☁️ **Online runtime active**\n- Passive recon only (Gravatar, PGP, certificate transparency)\n- Heavy sweeps disabled to protect the shared IP")
     else:
-        st.success("🖥️ **DESKTOP RUNTIME ACTIVE**\n- Full Active Sweeps Enabled\n- Unrestricted 700+ site sockets")
+        st.success("🖥️ **Desktop runtime active**\n- Full active sweeps enabled\n- Unrestricted 700+ site checks")
 
 if runtime_mode.is_demo_mode():
     if st.sidebar.button("⚡ Load presentation demo", width="stretch", type="primary",
@@ -845,36 +289,6 @@ with st.sidebar.expander("📈 Usage", expanded=False):
     for _label, _count in usage_metrics.summary(config.USAGE_METRICS_DB_PATH):
         st.markdown(f"{_label} &nbsp;**{_count}**", unsafe_allow_html=True)
     st.caption("Feature counts only — no entered values are recorded.")
-
-st.markdown(
-    """
-    <div class="siu-banner" style="
-        background: linear-gradient(180deg, var(--siu-slate, #152238) 0%, var(--siu-navy, #0B1325) 100%);
-        border: 2px solid var(--siu-brass, #D4AF37);
-        border-radius: 4px;
-        padding: 18px 24px;
-        margin-bottom: 24px;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        box-shadow: 0 0 60px rgba(212, 175, 55, 0.12), 0 4px 12px rgba(0, 0, 0, 0.5);
-    ">
-        <div>
-            <div class="siu-kicker" style="font-family: var(--siu-mono, 'Courier New', monospace); color: var(--siu-brass, #D4AF37); font-size: 0.72rem; letter-spacing: 0.34em; text-transform: uppercase; text-shadow: 0 0 14px rgba(212,175,55,0.32);">
-                NEW YORK POLICE DEPT // SPECIAL INVESTIGATIONS UNIT
-            </div>
-            <div class="siu-title" style="font-family: var(--siu-serif, Georgia, serif); color: var(--siu-bone, #E8E2D4); font-size: 1.75rem; font-weight: 700; letter-spacing: 0.015em; margin-top: 4px; text-shadow: 0 2px 0 rgba(0,0,0,0.5), 0 0 48px rgba(212,175,55,0.18);">
-                🛡️ NON-PURSUIT : DIVISION OF OSINT
-            </div>
-        </div>
-        <div class="siu-file" style="text-align: right; font-family: var(--siu-mono, 'Courier New', monospace); border-left: 2px solid rgba(212,175,55,0.28); padding-left: 18px;">
-            <div style="color: var(--siu-brass, #D4AF37); font-weight: 700; font-size: 0.82rem; letter-spacing: 0.24em; text-shadow: 0 0 14px rgba(212,175,55,0.32);">FILE: CONFIDENTIAL</div>
-            <div style="color: var(--siu-bone-dim, #9AA3B2); font-size: 0.7rem; letter-spacing: 0.2em; text-transform: uppercase;">DIRECTIVE § 1798 / NY-SHIELD</div>
-        </div>
-    </div>
-    """,
-    unsafe_allow_html=True
-)
 
 
 # ---------------------------------------------------------------------------
@@ -1172,4 +586,4 @@ elif mode == "🗓️ Deletion Timeline":
 # ---------------------------------------------------------------------------
 # Footer
 # ---------------------------------------------------------------------------
-st.caption(f"{config.APP_TITLE} — {config.APP_TAGLINE}. For educational purposes only. Not legal advice.", text_alignment="center")
+st.caption(f"{config.APP_TITLE} — {config.APP_TAGLINE} For educational purposes only. Not legal advice.", text_alignment="center")

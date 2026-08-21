@@ -129,7 +129,7 @@ def _render_verification_vectors(brokers_df):
     deletion demand, and CCPA § 1798.105 asks a broker to delete a record
     the requester can actually point to.
     """
-    st.markdown("### 🔍 MANUAL VERIFICATION VECTOR")
+    st.markdown("### 🔍 Manual verification")
     st.caption(
         "Paste a query into Google to confirm the broker still lists you. "
         "Nothing here contacts the broker -- these are search strings only."
@@ -168,7 +168,7 @@ def _render_verification_vectors(brokers_df):
         # the operators being run in their name before trusting a result --
         # so it stays reachable even though the button now does the work.
         st.link_button(
-            "[ ↗ EXECUTE GLOBAL SWEEP ]",
+            "🔍 Search all brokers at once",
             build_combined_dork_url(name, location, domains),
             key="dork_sweep_global",
             help=build_dork_query(name, location, domains),
@@ -188,7 +188,7 @@ def _render_verification_vectors(brokers_df):
             ):
                 with column:
                     st.link_button(
-                        f"[ ↗ {broker_name.upper()} ]",
+                        f"🔍 {broker_name}",
                         build_broker_dork_url(name, location, domain),
                         key=f"dork_run_{broker_name}",
                         help=build_dork_query(name, location, [domain]),
@@ -196,22 +196,8 @@ def _render_verification_vectors(brokers_df):
                     )
 
 
-def _section_header(number, icon, name):
-    """Dossier-style section rule: mono case-file kicker over a serif title.
-
-    Presentational only -- st.subheader gave no hook for the SIU styling
-    (Streamlit owns the h2 markup), so the header is emitted as markup
-    the .siu-section rules in app.py can reach.
-    """
-    st.markdown(
-        f'''
-        <div class="siu-section">
-            <div class="siu-section-no">Section {number:02d} &nbsp;//&nbsp; Case File</div>
-            <div class="siu-section-name">{icon} {name}</div>
-        </div>
-        ''',
-        unsafe_allow_html=True,
-    )
+def _section_header(icon, name):
+    st.subheader(f"{icon} {name}")
 
 
 def _render_osint_vector(result, title):
@@ -243,17 +229,14 @@ def render(brokers_df):
     # Always read fresh profile state (not stale from input widget cache)
     profile = profile_state.get_profile(st.session_state)
 
-    # --- Task 1: Dynamic greeting header ---
     subject_name = (profile.get("full_name") or "").strip()
     if subject_name:
-        st.markdown(f"## 🕵️‍♂️ Case File Active: Hello, {subject_name}")
-    else:
-        st.markdown("## 🕵️‍♂️ Case File Active: Hello, Subject Unknown")
+        st.markdown(f"## Hello, {subject_name}")
 
     # --- Combined Telemetry & Harvest Vector Card ---
     with st.container(border=True):
-        st.markdown("##### 🌐 Client Telemetry & Collection Vector Analysis")
-        st.caption("Live passive environmental detection merged with forensic breakdown of how each data point is harvested.")
+        st.markdown("##### 🌐 What your connection reveals")
+        st.caption("A live look at what any site can passively see about you, just from this request.")
 
         # Collect telemetry safely
         if st.session_state.get("presentation_mode"):
@@ -314,79 +297,58 @@ def render(brokers_df):
                 referrer = "Direct / None"
                 dnt_status = "Standard Masked"
 
-        # --- Live Exposure Findings ---
-        telemetry_block = f"""
-🌐 **PUBLIC NETWORK & ROUTING**
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🌐 **Interface IP:** `{client_ip}`
-🏷️ **rDNS Host:** `{reverse_dns}`
-📍 **Inferred Region:** `{geo_info}`
+        net_col, device_col, session_col = st.columns(3)
+        with net_col:
+            st.markdown("**Network**")
+            st.caption(f"IP address  \n`{client_ip}`")
+            st.caption(f"Reverse DNS  \n`{reverse_dns}`")
+            st.caption(f"Inferred region  \n`{geo_info}`")
+        with device_col:
+            st.markdown("**Device**")
+            st.caption(f"Platform  \n`{os_family}`")
+            st.caption(f"Browser engine  \n`{browser_engine}`")
+            st.caption(f"User agent  \n`{user_agent}`")
+        with session_col:
+            st.markdown("**Session**")
+            st.caption(f"Privacy signal  \n{dnt_status}")
+            st.caption(f"Accepted languages  \n`{accept_lang}`")
+            st.caption(f"Referrer  \n`{referrer}`")
 
-💻 **DEVICE & PLATFORM FINGERPRINT**
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-💻 **Platform / OS:** `{os_family}`
-🧭 **Browser Engine:** `{browser_engine}`
-🔧 **Raw User-Agent:** `{user_agent}`
-
-🕵️ **SESSION CONTEXT & PRIVACY HEADERS**
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🛡️ **Global Privacy Control (GPC):** {dnt_status}
-🗣️ **Accepted Languages:** `{accept_lang}`
-🔗 **HTTP Referrer Origin:** `{referrer}`
-"""
-        st.markdown("### 🚨 LIVE EXPOSURE FINDINGS")
-        st.markdown(telemetry_block)
-
-        # --- Right / Collapsible: Forensic Breakdown ---
-        with st.expander("🔬 How Tracking Works — Forensic Collection Vector Breakdown"):
+        with st.expander("How this is collected", icon=":material/info:"):
             vec_net, vec_hw, vec_session = st.columns(3)
 
             with vec_net:
-                st.markdown("**🌐 Network & Routing Vector**")
-                st.info(
-                    "📡 **Vector:** HTTP Handshake & Remote Headers "
-                    "(`X-Forwarded-For`, `Remote_Addr`)\n\n"
-                    "⚠️ **Risk:** Tied directly to physical ISP routing hub "
-                    "without a VPN/proxy. Correlates across every site visit."
+                st.markdown("**Network & routing**")
+                st.caption(
+                    "Read from the HTTP handshake (`X-Forwarded-For`, remote address). "
+                    "Tied to your ISP's routing hub without a VPN or proxy, and "
+                    "correlates across every site you visit."
                 )
 
             with vec_hw:
-                st.markdown("**🧭 Hardware & Platform Fingerprint**")
-                st.info(
-                    "🧩 **Vector:** Client `User-Agent` Header & "
-                    "Navigator DOM Properties\n\n"
-                    "⚠️ **Risk:** Combined entropy (OS + browser + engine + "
-                    "screen resolution) creates a persistent browser "
-                    "fingerprint across sessions — even without cookies."
+                st.markdown("**Device fingerprint**")
+                st.caption(
+                    "Read from the `User-Agent` header and navigator properties. "
+                    "The combined entropy (OS + browser + engine) creates a "
+                    "persistent fingerprint across sessions, even without cookies."
                 )
 
             with vec_session:
-                st.markdown("**🕵️ Active Session Context & Leaks**")
-                st.info(
-                    "🔍 **Vector:** Passive HTTP Request Metadata "
-                    "(`Accept-Language`, `Referer`, `DNT`, `Sec-GPC`)\n\n"
-                    "⚠️ **Risk:** Reveals localized geographic preference "
-                    "and cross-site browsing origin. DNT/GPC is advisory only — "
-                    "most commercial trackers ignore it."
+                st.markdown("**Session context**")
+                st.caption(
+                    "Read from `Accept-Language`, `Referer`, `DNT`, and `Sec-GPC`. "
+                    "Reveals language and browsing origin. DNT/GPC are advisory "
+                    "only -- most commercial trackers ignore them."
                 )
 
-    # PROMINENT ENVIRONMENT MODE BANNER
-    mode_cols = st.columns([1, 3])
-    with mode_cols[0]:
-        if runtime_mode.is_cloud_deployment():
-            st.error("☁️ WEB MODE")
-        elif runtime_mode.is_demo_mode():
-            st.warning("🟡 DEMO MODE")
-        else:
-            st.success("🖥️ DESKTOP MODE")
-
-    with mode_cols[1]:
-        if runtime_mode.is_cloud_deployment():
-            st.caption("**WEB / CLOUD RUNTIME** — Passive OSINT only (Gravatar, PGP, CertSpotter). Email scans work. Heavy sweeps disabled.")
-        elif runtime_mode.is_demo_mode():
-            st.caption("**DEMO SANDBOX** — Mock OSINT data shown. No real scanning.")
-        else:
-            st.caption("**DESKTOP RUNTIME** — Full active OSINT enabled. All email vectors available (700+ sites, Gravatar, PGP, breaches).")
+    # Full detail lives in the sidebar's runtime environment control; this
+    # is just a reminder of which recon path the button below will take.
+    if runtime_mode.is_cloud_deployment():
+        st.caption("☁️ Cloud runtime -- passive OSINT only (Gravatar, PGP, certificate transparency). Heavy sweeps disabled.")
+    elif runtime_mode.is_demo_mode():
+        st.caption("🟡 Demo sandbox -- mock OSINT data shown, no real scanning.")
+    else:
+        st.caption("🖥️ Desktop runtime -- full active OSINT enabled (700+ sites, Gravatar, PGP, breaches).")
 
     # Validate email is present for email OSINT
     email_valid = profile.get("email", "").strip() and "@" in profile.get("email", "")
@@ -435,11 +397,12 @@ def render(brokers_df):
     email_count = vectors.get("email", {}).get("count", 0)
     total_exposure = summary.get("total_exposures", 0)
     
+    exposure_icon = "🔴" if total_exposure > 2 else "🟡" if total_exposure > 0 else "🟢"
     c1, c2, c3, c4 = st.columns(4)
-    c1.metric("📊 Exposure Score", f"🔴 {total_exposure}" if total_exposure > 2 else f"🟡 {total_exposure}" if total_exposure > 0 else f"🟢 {total_exposure}")
-    c2.metric("🔴 Critical Breaches", email_count)
-    c3.metric("👤 Exposed Handles", fp_count)
-    c4.metric("📬 Deletion Targets", len(brokers_df))
+    c1.metric(f"{exposure_icon} Exposure score", total_exposure)
+    c2.metric("🔴 Critical breaches", email_count)
+    c3.metric("👤 Exposed handles", fp_count)
+    c4.metric("📬 Deletion targets", len(brokers_df))
 
     # Building the dossier costs a few hundred milliseconds, which is fine
     # once per sweep and wasteful on every unrelated widget rerun -- so it
@@ -470,7 +433,7 @@ def render(brokers_df):
 
     st.markdown("---")
 
-    _section_header(1, "👤", "Online Identity &amp; Media Exposure")
+    _section_header("👤", "Online identity & media exposure")
     with st.container(border=True):
         c1, c2 = st.columns(2)
         with c1:
@@ -487,7 +450,7 @@ def render(brokers_df):
             if not found_avatars:
                 st.caption("No avatars discovered.")
                 
-    _section_header(2, "🔐", "Data Exposures &amp; Breaches")
+    _section_header("🔐", "Data exposures & breaches")
     with st.container(border=True):
         # Email exposure section with detailed diagnostics
         email_vector = findings.get("email", {})
@@ -514,7 +477,7 @@ def render(brokers_df):
         # GitHub exposure section
         _render_osint_vector(findings.get("github", {}), "Developer & Code Exposure")
 
-    _section_header(3, "🏛️", "Legal, Financial &amp; Corporate Footprint")
+    _section_header("🏛️", "Legal, financial & corporate footprint")
     with st.container(border=True):
         sec_col, fec_col, court_col = st.columns(3)
         with sec_col:
@@ -529,6 +492,6 @@ def render(brokers_df):
 
     _render_verification_vectors(brokers_df)
 
-    _section_header(4, "⚔️", "Statutory Action Plan")
+    _section_header("⚔️", "Statutory action plan")
     with st.container(border=True):
         letters_component.render(brokers_df)
