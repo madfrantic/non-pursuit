@@ -207,3 +207,47 @@ def test_demo_badge_wins_over_a_forced_desktop(monkeypatch):
     runtime_mode.set_runtime_override(runtime_mode.OVERRIDE_DESKTOP)
     label, _ = runtime_mode.mode_badge()
     assert "Demo" in label
+
+
+# --- Streamlit Community Cloud secrets fallback -----------------------
+# Community Cloud has no environment-variable UI, only a secrets editor.
+# If demo mode could only be set by env var, a Community Cloud deployment
+# would silently run as a *local* install: one shared tracker.db for every
+# visitor, and live scans from the platform's IP.
+
+def test_secrets_can_enable_demo_mode_when_no_env_var(monkeypatch):
+    monkeypatch.setattr(runtime_mode, "_secret", lambda name: "true")
+    assert runtime_mode.is_demo_mode() is True
+
+
+def test_env_var_wins_over_secrets(monkeypatch):
+    """A container sets the env var explicitly; it must not be overridden
+    by a secrets file that happens to be baked into the image."""
+    set_demo(monkeypatch, "false")
+    monkeypatch.setattr(runtime_mode, "_secret", lambda name: "true")
+    assert runtime_mode.is_demo_mode() is False
+
+
+def test_absent_secrets_still_default_to_local(monkeypatch):
+    monkeypatch.setattr(runtime_mode, "_secret", lambda name: None)
+    assert runtime_mode.is_demo_mode() is False
+
+
+def test_real_secret_helper_survives_absent_secrets_file():
+    """The real _secret(), not a stub: with no secrets.toml on disk it must
+    return None rather than propagating Streamlit's exception."""
+    assert runtime_mode._secret(runtime_mode.DEMO_ENV_VAR) is None
+
+
+@pytest.mark.parametrize("value", ["true", "1", "yes", "on"])
+def test_secrets_truthy_values(monkeypatch, value):
+    monkeypatch.setattr(runtime_mode, "_secret", lambda name: value)
+    assert runtime_mode.is_demo_mode() is True
+
+
+def test_demo_mode_from_secrets_routes_to_session_db(monkeypatch):
+    """The whole point: a secrets-enabled demo must get an isolated
+    per-session database, not the real tracker.db."""
+    monkeypatch.setattr(runtime_mode, "_secret", lambda name: "true")
+    assert runtime_mode.db_path() != config.TRACKER_DB_PATH
+    assert runtime_mode.SESSION_DB_PREFIX in runtime_mode.db_path()

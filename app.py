@@ -20,6 +20,7 @@ import discovered_accounts
 import exposure_store
 import config
 import runtime_mode
+import usage_metrics
 import ny_sealing
 import profile_state
 import presentation_mode
@@ -29,6 +30,13 @@ from components import dashboard as dashboard_component
 from components import master as master_component
 
 database.init_db(runtime_mode.db_path())
+
+# One session counter per browser session rather than per script run --
+# Streamlit reruns the whole file on every widget interaction, so counting
+# unguarded here would measure clicks, not people.
+if not st.session_state.get("_usage_session_counted"):
+    usage_metrics.record_event(config.USAGE_METRICS_DB_PATH, usage_metrics.SESSION_STARTED)
+    st.session_state._usage_session_counted = True
 
 
 # ---------------------------------------------------------------------------
@@ -618,6 +626,7 @@ if runtime_mode.is_demo_mode():
         })
         st.session_state.record_url = demo_data.DEMO_RECORD_URL
         st.session_state.demo_loaded = True
+        usage_metrics.record_event(config.USAGE_METRICS_DB_PATH, usage_metrics.DEMO_SEEDED)
         st.toast(
             f"Loaded {seeded['requests']} requests and {seeded['accounts']} accounts.",
             icon="⚡",
@@ -632,6 +641,7 @@ _audit_requests = get_all_requests(runtime_mode.db_path())
 if _audit_requests:
     if st.sidebar.button("📦 Download Complete Audit Trail (.ZIP)", width="stretch",
                          help="Bundle demands, deadlines and verification logs into one archive."):
+        usage_metrics.record_event(config.USAGE_METRICS_DB_PATH, usage_metrics.AUDIT_PACKAGE_BUILT)
         _routing_profile = profile_state.get_profile(st.session_state)
         st.session_state.audit_zip = audit_packager.build_audit_package(
             requests=_audit_requests,
@@ -669,6 +679,14 @@ if _audit_requests:
             mime="application/zip",
             width="stretch",
         )
+
+# Feature-usage figures for the showcase. Collapsed by default so it isn't
+# competing for attention during a walkthrough. These are event counts only
+# -- see utils/usage_metrics.py for why nothing a user typed can appear here.
+with st.sidebar.expander("📈 Usage", expanded=False):
+    for _label, _count in usage_metrics.summary(config.USAGE_METRICS_DB_PATH):
+        st.markdown(f"{_label} &nbsp;**{_count}**", unsafe_allow_html=True)
+    st.caption("Feature counts only — no entered values are recorded.")
 
 st.markdown(
     """

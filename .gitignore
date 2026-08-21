@@ -14,6 +14,12 @@ __pycache__/
 # git history.
 data/tracker.db
 
+# Feature-usage counters. Not secret -- the schema is event names and
+# integers, and utils/usage_metrics.py rejects anything else -- but it is
+# per-deployment runtime state. Committing it would ship whatever numbers
+# happened to be on the developer's machine as though they were real usage.
+data/usage_metrics.db
+
 # WhatsMyName site list, downloaded on first scan and cached locally. Not
 # committed: it's CC BY-SA 4.0 (c) Micah Hoffman, so keeping it out of git
 # avoids redistributing ShareAlike'd content, and the list churns upstream

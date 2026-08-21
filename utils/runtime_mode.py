@@ -11,7 +11,14 @@ live scan would send the audience's handles out from one shared IP that
 gets rate-limited for the trouble.
 
 The switch is the NON_PURSUIT_DEMO_MODE environment variable, read once
-per call so a test can flip it without reimporting anything.
+per call so a test can flip it without reimporting anything. Streamlit
+Community Cloud has no environment-variable UI -- it offers a secrets
+editor and nothing else -- so the same key is also honoured from
+st.secrets. Without that fallback a Community Cloud deployment would find
+no env var, conclude it was a local install, and hand every visitor the
+same persistent tracker.db while running live scans from the shared
+platform IP. The failure is silent, which is why the fallback is here
+rather than in a deployment checklist.
 
 Why per-session temp files rather than the ":memory:" the obvious
 implementation reaches for: every store module opens a fresh
@@ -81,13 +88,36 @@ def reset_runtime_override() -> None:
     if hasattr(st, "session_state") and _OVERRIDE_STATE_KEY in st.session_state:
         del st.session_state[_OVERRIDE_STATE_KEY]
 
+def _secret(name: str) -> str | None:
+    """Read a key from st.secrets, or None if there are no secrets at all.
+
+    Accessing st.secrets with no secrets.toml present raises rather than
+    returning empty, and importing streamlit is not free, so both are kept
+    behind this helper and failure is treated as "not set".
+    """
+    try:
+        import streamlit as st
+
+        value = st.secrets.get(name)
+    except Exception:
+        return None
+    return None if value is None else str(value)
+
+
 def is_demo_mode() -> bool:
     """True when this process is serving the hosted demo build.
+
+    Env var first so a container or a test can set it without a secrets
+    file; st.secrets second so Streamlit Community Cloud, which offers no
+    other way to configure a deployment, can turn the demo build on.
 
     Intentionally not affected by the runtime override -- see the note
     above set_runtime_override().
     """
-    return os.getenv(DEMO_ENV_VAR, "false").strip().lower() in _TRUTHY
+    raw = os.getenv(DEMO_ENV_VAR)
+    if raw is None:
+        raw = _secret(DEMO_ENV_VAR)
+    return (raw or "false").strip().lower() in _TRUTHY
 
 def is_cloud_deployment() -> bool:
     """Check if running in cloud/restricted mode, respecting manual override."""

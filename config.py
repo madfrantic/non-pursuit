@@ -144,6 +144,17 @@ FOOTPRINT_TIMEOUT_SECONDS = 15
 # an exception message, so it's gitignored the same way data/tracker.db is.
 LOG_PATH = "logs/non_pursuit.log"
 
+# Feature-usage counters (utils/usage_metrics.py). Deliberately NOT the
+# per-session tracker database: a count is only meaningful in aggregate, and
+# a per-session store would reset "letters generated" to 1 for every visitor.
+# Sharing this file across sessions is safe because it holds event names and
+# integers -- the module's allowlist makes it structurally incapable of
+# holding a typed value. Gitignored by its own rule (data/ is not ignored
+# wholesale -- data/brokers.csv is tracked), but for a different reason than
+# tracker.db: not to keep PII out of history, just to stop one machine's
+# counters shipping as if they were real usage.
+USAGE_METRICS_DB_PATH = "data/usage_metrics.db"
+
 # How old a broker's own last_verified date can get before Results flags the
 # row as due for a human to re-confirm its compliance email / opt-out URL /
 # notes still work. Much longer than RECHECK_STALE_DAYS (30 days) above --
