@@ -1,5 +1,5 @@
 """
-Data Broker Deletion Letters — its own module (extracted from app.py) so
+Data Broker Deletion — its own module (extracted from app.py) so
 its logic lives in exactly one place regardless of what else calls it.
 
 Reads the identity info entered on the Dashboard rather than collecting
@@ -70,7 +70,7 @@ def _render_jurisdiction_picker(profile):
 
 
 def render(brokers_df):
-    st.title("✉️ Data broker deletion letters")
+    st.title("✉️ Data Broker Deletion")
     st.caption("Generate formal deletion demand letters for data brokers under California Civil Code § 1798.105.")
 
     profile = profile_state.get_profile(st.session_state)

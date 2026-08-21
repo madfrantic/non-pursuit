@@ -25,7 +25,7 @@ if ROOT not in sys.path:
 
 import config  # noqa: E402  -- needs ROOT on the path first
 
-MASTER = "🔍 Master Intelligence Dossier"
+MASTER = "🔍 Intelligence Dossier"
 
 
 def _run(monkeypatch, tmp_path, demo=False):

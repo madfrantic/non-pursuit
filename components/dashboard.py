@@ -22,8 +22,8 @@ import profile_state
 from tracker import get_all_requests
 from validators import is_valid_email
 
-_MODE_RESULTS = "🔍 Master Intelligence Dossier"
-_MODE_LETTERS = "✉️ Data Broker Deletion Letters"
+_MODE_RESULTS = "🔍 Intelligence Dossier"
+_MODE_LETTERS = "✉️ Data Broker Deletion"
 _MODE_TRACKER = "📬 Opt-Out Tracker"
 
 # Widget key -> target_profile column, for the fields backed by SQLite.
@@ -46,6 +46,17 @@ _FIELD_DEFAULTS = {
     "pf_state": "NY",
 }
 
+# The 50 states, two-letter USPS codes. Deliberately no DC, PR or other
+# territories: this backs the State selectbox, and a value outside this
+# tuple is what would break it (see _normalize_state below).
+_US_STATES = (
+    "AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "FL", "GA",
+    "HI", "ID", "IL", "IN", "IA", "KS", "KY", "LA", "ME", "MD",
+    "MA", "MI", "MN", "MS", "MO", "MT", "NE", "NV", "NH", "NJ",
+    "NM", "NY", "NC", "ND", "OH", "OK", "OR", "PA", "RI", "SC",
+    "SD", "TN", "TX", "UT", "VT", "VA", "WA", "WV", "WI", "WY",
+)
+
 
 def _switch_to(mode_value):
     # Can't set nav_mode directly here -- the sidebar radio (key="nav_mode")
@@ -53,6 +64,21 @@ def _switch_to(mode_value):
     # before the radio is created on the next run.
     st.session_state.pending_nav = mode_value
     st.rerun()
+
+
+def _normalize_state():
+    """Keep pf_state inside _US_STATES before the selectbox reads it.
+
+    A selectbox bound with key="pf_state" raises if session state holds a
+    value that isn't one of its options. The seeded default is "NY" and
+    presentation mode also writes "NY", so this is belt-and-braces -- but
+    the old widget was a free-text input, so any session carried over from
+    before this change (or any future writer) could hold "New York", "" or
+    a lowercase code, and that would be a hard render error rather than a
+    graceful fallback.
+    """
+    current = str(st.session_state.get("pf_state", "") or "").strip().upper()
+    st.session_state.pf_state = current if current in _US_STATES else "NY"
 
 
 def _seed_profile_fields():
@@ -123,9 +149,10 @@ def _save_profile():
 
 
 def render():
-    st.title("👤 Profile & Setup")
+    st.subheader("👤 Profile & Setup")
     st.caption("Enter your personal and contact details. All data is encrypted at rest (Fernet) and stored locally.")
     _seed_profile_fields()
+    _normalize_state()
 
     with st.container(border=True):
         with st.form("profile_form"):
@@ -135,7 +162,7 @@ def render():
 
             contact_cols = st.columns(2)
             contact_cols[0].text_input("✉️ Email", key="pf_email", placeholder="you@example.com")
-            contact_cols[1].text_input("📱 Phone", key="pf_phone", placeholder="Optional")
+            contact_cols[1].text_input("📱 Phone", key="pf_phone", placeholder="555-010-9999")
 
             target_cols = st.columns(2)
             target_cols[0].text_input("👤 Username / handle", key="pf_handle", placeholder="Optional")
@@ -145,7 +172,7 @@ def render():
 
             location_cols = st.columns(2)
             location_cols[0].text_input("🏙️ City", key="pf_city", placeholder="New York")
-            location_cols[1].text_input("📍 State", key="pf_state", placeholder="NY")
+            location_cols[1].selectbox("📍 State", options=_US_STATES, key="pf_state")
 
             with st.expander("🕰️ Previous names & addresses"):
                 extra_cols = st.columns(2)
@@ -161,7 +188,12 @@ def render():
                 st.text_area("📞 Shared Landlines / Phone Numbers", key="pf_shared_phones", placeholder="One per line", height=90)
                 st.text_area("🛍️ Shared Store Card / Loyalty Vectors (Optional)", key="pf_shared_loyalty", placeholder="Retailer or loyalty-account relationship", height=90)
 
-            submitted = st.form_submit_button("🚀 Save & Execute Master Recon", type="primary", use_container_width=True)
+            # key= stamps st-key-save_master_recon on the container, which is
+            # the hook the blackout rule in app.py's stylesheet selects on.
+            submitted = st.form_submit_button(
+                "🚀 Save & Execute Master Recon", type="primary",
+                use_container_width=True, key="save_master_recon",
+            )
             if submitted:
                 if not st.session_state.pf_first_name or not st.session_state.pf_last_name:
                     st.error("First and last name are required.")
@@ -206,7 +238,7 @@ def render():
         st.session_state.master_face_image_bytes = None
 
     if st.button(
-        "🔍 Open Master Intelligence Dossier", type="primary", width="stretch",
+        "🔍 Open Intelligence Dossier", type="primary", width="stretch",
         disabled=not st.session_state.user_name,
     ):
         _switch_to(_MODE_RESULTS)

@@ -598,7 +598,7 @@ request leaves this server."""
 
     if found_count > 0:
         st.success(
-            f"You're listed on {found_count} broker(s). Head to **Data Broker Deletion Letters** "
+            f"You're listed on {found_count} broker(s). Head to **Data Broker Deletion** "
             "in the sidebar — it already knows which brokers you confirmed here."
         )
     else:

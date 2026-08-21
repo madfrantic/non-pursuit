@@ -4,7 +4,7 @@ Configuration for Non-Pursuit.
 
 # Application settings
 APP_TITLE = "Non-Pursuit"
-APP_TAGLINE = "They chase. You enforce."
+APP_TAGLINE = "THE SOVEREIGN ENGINE"
 APP_ICON = "🛡️"  # fallback emoji, kept for any spot the real logo doesn't fit
 APP_LOGO_PATH = "assets/logo_shield.png"
 APP_WORDMARK_PATH = "assets/logo_wordmark.png"
@@ -78,12 +78,12 @@ STATE_RESOURCES = {
             "registration + one-shot-deletion bill (S9088 / A9642) was introduced in "
             "January 2026 and is still in committee, not law. If it's a criminal "
             "record you're trying to seal instead, this app's own NY Expungement "
-            "Guidance covers real CPL 160.50 / 160.55 / 160.59 pathways — a "
+            "page covers real CPL 160.50 / 160.55 / 160.59 pathways — a "
             "different kind of resource than DROP, but the most relevant "
             "state-specific starting point available today."
         ),
-        "action_label": "Go to NY Expungement Guidance",
-        "action_mode": "⚖️ NY Expungement Guidance",
+        "action_label": "Go to NY Expungement",
+        "action_mode": "⚖️ NY Expungement",
     },
 }
 

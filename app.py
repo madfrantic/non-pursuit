@@ -1,4 +1,3 @@
-import base64
 import sys
 import os
 from datetime import datetime
@@ -47,17 +46,6 @@ st.set_page_config(
 )
 
 
-def _image_data_uri(path):
-    """Raw <img> tags inside a custom-HTML block can't reference a local
-    file path directly -- base64-embedding it is the standard way to get a
-    local image into markdown(unsafe_allow_html=True). Deliberately not
-    cached: caching was keyed only on the path string, so editing these
-    small logo files in place (as happened while iterating on crop/sizing)
-    kept serving stale base64 data forever, with no visible sign why."""
-    with open(path, "rb") as f:
-        encoded = base64.b64encode(f.read()).decode("ascii")
-    return f"data:image/png;base64,{encoded}"
-
 # ---------------------------------------------------------------------------
 # SIU design system
 # ---------------------------------------------------------------------------
@@ -67,17 +55,26 @@ def _image_data_uri(path):
 # non-interactive overlays pinned with pointer-events: none. Nothing can
 # intercept a click or move a widget's hit box.
 #
-# The scale is deliberate rather than blanket. The previous revision set
-# every leaf <span> in the app to 2.5rem to catch emoji, which also hit
-# inline code, status badges and caption fragments -- that was the source
-# of the mismatched sizing. Emoji are now scaled in em, scoped to the
-# contexts where they are decorative (headers, metric labels, sidebar
-# nav), so they track their own header instead of fighting it.
+# TYPOGRAPHY RESET: every custom font-size / font-family / text-transform /
+# line-height override has been stripped from this block, so all text falls
+# back to Streamlit's default scale and font stack. Colour, tracking, weight
+# and the cinematic layer are untouched.
+#
+# The two emoji rules below are the deliberate exception. Headers across the
+# app carry decorative emoji (st.title("⚖️ ..."), st.markdown("##### 🧬 ...")),
+# and they are scaled in *em* so they track whatever size the rebuild gives
+# their header instead of fighting it. Keep them relative -- an earlier
+# revision used a blanket 2.5rem on every leaf <span>, which also hit inline
+# code, status badges and caption fragments.
 st.markdown(
     """
     <style>
         /* ---------------------------------------------------------------
            PALETTE + TYPE STACKS  (mirrors demo_pitch.html)
+
+           The two type stacks are intentionally kept but currently
+           unreferenced -- nothing in this block sets font-family any more.
+           They are the starting point for the rebuilt scale.
            --------------------------------------------------------------- */
         :root {
             --siu-navy:     #0B1325;
@@ -94,115 +91,97 @@ st.markdown(
         }
 
         /* ---------------------------------------------------------------
-           1. BASE TYPOGRAPHY -- serif carries the authority, Courier
-              carries the metadata. Sizes are absolute so Streamlit's own
-              defaults cannot bleed back through.
+           1. BASE TEXT -- colour only. Sizing and family are Streamlit's.
            --------------------------------------------------------------- */
         html, body, [data-testid="stAppViewContainer"] {
-            font-family: var(--siu-serif);
             background-color: var(--siu-navy);
         }
         [data-testid="stMain"] [data-testid="stMarkdownContainer"] p,
         [data-testid="stMain"] [data-testid="stMarkdownContainer"] li {
-            font-family: var(--siu-serif);
-            font-size: 1.12rem;
-            line-height: 1.62;
             color: var(--siu-bone);
         }
 
-        /* Headline scale. The old rule flattened h1/h2/h3 to a single
-           1.1rem, which is why the hierarchy read as noise. */
+        /* Headline colour + the brass glow on h1. No scale of our own. */
         [data-testid="stMain"] h1 {
-            font-family: var(--siu-serif) !important;
-            font-size: 2.9rem !important;
             font-weight: 700;
-            line-height: 1.08;
             letter-spacing: 0.01em;
             color: var(--siu-brass);
             text-shadow: 0 2px 0 rgba(0, 0, 0, 0.45), 0 0 48px rgba(212, 175, 55, 0.18);
             margin-bottom: 0.2em;
         }
         [data-testid="stMain"] h2 {
-            font-family: var(--siu-serif) !important;
-            font-size: 2.1rem !important;
             font-weight: 700;
-            line-height: 1.14;
             color: var(--siu-bone);
         }
         [data-testid="stMain"] h3 {
-            font-family: var(--siu-serif) !important;
-            font-size: 1.6rem !important;
             font-weight: 700;
-            line-height: 1.2;
             color: var(--siu-bone);
         }
-        /* Sub-headers are metadata: Courier, tracked out, brass. */
+        /* Sub-headers stay metadata-brass, tracked out. */
         [data-testid="stMain"] h4,
         [data-testid="stMain"] h5,
         [data-testid="stMain"] h6 {
-            font-family: var(--siu-mono) !important;
-            font-size: 1.02rem !important;
             font-weight: 700;
             letter-spacing: 0.10em;
-            text-transform: uppercase;
             color: var(--siu-brass);
         }
-        /* Emoji ride their header rather than overriding it. */
+        /* KEPT (see module comment): emoji ride their header. Relative
+           units, so these survive whatever scale replaces the old one. */
         [data-testid="stMain"] :is(h1, h2, h3) span { font-size: 1.05em !important; }
         [data-testid="stMain"] :is(h4, h5, h6) span { font-size: 1.35em !important; }
 
         [data-testid="stMain"] [data-testid="stCaptionContainer"],
         [data-testid="stMain"] [data-testid="stCaptionContainer"] p {
-            font-family: var(--siu-mono) !important;
-            font-size: 0.86rem !important;
             letter-spacing: 0.03em;
             color: var(--siu-bone-dim) !important;
         }
-        /* Inline code and telemetry readouts: mono at reading size, not
-           the 2.5rem the blanket span rule used to give them. */
+        /* Inline code and telemetry readouts: brass on a brass wash. The
+           browser's own monospace default carries the family. */
         [data-testid="stMain"] code,
         [data-testid="stMain"] kbd,
         [data-testid="stMain"] pre {
-            font-family: var(--siu-mono) !important;
-            font-size: 0.92rem !important;
             color: var(--siu-brass);
             background: rgba(212, 175, 55, 0.07);
         }
 
         /* ---------------------------------------------------------------
-           2. SIDEBAR -- the terminal beside the case file. All Courier.
+           2. SIDEBAR -- the terminal beside the case file.
+
+           The blanket `[data-testid="stSidebar"] *:not([data-testid=
+           "stIconMaterial"])` Courier rule is gone with the rest of the
+           font-family overrides. Its :not() was load-bearing and must come
+           back with it: Streamlit draws its icons as Material Symbols
+           ligatures -- <span>keyboard_double_arrow_left</span> rendered by
+           the icon font -- so forcing a font onto every descendant prints
+           the ligature names as literal text. Nothing sets a family here
+           now, so the icons render correctly on their own.
            --------------------------------------------------------------- */
         [data-testid="stSidebar"] {
             background: linear-gradient(180deg, var(--siu-slate) 0%, var(--siu-navy) 100%);
             border-right: 1px solid rgba(212, 175, 55, 0.28);
         }
-        /* The :not() is load-bearing. Streamlit draws its icons as
-           Material Symbols ligatures -- <span>keyboard_double_arrow_left</span>
-           rendered by the icon font -- so forcing Courier onto every
-           descendant printed the ligature names as literal text. */
-        [data-testid="stSidebar"] *:not([data-testid="stIconMaterial"]) {
-            font-family: var(--siu-mono) !important;
-        }
         [data-testid="stSidebar"] :is(h1, h2, h3, h4, h5, h6) {
-            font-size: 0.92rem !important;
             font-weight: 700;
             letter-spacing: 0.20em;
-            text-transform: uppercase;
             color: var(--siu-brass) !important;
         }
-        /* Streamlit sizes sidebar body copy with its own !important rule,
-           so this one needs the same weight to land. Courier is wide:
-           tracking stays tight here to keep nav labels on one line. */
         [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p {
-            font-size: 0.9rem !important;
             letter-spacing: 0.02em;
-            line-height: 1.65;
             color: var(--siu-bone);
         }
-        [data-testid="stSidebar"] [data-testid="stCaptionContainer"] p {
-            font-size: 0.78rem !important;
-            color: var(--siu-bone-dim) !important;
+        /* No colour override on sidebar captions. The only one is the
+           SYSTEM RUNTIME CONTROL label, which is deliberately left on
+           Streamlit's own caption colour so it sits at the same baseline
+           as the widget labels around it rather than being painted. */
+        /* The nav radio's own label sits flush with the sidebar padding,
+           while every option below it is indented by its radio button --
+           measured at 30px vs 54px, so the TOOLS emoji hung 24px to the
+           left of the option emoji it should line up with. Scoped by the
+           widget key (key="nav_mode") so no other widget label shifts. */
+        [data-testid="stSidebar"] .st-key-nav_mode [data-testid="stWidgetLabel"] {
+            padding-left: 24px;
         }
+        /* KEPT (see module comment): sidebar nav emoji, scaled in em. */
         [data-testid="stSidebar"] :is(h1, h2, h3, h4, h5, h6) span,
         [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p span {
             font-size: 1.25em !important;
@@ -210,33 +189,23 @@ st.markdown(
         }
 
         /* ---------------------------------------------------------------
-           3. METRICS -- serif numerals, Courier label, tabular figures so
-              the digits stop shifting on rerun.
+           3. METRICS -- brass numerals, tabular figures so the digits stop
+              shifting on rerun. Default Streamlit sizing.
            --------------------------------------------------------------- */
         [data-testid="stMetricValue"] {
-            font-family: var(--siu-serif) !important;
-            font-size: 3rem !important;
             font-weight: 700;
             color: var(--siu-brass);
             font-variant-numeric: tabular-nums;
-            line-height: 1.05;
         }
         [data-testid="stMetricLabel"],
         [data-testid="stMetricLabel"] p {
-            font-family: var(--siu-mono) !important;
-            font-size: 0.86rem !important;
             font-weight: 700;
             letter-spacing: 0.16em;
-            text-transform: uppercase;
             color: var(--siu-bone-dim) !important;
         }
         [data-testid="stMetricDelta"] {
-            font-family: var(--siu-mono) !important;
-            font-size: 0.88rem !important;
             letter-spacing: 0.08em;
         }
-        [data-testid="stMetricLabel"] span { font-size: 1.5em !important; }
-        [data-testid="stMetricValue"] span { font-size: 0.9em !important; }
 
         /* ---------------------------------------------------------------
            4. CARDS -- brass edge and the deck's glow.
@@ -289,33 +258,21 @@ st.markdown(
         }
 
         /* ---------------------------------------------------------------
-           5. CONTROLS -- brass, Courier, tracked out like console keys.
+           5. CONTROLS -- brass, tracked out like console keys.
            --------------------------------------------------------------- */
-        /* st.link_button renders an <a>, not a <button> -- without it in
-           this list the "Run" links beside the dork queries fall back to
-           serif while every real button is Courier. */
+        /* st.link_button renders an <a>, not a <button> -- it needs to be
+           in this list for the "Run" links beside the dork queries to pick
+           up the same treatment as every real button. */
         [data-testid="stMain"] button,
         [data-testid="stMain"] [data-testid="stLinkButton"] a,
         [data-testid="stSidebar"] button,
         [data-testid="stSidebar"] [data-testid="stLinkButton"] a {
-            font-family: var(--siu-mono) !important;
             font-weight: 700;
             letter-spacing: 0.12em;
-            text-transform: uppercase;
             border-radius: 3px;
         }
-        [data-testid="stMain"] button p,
-        [data-testid="stMain"] [data-testid="stLinkButton"] a p { font-size: 0.92rem !important; }
-        [data-testid="stMain"] input,
-        [data-testid="stMain"] textarea,
-        [data-testid="stMain"] [data-baseweb="select"] {
-            font-family: var(--siu-mono) !important;
-        }
         [data-testid="stMain"] label p {
-            font-family: var(--siu-mono) !important;
-            font-size: 0.86rem !important;
             letter-spacing: 0.10em;
-            text-transform: uppercase;
             color: var(--siu-bone-dim) !important;
         }
         [data-testid="stMain"] hr {
@@ -329,9 +286,7 @@ st.markdown(
            dork_sweep_global / dork_run_<broker> so this selector can
            reach them without touching every link button in the app. */
         [class*="st-key-dork_"] a {
-            font-family: var(--siu-mono) !important;
             letter-spacing: 0.14em;
-            text-transform: uppercase;
             color: var(--siu-brass) !important;
             background: rgba(212, 175, 55, 0.06) !important;
             border: 1px solid rgba(212, 175, 55, 0.45) !important;
@@ -340,10 +295,8 @@ st.markdown(
         }
         /* Streamlit puts the label in a <p> inside the anchor, and the
            markdown-paragraph rule above is more specific than an anchor
-           selector -- without this the commands render serif in bone. */
+           selector -- without this the commands render in bone, not brass. */
         [class*="st-key-dork_"] a p {
-            font-family: var(--siu-mono) !important;
-            font-size: 0.92rem !important;
             font-weight: 700;
             letter-spacing: inherit;
             color: inherit !important;
@@ -361,6 +314,27 @@ st.markdown(
             letter-spacing: 0.22em;
             padding: 0.6rem 1rem;
             box-shadow: 0 0 10px rgba(212, 175, 55, 0.2);
+        }
+
+        /* Blackout submit -- the Profile form's "Save & Execute Master
+           Recon". type="primary" paints it brass-on-navy by default; this
+           inverts it to brass-on-black. Scoped by the widget key
+           (key="save_master_recon") so no other primary button changes.
+           The nested selectors cover the label too: Streamlit renders it
+           in a <p> inside the <button>, which would otherwise keep the
+           primary button's own text colour. */
+        .st-key-save_master_recon button,
+        .st-key-save_master_recon button:hover,
+        .st-key-save_master_recon button:focus,
+        .st-key-save_master_recon button:active {
+            background-color: #000000 !important;
+            color: #D4AF37 !important;
+            border: 1px solid #D4AF37 !important;
+        }
+        .st-key-save_master_recon button p,
+        .st-key-save_master_recon button div,
+        .st-key-save_master_recon button span {
+            color: #D4AF37 !important;
         }
 
         /* ---------------------------------------------------------------
@@ -416,9 +390,6 @@ st.markdown(
         .siu-banner {
             animation: pulse-glow 5.5s ease-in-out infinite;
         }
-        .siu-banner .siu-kicker,
-        .siu-banner .siu-file { font-family: var(--siu-mono) !important; }
-        .siu-banner .siu-title { font-family: var(--siu-serif) !important; }
 
         .siu-section {
             margin: 34px 0 14px;
@@ -426,15 +397,10 @@ st.markdown(
             padding-top: 14px;
         }
         .siu-section .siu-section-no {
-            font-family: var(--siu-mono);
-            font-size: 0.72rem;
             letter-spacing: 0.28em;
-            text-transform: uppercase;
             color: var(--siu-brass);
         }
         .siu-section .siu-section-name {
-            font-family: var(--siu-serif);
-            font-size: 1.7rem;
             font-weight: 700;
             color: var(--siu-bone);
             letter-spacing: 0.01em;
@@ -546,29 +512,23 @@ brokers_df = load_brokers()
 if st.session_state.get("pending_nav") is not None:
     st.session_state.nav_mode = st.session_state.pop("pending_nav")
 
+# The wordmark image that used to sit above this was removed; the tagline
+# is now the sidebar's masthead and takes the space it freed.
 st.sidebar.markdown(
-    f"""
-    <div style="width: 100%; display: flex; align-items: center; justify-content: center; margin-bottom: 0.25rem;">
-        <img src="{_image_data_uri(config.APP_WORDMARK_PATH)}" style="height: 48px;" alt="{config.APP_TITLE}">
-    </div>
-    """,
-    unsafe_allow_html=True,
-)
-st.sidebar.markdown(
-    f'<p style="width: 100%; text-align: center; text-transform: uppercase; '
-    f'font-weight: 700; font-size: 0.8rem; color: {config.TEXT_COLOR}; margin: 0;">'
-    f'{config.APP_TAGLINE}</p>',
+    f'<h2 style="font-size: 2em; font-weight: bold; margin-bottom: 0; '
+    f'margin-top: 0; text-align: center; text-transform: uppercase;">'
+    f'{config.APP_TAGLINE}</h2>',
     unsafe_allow_html=True,
 )
 st.sidebar.markdown("---")
 
 mode = st.sidebar.radio(
-    "Select tool",
+    "**🛠️ TOOLS**",
     [
         "🛡️ Profile",
-        "🔍 Master Intelligence Dossier",
-        "✉️ Data Broker Deletion Letters",
-        "⚖️ NY Expungement Guidance",
+        "🔍 Intelligence Dossier",
+        "✉️ Data Broker Deletion",
+        "⚖️ NY Expungement",
         "🚫 Google De-Indexing",
         "📬 Opt-Out Tracker",
     ],
@@ -579,7 +539,7 @@ mode = st.sidebar.radio(
 # Presentation mode toggle for safe live demos
 st.sidebar.markdown("---")
 pres_enabled = st.sidebar.toggle(
-    "🎭 Presentation Mode",
+    "🎭 PRESENTATION MODE",
     value=st.session_state.presentation_mode,
     help="Enable mock data and instant scan results for live demos",
 )
@@ -600,11 +560,19 @@ else:
 st.sidebar.markdown("---")
 
 with st.sidebar:
-    st.markdown("### ⚙️ SYSTEM RUNTIME CONTROL")
-    
+    # Inline <p> rather than st.caption: the caption element carries
+    # Streamlit's own muted colour, which is what kept this off stark
+    # white. font-size is pinned to 0.875rem (14px) so it still sits on
+    # exactly the same baseline as the PRESENTATION MODE toggle label.
+    st.markdown(
+        '<p style="font-size: 0.875rem; font-weight: 700; color: #FFFFFF; '
+        'margin: 0 0 0.25rem 0;">⚙️ SYSTEM RUNTIME CONTROL</p>',
+        unsafe_allow_html=True,
+    )
+
     # Map friendly names to internal modes
     mode_options = {
-        "Auto-Detect": "auto",
+        "AUTO-DETECT": "auto",
         "🖥️ Desktop (Full Power)": "desktop",
         "☁️ Online / Cloud (Passive)": "cloud"
     }
@@ -614,9 +582,11 @@ with st.sidebar:
     index = list(mode_options.values()).index(current_override) if current_override in mode_options.values() else 0
 
     selected_label = st.radio(
-        "Select Operating Environment:",
+        # Kept as the accessible name for screen readers, hidden visually.
+        "SELECT OPERATING ENVIRONMENT:",
         options=list(mode_options.keys()),
         index=index,
+        label_visibility="collapsed",
         help="Manually switch between unrestricted desktop execution (700+ sites) and passive online scanning to demonstrate environment handling."
     )
     
@@ -685,7 +655,7 @@ if _audit_requests:
                 if st.session_state.get("osint_findings_appended") else None
             ),
             # Per-broker template_type recorded when the user reviewed and
-            # confirmed that broker's letter in Data Broker Deletion Letters --
+            # confirmed that broker's letter in Data Broker Deletion --
             # keeps the archived letter byte-for-byte identical to what was
             # actually reviewed, rather than re-routed fresh at export time.
             broker_template_types=st.session_state.get("broker_jurisdiction", {}),
@@ -737,13 +707,13 @@ st.markdown(
 if mode == "🛡️ Profile":
     dashboard_component.render()
 
-elif mode == "🔍 Master Intelligence Dossier":
+elif mode == "🔍 Intelligence Dossier":
     master_component.render(brokers_df)
 
-elif mode == "✉️ Data Broker Deletion Letters":
+elif mode == "✉️ Data Broker Deletion":
     letters_component.render(brokers_df)
 
-elif mode == "⚖️ NY Expungement Guidance":
+elif mode == "⚖️ NY Expungement":
     st.title("⚖️ New York record-sealing intake")
     st.caption("Compare your paperwork against a transparent screening calculation. This is general information, not a legal determination.")
 
@@ -934,7 +904,7 @@ elif mode == "📬 Opt-Out Tracker":
     )
 
     if not requests_list:
-        st.info("Nothing logged yet. Generate a letter under **Data Broker Deletion Letters** and click \"Log this request\", or add one manually above.")
+        st.info("Nothing logged yet. Generate a letter under **Data Broker Deletion** and click \"Log this request\", or add one manually above.")
     else:
         overdue_count = sum(1 for r in requests_list if r["is_overdue"])
         c1, c2, c3 = st.columns(3)
