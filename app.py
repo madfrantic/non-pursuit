@@ -28,6 +28,7 @@ import presentation_mode
 from components import letters as letters_component
 from components import dashboard as dashboard_component
 from components import master as master_component
+from components import campaign_timeline as campaign_timeline_component
 
 database.init_db(runtime_mode.db_path())
 
@@ -102,11 +103,15 @@ st.markdown(
            1. BASE TEXT -- colour only. Sizing and family are Streamlit's.
            --------------------------------------------------------------- */
         html, body, [data-testid="stAppViewContainer"] {
-            background-color: var(--siu-navy);
+            background: radial-gradient(120% 90% at 50% 0%, #16233C 0%, var(--siu-navy) 45%, #060A14 100%), var(--siu-navy);
+            font-family: var(--siu-serif);
         }
         [data-testid="stMain"] [data-testid="stMarkdownContainer"] p,
         [data-testid="stMain"] [data-testid="stMarkdownContainer"] li {
             color: var(--siu-bone);
+            font-family: var(--siu-serif);
+            font-size: 1.15rem;
+            line-height: 1.62;
         }
 
         /* Headline colour + the brass glow on h1. No scale of our own. */
@@ -116,14 +121,17 @@ st.markdown(
             color: var(--siu-brass);
             text-shadow: 0 2px 0 rgba(0, 0, 0, 0.45), 0 0 48px rgba(212, 175, 55, 0.18);
             margin-bottom: 0.2em;
+            font-family: var(--siu-serif);
         }
         [data-testid="stMain"] h2 {
             font-weight: 700;
             color: var(--siu-bone);
+            font-family: var(--siu-serif);
         }
         [data-testid="stMain"] h3 {
             font-weight: 700;
             color: var(--siu-bone);
+            font-family: var(--siu-serif);
         }
         /* Sub-headers stay metadata-brass, tracked out. */
         [data-testid="stMain"] h4,
@@ -132,6 +140,8 @@ st.markdown(
             font-weight: 700;
             letter-spacing: 0.10em;
             color: var(--siu-brass);
+            font-family: var(--siu-mono);
+            text-transform: uppercase;
         }
         /* KEPT (see module comment): emoji ride their header. Relative
            units, so these survive whatever scale replaces the old one. */
@@ -142,6 +152,8 @@ st.markdown(
         [data-testid="stMain"] [data-testid="stCaptionContainer"] p {
             letter-spacing: 0.03em;
             color: var(--siu-bone-dim) !important;
+            font-family: var(--siu-mono);
+            text-transform: uppercase;
         }
         /* Inline code and telemetry readouts: brass on a brass wash. The
            browser's own monospace default carries the family. */
@@ -150,6 +162,7 @@ st.markdown(
         [data-testid="stMain"] pre {
             color: var(--siu-brass);
             background: rgba(212, 175, 55, 0.07);
+            font-family: var(--siu-mono);
         }
 
         /* ---------------------------------------------------------------
@@ -164,6 +177,9 @@ st.markdown(
            the ligature names as literal text. Nothing sets a family here
            now, so the icons render correctly on their own.
            --------------------------------------------------------------- */
+        [data-testid="stSidebar"] *:not(i):not([class*="icon"]):not([data-testid="stIconMaterial"]):not([data-testid="stIconMaterial"] *) {
+            font-family: var(--siu-mono);
+        }
         [data-testid="stSidebar"] {
             background: linear-gradient(180deg, var(--siu-slate) 0%, var(--siu-navy) 100%);
             border-right: 1px solid rgba(212, 175, 55, 0.28);
@@ -204,15 +220,20 @@ st.markdown(
             font-weight: 700;
             color: var(--siu-brass);
             font-variant-numeric: tabular-nums;
+            font-family: var(--siu-serif);
         }
         [data-testid="stMetricLabel"],
         [data-testid="stMetricLabel"] p {
             font-weight: 700;
             letter-spacing: 0.16em;
             color: var(--siu-bone-dim) !important;
+            font-family: var(--siu-mono);
+            text-transform: uppercase;
+            font-size: 0.78rem;
         }
         [data-testid="stMetricDelta"] {
             letter-spacing: 0.08em;
+            font-family: var(--siu-mono);
         }
 
         /* ---------------------------------------------------------------
@@ -278,13 +299,59 @@ st.markdown(
             font-weight: 700;
             letter-spacing: 0.12em;
             border-radius: 3px;
+            font-family: var(--siu-mono);
+            text-transform: uppercase;
         }
         [data-testid="stMain"] label p {
             letter-spacing: 0.10em;
             color: var(--siu-bone-dim) !important;
+            font-family: var(--siu-mono);
+            font-size: 0.82rem;
+            text-transform: uppercase;
+        }
+        /* Animated brass rule matching the pitch deck's draw effect. */
+        @keyframes draw {
+            from { transform: scaleX(0); }
+            to   { transform: scaleX(1); }
         }
         [data-testid="stMain"] hr {
             border-color: rgba(212, 175, 55, 0.30);
+            border-top: 1px solid var(--siu-brass);
+            background: linear-gradient(90deg, var(--siu-brass) 0%, rgba(212,175,55,0.16) 55%, transparent 100%);
+            height: 1px;
+            transform-origin: left center;
+            animation: draw 0.9s cubic-bezier(.22,.61,.36,1) both;
+        }
+
+        /* ---------------------------------------------------------------
+           5b. FORM INPUTS -- dark fills, brass borders, mono text.
+           --------------------------------------------------------------- */
+        [data-testid="stMain"] input,
+        [data-testid="stMain"] textarea,
+        [data-testid="stMain"] [data-baseweb="select"],
+        [data-testid="stMain"] [data-baseweb="input"] {
+            background-color: rgba(21, 34, 56, 0.92) !important;
+            border-color: rgba(212, 175, 55, 0.28) !important;
+            color: var(--siu-bone) !important;
+            font-family: var(--siu-mono);
+        }
+        [data-testid="stMain"] input:focus,
+        [data-testid="stMain"] textarea:focus {
+            border-color: var(--siu-brass) !important;
+            box-shadow: 0 0 8px rgba(212, 175, 55, 0.2);
+        }
+        [data-testid="stMain"] input::placeholder,
+        [data-testid="stMain"] textarea::placeholder {
+            color: var(--siu-bone-dim) !important;
+            font-family: var(--siu-mono);
+            letter-spacing: 0.06em;
+        }
+        /* Form containers: brass border treatment matching cards. */
+        [data-testid="stMain"] [data-testid="stForm"] {
+            border: 1px solid rgba(212, 175, 55, 0.35);
+            border-radius: 4px;
+            padding: 24px;
+            background: linear-gradient(180deg, rgba(21, 34, 56, 0.92) 0%, rgba(11, 19, 37, 0.92) 100%);
         }
 
         /* Terminal command buttons -- the Google dork vectors in the
@@ -357,11 +424,12 @@ st.markdown(
             inset: 0;
             pointer-events: none;
             z-index: 9999;
-            opacity: 0.05;
+            opacity: 0.38;
+            mix-blend-mode: multiply;
             background: repeating-linear-gradient(
                 180deg,
-                rgba(0, 0, 0, 0.95) 0px,
-                rgba(0, 0, 0, 0.95) 1px,
+                rgba(0, 0, 0, 0.36) 0px,
+                rgba(0, 0, 0, 0.36) 1px,
                 transparent 1px,
                 transparent 3px
             );
@@ -376,6 +444,38 @@ st.markdown(
             z-index: 9998;
             background: radial-gradient(120% 100% at 50% 40%,
                         transparent 45%, rgba(0, 0, 0, 0.32) 82%, rgba(0, 0, 0, 0.62) 100%);
+        }
+        
+        #siu-rollbar {
+            position: fixed;
+            inset: 0;
+            pointer-events: none;
+            z-index: 9997;
+            background: linear-gradient(180deg, transparent, rgba(212,175,55,0.055) 45%, rgba(255,255,255,0.045) 50%, rgba(212,175,55,0.055) 55%, transparent);
+            height: 34%;
+            animation: roll 9s linear infinite;
+            will-change: transform;
+        }
+        @keyframes roll {
+            from { transform: translate3d(0, -140%, 0); }
+            to   { transform: translate3d(0, 420%, 0); }
+        }
+        
+        #siu-grain {
+            position: fixed;
+            inset: 0;
+            pointer-events: none;
+            z-index: 9996;
+            opacity: 0.15;
+            mix-blend-mode: overlay;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='220' height='220' filter='url(%23n)' opacity='.55'/%3E%3C/svg%3E");
+            animation: jitter 0.5s steps(3) infinite;
+        }
+        @keyframes jitter {
+            0%   { transform: translate3d(0, 0, 0); }
+            33%  { transform: translate3d(-1.5%, 1%, 0); }
+            66%  { transform: translate3d(1%, -1.5%, 0); }
+            100% { transform: translate3d(0, 0, 0); }
         }
         /* Flicker rides the single main content wrapper rather than every
            text node: one compositor layer instead of hundreds, and the
@@ -407,12 +507,64 @@ st.markdown(
         .siu-section .siu-section-no {
             letter-spacing: 0.28em;
             color: var(--siu-brass);
+            font-family: var(--siu-mono);
+            font-size: 0.78rem;
+            text-transform: uppercase;
         }
         .siu-section .siu-section-name {
             font-weight: 700;
             color: var(--siu-bone);
             letter-spacing: 0.01em;
             margin-top: 2px;
+            font-family: var(--siu-serif);
+            font-size: 1.4rem;
+        }
+
+        /* ---------------------------------------------------------------
+           7b. EXPANDERS -- mono header, brass accents.
+           --------------------------------------------------------------- */
+        [data-testid="stExpander"] {
+            border: 1px solid rgba(212, 175, 55, 0.20);
+            border-radius: 4px;
+            background: linear-gradient(180deg, rgba(21, 34, 56, 0.7) 0%, rgba(11, 19, 37, 0.7) 100%);
+        }
+        [data-testid="stExpander"] summary {
+            font-family: var(--siu-mono);
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            color: var(--siu-bone) !important;
+        }
+        [data-testid="stExpander"] summary:hover {
+            color: var(--siu-brass) !important;
+        }
+        [data-testid="stExpander"] svg {
+            color: var(--siu-brass);
+        }
+
+        /* ---------------------------------------------------------------
+           7c. ALERT BOXES -- navy-tinted backgrounds.
+           --------------------------------------------------------------- */
+        [data-testid="stAlert"] {
+            background: rgba(21, 34, 56, 0.85) !important;
+            border-radius: 4px;
+            font-family: var(--siu-serif);
+        }
+        [data-testid="stAlert"] p {
+            color: var(--siu-bone) !important;
+        }
+
+        /* ---------------------------------------------------------------
+           7d. DATAFRAMES / TABLES -- brass header, dark rows.
+           --------------------------------------------------------------- */
+        [data-testid="stMain"] [data-testid="stDataFrame"] {
+            border: 1px solid rgba(212, 175, 55, 0.20);
+        }
+        [data-testid="stMain"] th {
+            background: rgba(212, 175, 55, 0.12) !important;
+            color: var(--siu-brass) !important;
+            font-family: var(--siu-mono);
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
         }
 
         /* ---------------------------------------------------------------
@@ -429,11 +581,16 @@ st.markdown(
             [data-testid="stMain"] [data-testid="stLayoutWrapper"] > [data-testid="stVerticalBlock"],
             [data-testid="stMain"] [data-testid="stVerticalBlockBorderWrapper"],
             [data-testid="stVerticalBlock"] > div:has(> [data-testid="stMetric"]),
-            .siu-banner {
+            .siu-banner,
+            #siu-rollbar,
+            #siu-grain,
+            [data-testid="stMain"] hr {
                 animation: none !important;
             }
         }
     </style>
+    <div id="siu-rollbar"></div>
+    <div id="siu-grain"></div>
     """,
     unsafe_allow_html=True,
 )
@@ -539,6 +696,7 @@ mode = st.sidebar.radio(
         "⚖️ NY Expungement",
         "🚫 Google De-Indexing",
         "📬 Opt-Out Tracker",
+        "🗓️ Deletion Timeline",
     ],
     key="nav_mode",
     label_visibility="visible",
@@ -691,27 +849,27 @@ with st.sidebar.expander("📈 Usage", expanded=False):
 st.markdown(
     """
     <div class="siu-banner" style="
-        background: linear-gradient(180deg, #1A2744 0%, #111B33 100%);
-        border: 2px solid #D4AF37;
+        background: linear-gradient(180deg, var(--siu-slate, #152238) 0%, var(--siu-navy, #0B1325) 100%);
+        border: 2px solid var(--siu-brass, #D4AF37);
         border-radius: 4px;
-        padding: 16px 20px;
+        padding: 18px 24px;
         margin-bottom: 24px;
         display: flex;
         justify-content: space-between;
         align-items: center;
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+        box-shadow: 0 0 60px rgba(212, 175, 55, 0.12), 0 4px 12px rgba(0, 0, 0, 0.5);
     ">
         <div>
-            <div class="siu-kicker" style="font-family: 'Courier New', Courier, monospace; color: #D4AF37; font-size: 0.75rem; letter-spacing: 2.5px; text-transform: uppercase;">
+            <div class="siu-kicker" style="font-family: var(--siu-mono, 'Courier New', monospace); color: var(--siu-brass, #D4AF37); font-size: 0.72rem; letter-spacing: 0.34em; text-transform: uppercase; text-shadow: 0 0 14px rgba(212,175,55,0.32);">
                 NEW YORK POLICE DEPT // SPECIAL INVESTIGATIONS UNIT
             </div>
-            <div class="siu-title" style="font-family: 'Georgia', serif; color: #F8FAFC; font-size: 1.75rem; font-weight: 700; letter-spacing: 1px; margin-top: 2px;">
+            <div class="siu-title" style="font-family: var(--siu-serif, Georgia, serif); color: var(--siu-bone, #E8E2D4); font-size: 1.75rem; font-weight: 700; letter-spacing: 0.015em; margin-top: 4px; text-shadow: 0 2px 0 rgba(0,0,0,0.5), 0 0 48px rgba(212,175,55,0.18);">
                 🛡️ NON-PURSUIT : DIVISION OF OSINT
             </div>
         </div>
-        <div class="siu-file" style="text-align: right; font-family: 'Courier New', Courier, monospace; border-left: 2px solid #314A81; padding-left: 18px;">
-            <div style="color: #D4AF37; font-weight: 700; font-size: 0.85rem;">FILE: CONFIDENTIAL</div>
-            <div style="color: #F8FAFC; font-size: 0.7rem; letter-spacing: 1px;">DIRECTIVE § 1798 / NY-SHIELD</div>
+        <div class="siu-file" style="text-align: right; font-family: var(--siu-mono, 'Courier New', monospace); border-left: 2px solid rgba(212,175,55,0.28); padding-left: 18px;">
+            <div style="color: var(--siu-brass, #D4AF37); font-weight: 700; font-size: 0.82rem; letter-spacing: 0.24em; text-shadow: 0 0 14px rgba(212,175,55,0.32);">FILE: CONFIDENTIAL</div>
+            <div style="color: var(--siu-bone-dim, #9AA3B2); font-size: 0.7rem; letter-spacing: 0.2em; text-transform: uppercase;">DIRECTIVE § 1798 / NY-SHIELD</div>
         </div>
     </div>
     """,
@@ -1005,6 +1163,10 @@ elif mode == "📬 Opt-Out Tracker":
             if cols[5].button("", icon="🗑️", key=f"delete_{r['id']}", help=f"Delete {r['broker_name']}"):
                 delete_request(runtime_mode.db_path(), r["id"])
                 st.rerun()
+
+
+elif mode == "🗓️ Deletion Timeline":
+    campaign_timeline_component.render()
 
 
 # ---------------------------------------------------------------------------

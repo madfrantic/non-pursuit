@@ -3,9 +3,9 @@
 # pitch deck read as one artifact. Change these and the CSS custom
 # properties in app.py together -- they are two halves of one theme.
 primaryColor = "#D4AF37"             # Detective Brass / Badge Gold
-backgroundColor = "#0B1325"          # Midnight Cruiser Navy
+backgroundColor = "#060A14"          # ink
 secondaryBackgroundColor = "#152238" # Precinct Slate
-textColor = "#F8FAFC"                # Crisp Paper White
+textColor = "#E8E2D4"                # bone
 font = "serif"                       # Authoritative Case-File Typography
 
 [server]

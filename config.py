@@ -15,12 +15,12 @@ APP_LAYOUT = "wide"
 # small amount of custom CSS we still ship (for the link-button styling
 # Streamlit doesn't cover natively), so update both files together.
 THEME_BASE = "dark"
-PRIMARY_COLOR = "#2563eb"
-BACKGROUND_COLOR = "#0b1120"
-SECONDARY_BACKGROUND_COLOR = "#16213a"
-TEXT_COLOR = "#e2e8f0"
-SUCCESS_COLOR = "#22c55e"
-ERROR_COLOR = "#ef4444"
+PRIMARY_COLOR = "#D4AF37"
+BACKGROUND_COLOR = "#060A14"
+SECONDARY_BACKGROUND_COLOR = "#152238"
+TEXT_COLOR = "#E8E2D4"
+SUCCESS_COLOR = "#D4AF37"
+ERROR_COLOR = "#FF3B30"
 
 # File paths
 BROKERS_CSV_PATH = "data/brokers.csv"
@@ -28,8 +28,16 @@ TEMPLATE_PATH = "utils/statutory_letters/ccpa_deletion_demand.j2"
 TRACKER_DB_PATH = "data/tracker.db"
 
 # Statutory response window CCPA gives a business/broker to act on a deletion
-# request. Used by the tracker to flag a request as overdue.
+# request. Used by the tracker to flag a request as overdue, and by the
+# campaign ledger to set each demand's statutory deadline.
 CCPA_RESPONSE_WINDOW_DAYS = 45
+
+# Delisting campaign ledger (broker_campaigns table). Points at the same
+# local SQLite file as the tracker, exposure checks and profile -- these are
+# tables, not separate databases. Named separately so call sites read
+# clearly, but routed through runtime_mode.db_path() in the app so demo mode
+# still gets its per-session temp file instead of a shared one.
+CAMPAIGNS_DB_PATH = "data/tracker.db"
 
 # Demo profile data (fake — safe to load for a walkthrough)
 DEMO_PROFILE = {
