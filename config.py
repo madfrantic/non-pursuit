@@ -151,7 +151,7 @@ FOOTPRINT_TIMEOUT_SECONDS = 15
 # JSON/CSV/PDF exports and never written to by anything but the user's own
 # actions). The log can still end up holding identifying details caught in
 # an exception message, so it's gitignored the same way data/tracker.db is.
-LOG_PATH = ".venv/logs/non_pursuit.log"
+LOG_PATH = "logs/non_pursuit.log"
 
 # Feature-usage counters (utils/usage_metrics.py). Deliberately NOT the
 # per-session tracker database: a count is only meaningful in aggregate, and
