@@ -14,3 +14,12 @@ fpdf2>=2.7,<3.0  # PDF export of the OSINT dossier (pdf_generator.generate_osint
 requests>=2.31,<3.0  # used by Results' IP/ISP lookup (calls ipinfo.io), and to fetch the WhatsMyName site list
 aiohttp>=3.9,<4.0  # concurrent account-existence checks in utils/footprint_scanner.py
 pytest>=8.0,<9.0  # dev dependency: run with `pytest tests/`
+fastapi>=0.115,<1.0  # remediation API surface (api/)
+uvicorn>=0.30,<1.0  # ASGI server for the remediation API
+pydantic[email]>=2.7,<3.0  # request/response models in api/models.py. The [email] extra is
+                           # required, not optional: Subject.email is an EmailStr, so without
+                           # email-validator the module raises ImportError at import time.
+dnspython>=2.6,<3.0  # optional: MX/NS/TXT lookups in utils/infra_checker.py. Without it the
+                     # DNS check degrades to A/AAAA via the stdlib resolver and flags itself partial.
+python-whois>=0.9,<1.0  # optional: WHOIS fallback for the ccTLDs RDAP does not serve. RDAP is
+                        # tried first and needs no dependency; this only covers the gaps.

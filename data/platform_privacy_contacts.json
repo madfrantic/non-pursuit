@@ -1,0 +1,13 @@
+{
+  "schema_version": "1.0",
+  "generated": "2026-08-22",
+  "source_note": "Human-verified privacy contacts, keyed by the platform name exactly as it appears in the unified site registry. This file ships EMPTY of platform entries on purpose. utils/privacy_contacts.py resolves anything absent here at runtime from the platform's own security.txt (RFC 9116) or privacy policy, and reports 'unresolved' when neither exists. A guessed address (privacy@<domain>) would be indistinguishable in the output from a verified one, so a user would start a statutory clock against a mailbox that may never have existed -- which is why guessing is not one of the resolution steps.",
+  "entry_schema": {
+    "emails": ["list of verified addresses, strongest first"],
+    "urls": ["list of verified rights-request or opt-out URLs"],
+    "home": "platform homepage",
+    "verified": "true only when a human confirmed the contact works",
+    "verified_on": "YYYY-MM, same convention as data/brokers.csv"
+  },
+  "platforms": {}
+}

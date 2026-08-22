@@ -36,3 +36,11 @@ logs/
 /LOGOBRAND.png
 /LOGOBRAND_2.png
 *.png
+
+# Unified site registry, merged at runtime from WhatsMyName (CC BY-SA 4.0),
+# Sherlock (MIT) and Maigret (MIT). Not committed: the WMN half is ShareAlike,
+# and the merged artefact would carry that obligation into this repo the same
+# way data/wmn-data.json would. Rebuild it with site_registry.ensure_registry().
+data/sites-unified.json
+data/sherlock-data.json
+data/maigret-data.json
