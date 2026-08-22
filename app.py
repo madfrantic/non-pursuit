@@ -27,6 +27,7 @@ import presentation_mode
 
 import broker_ledger
 import agent_scheduler
+import debug_view
 
 from components import vault_gate
 from components import letters as letters_component
@@ -57,6 +58,11 @@ st.set_page_config(
     # responsive breakpoint collapse it into a slide-out drawer on phones.
     initial_sidebar_state="auto",
 )
+
+
+# Diagnostic view. No-op unless NON_PURSUIT_DEBUG_UNSTYLE is set; injected
+# before the gate so the gate itself is inspectable too.
+debug_view.inject()
 
 
 # ---------------------------------------------------------------------------

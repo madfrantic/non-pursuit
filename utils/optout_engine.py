@@ -81,8 +81,9 @@ class ExampleBrokerAutomator(BaseBrokerAutomator):
             # Step 1: Agree to terms if there's a popup
             try:
                 page.get_by_text("I Agree").click(timeout=3000)
-            except Exception:
-                pass # No popup found, proceed
+            except (TimeoutError, AttributeError):
+                # No popup found or element not located; proceed to form fill
+                pass
                 
             # Step 2: Fill out the opt-out form
             _log.info("Filling out target data...")
@@ -256,8 +257,16 @@ def difficulty_for(broker_name: str) -> BrokerDifficulty:
 # The one place a broker id maps to an automator. Callers validate against
 # this rather than guessing, so an unsupported broker fails loudly instead of
 # being quietly run through the example mock.
+#
+# NOTE: As of 2026-08-22, only the example automator is implemented.
+# Real brokers (spokeo, truepeoplesearch, etc.) marked CAPTCHA-gated have no
+# automator and return an error. New broker implementations should be added here
+# as execute_optout() is wired to require an entry before attempting any automation.
 BROKER_AUTOMATORS = {
     "example": ExampleBrokerAutomator,
+    # Add real broker automators here as they are implemented:
+    # "whitepages": WhitePagesAutomator,
+    # "fastpeoplesearch": FastPeopleSearchAutomator,
 }
 
 USER_AGENT = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -277,16 +286,23 @@ def execute_optout(broker_id: str, target_data: dict, proxy_email: str,
     `dry_run` is not a convenience flag: see the module docstring. No automator
     submits yet, so a caller asking for a real submission is asking for
     something this module cannot honestly do.
+
+    Returns a dict with 'status' key: 'success', 'error', or 'simulated_success'.
     """
-    automator_class = BROKER_AUTOMATORS.get(broker_id)
-    if automator_class is None:
-        return {"status": "error",
-                "error": f"Unknown broker ID: {broker_id}",
-                "supported": list(supported_brokers())}
     if not dry_run:
         return {"status": "error",
-                "error": "Live submission is not implemented; no automator has "
-                         "a human-signed-off submit path."}
+                "error": "Live submission is not implemented; see CLAUDE.md Human "
+                         "Validation Zone. No automator will submit unattended."}
+    
+    if not broker_id:
+        return {"status": "error", "error": "broker_id is required"}
+    
+    automator_class = BROKER_AUTOMATORS.get(broker_id.lower())
+    if automator_class is None:
+        return {"status": "error",
+                "error": f"Automator not implemented for broker: {broker_id}. "
+                         f"Supported: {', '.join(supported_brokers()) or 'none yet'}",
+                "supported": list(supported_brokers())}
 
     try:
         from playwright.sync_api import sync_playwright

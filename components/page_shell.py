@@ -22,6 +22,7 @@ for _path in (ROOT_DIR, UTILS_DIR):
         sys.path.insert(0, _path)
 
 import config  # noqa: E402
+import debug_view  # noqa: E402
 import runtime_mode  # noqa: E402
 from components import vault_gate  # noqa: E402
 
@@ -38,6 +39,7 @@ def setup(title: str, icon: str = "🛡️") -> str:
         layout=config.APP_LAYOUT,
         initial_sidebar_state="auto",
     )
+    debug_view.inject()
     if not vault_gate.require_unlock():
         st.stop()
     vault_gate.render_lock_control()

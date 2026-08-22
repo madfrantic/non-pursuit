@@ -331,12 +331,19 @@ class VerificationEngine:
         self.review_db_path = review_db_path
 
     def verify_removal(self, removal_id: int) -> Optional[bool]:
-        """True when the record is gone, False when still listed.
+        """Check whether a removal actually succeeded.
 
-        None means the check could not be made (broker blocked it, no search
-        URL, network failure) -- which is deliberately not False. Recording
-        "still listed" for a broker that simply refused to answer would
-        manufacture evidence of non-compliance out of a failed request.
+        Returns True/False/None:
+          - True: profile is no longer at the broker (removal confirmed)
+          - False: profile is still there (removal failed)
+          - None: the check could not be completed (probe error, or broker
+                  is CAPTCHA-gated and requires manual inspection)
+
+        IMPORTANT: Callers MUST handle the None return value. None means the
+        verification could not be made, so the removal status should not change.
+        Returning False would manufacture false evidence of compliance.
+        See CLAUDE.md: a verification that could not be completed is recorded
+        as None, not False, to avoid manufacturing evidence of non-compliance.
         """
         removal = broker_ledger.get_removal(self.db_path, removal_id)
         if not removal:
@@ -387,14 +394,20 @@ class VerificationEngine:
         return None
 
     def verify_all_submitted(self, profile_id: Optional[int] = None) -> list[dict]:
-        """Verify every removal that has been submitted but not confirmed."""
+        """Verify every removal that has been submitted but not confirmed.
+        
+        Returns a list of dicts with keys: removal_id, broker_name, verified.
+        Note: verified can be True (confirmed), False (failed), or None (unchecked).
+        None does NOT mean failure -- it means the verification could not be made.
+        """
         removals = broker_ledger.get_removals(
             self.db_path, profile_id=profile_id, status=RemovalStatus.SUBMITTED.value)
         results = []
         for removal in removals:
+            result_status = self.verify_removal(removal["id"])
             results.append({
                 "removal_id": removal["id"],
                 "broker_name": removal.get("broker_name", ""),
-                "verified": self.verify_removal(removal["id"]),
+                "verified": result_status,  # True/False/None (None = unchecked)
             })
         return results
