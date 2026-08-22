@@ -89,6 +89,22 @@ def test_account_filter_drops_sites_whose_regex_rejects_the_handle():
 
 # --- the page does not rebuild the registry ---------------------------
 
+REGISTRY_PATH = os.path.join(ROOT, "data", "sites-unified.json")
+
+
+@pytest.fixture
+def requires_registry():
+    """Skip when the merged registry has not been built.
+
+    data/sites-unified.json is gitignored and built at runtime, so a clean
+    checkout (and CI) legitimately has no file. Without this the page stops
+    at its build-instructions empty state and every widget these tests drive
+    is simply absent, which surfaces as a KeyError rather than a skip.
+    """
+    if not os.path.exists(REGISTRY_PATH):
+        pytest.skip("merged registry not built in this checkout")
+
+
 @pytest.fixture
 def unlocked(monkeypatch, tmp_path):
     db_path = str(tmp_path / "tracker.db")
@@ -118,7 +134,7 @@ def test_opening_the_page_never_rebuilds_the_registry(unlocked, monkeypatch):
     assert not app.exception
 
 
-def test_page_reports_the_full_registry_in_scope(unlocked, monkeypatch):
+def test_page_reports_the_full_registry_in_scope(unlocked, requires_registry, monkeypatch):
     """End-to-end: the scope line is the operator's only signal for how wide
     the sweep is about to go, so it has to report the whole registry now that
     NSFW is in by default.
@@ -127,11 +143,7 @@ def test_page_reports_the_full_registry_in_scope(unlocked, monkeypatch):
     gitignored and built at runtime, so a clean checkout legitimately has no
     file to render and the page shows its build-instructions empty state.
     """
-    registry_path = os.path.join(ROOT, "data", "sites-unified.json")
-    if not os.path.exists(registry_path):
-        pytest.skip("merged registry not built in this checkout")
-
-    with open(registry_path, encoding="utf-8") as handle:
+    with open(REGISTRY_PATH, encoding="utf-8") as handle:
         registry = json.load(handle)
     expected = len(site_registry.select_sites(registry))
 
@@ -168,7 +180,7 @@ def _row(platform, verdict, **extra):
     return row
 
 
-def test_run_sweep_calls_the_async_engine_and_renders_a_dataframe(unlocked, monkeypatch):
+def test_run_sweep_calls_the_async_engine_and_renders_a_dataframe(unlocked, requires_registry, monkeypatch):
     """The whole point of the page. scan_sync() is stubbed, so the suite
     never opens a socket -- what is under test is the wiring: the handle and
     the selected site list reach the engine, and the rows it returns come
@@ -211,7 +223,7 @@ def test_run_sweep_calls_the_async_engine_and_renders_a_dataframe(unlocked, monk
     assert shown == {"Reddit", "Twitter"}
 
 
-def test_sweep_results_can_be_widened_past_the_hits(unlocked, monkeypatch):
+def test_sweep_results_can_be_widened_past_the_hits(unlocked, requires_registry, monkeypatch):
     """'Hits only' is a default, not a ceiling -- an ERROR or SKIPPED row is
     the one a user needs to see to know a site went untested."""
     import recon_engine
