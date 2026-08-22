@@ -20,6 +20,11 @@ data/tracker.db
 # happened to be on the developer's machine as though they were real usage.
 data/usage_metrics.db
 
+# Outstanding human-review tasks (utils/review_queue.py). Its `reason` column
+# is a closed vocabulary, but `note` is free text and a user will paste a name
+# into one eventually, so this is ignored on the same grounds as tracker.db.
+data/review_queue.db
+
 # WhatsMyName site list, downloaded on first scan and cached locally. Not
 # committed: it's CC BY-SA 4.0 (c) Micah Hoffman, so keeping it out of git
 # avoids redistributing ShareAlike'd content, and the list churns upstream
@@ -44,3 +49,11 @@ logs/
 data/sites-unified.json
 data/sherlock-data.json
 data/maigret-data.json
+
+# Evidence screenshots — broker pages rendered with the user's PII on them.
+data/evidence/
+
+# Master-password vault material (per-install salt + password verifier).
+data/vault.salt
+data/vault.verifier
+data/*.bak.*

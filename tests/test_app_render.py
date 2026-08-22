@@ -24,21 +24,40 @@ if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
 import config  # noqa: E402  -- needs ROOT on the path first
+import database  # noqa: E402
 
 MASTER = "🔍 Intelligence Dossier"
 
+TEST_PASSWORD = "render-test-password"
 
-def _run(monkeypatch, tmp_path, demo=False):
+
+def _run(monkeypatch, tmp_path, demo=False, unlock=True):
     """Run the app against a throwaway database.
 
     Local mode resolves every store to config.TRACKER_DB_PATH, so that is
     the one knob that has to be redirected -- without it these tests
     would read and write the user's real campaign data. Demo mode routes
     to its own temp file already.
+
+    `unlock` drives the vault gate added with the chino merge. Local mode
+    now renders a master-password form and stops before any other widget,
+    so a test that wants to reach the nav has to get past it first --
+    which is what the gate is for. The salt and verifier land beside the
+    temp database, so each test gets its own vault and none of them touch
+    the real one. Pass unlock=False to exercise the gate itself.
     """
     monkeypatch.setattr(config, "TRACKER_DB_PATH", str(tmp_path / "tracker.db"))
     monkeypatch.setenv("NON_PURSUIT_DEMO_MODE", "1" if demo else "0")
+
+    database.lock_vault()
+    if unlock and not demo:
+        database.unlock_vault(TEST_PASSWORD, str(tmp_path / "tracker.db"))
+
     app = AppTest.from_file(APP_PATH, default_timeout=60)
+    if unlock and not demo:
+        # The gate also checks a session flag, so that a locked vault in a
+        # second tab re-prompts rather than riding on the first tab's unlock.
+        app.session_state["_vault_unlocked"] = True
     app.run()
     return app
 
@@ -177,3 +196,33 @@ def test_opt_out_tracker_still_renders_alongside_the_new_ledger(monkeypatch, tmp
     assert not app.exception
     app.radio(key="nav_mode").set_value(TIMELINE).run()
     assert not app.exception
+
+
+# ---------------------------------------------------------------------------
+# Vault gate (added with the chino merge)
+# ---------------------------------------------------------------------------
+
+
+def test_vault_gate_blocks_the_app_when_locked(monkeypatch, tmp_path):
+    """A locked local session must not render the app behind the form.
+
+    This is the test that makes the gate worth having: without it, the
+    other tests in this file could be made to pass by deleting the gate.
+    """
+    app = _run(monkeypatch, tmp_path, demo=False, unlock=False)
+    assert not app.exception
+    with pytest.raises(KeyError):
+        app.radio(key="nav_mode")
+
+
+def test_vault_gate_lets_an_unlocked_session_through(monkeypatch, tmp_path):
+    app = _run(monkeypatch, tmp_path, demo=False, unlock=True)
+    assert not app.exception
+    assert app.radio(key="nav_mode") is not None
+
+
+def test_demo_mode_is_exempt_from_the_gate(monkeypatch, tmp_path):
+    """The hosted demo build has no real PII to protect -- see vault_gate."""
+    app = _run(monkeypatch, tmp_path, demo=True, unlock=False)
+    assert not app.exception
+    assert app.radio(key="nav_mode") is not None

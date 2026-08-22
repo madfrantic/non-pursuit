@@ -25,6 +25,10 @@ import ny_sealing
 import profile_state
 import presentation_mode
 
+import broker_ledger
+import agent_scheduler
+
+from components import vault_gate
 from components import letters as letters_component
 from components import dashboard as dashboard_component
 from components import master as master_component
@@ -53,6 +57,48 @@ st.set_page_config(
     # responsive breakpoint collapse it into a slide-out drawer on phones.
     initial_sidebar_state="auto",
 )
+
+
+# ---------------------------------------------------------------------------
+# Vault gate
+# ---------------------------------------------------------------------------
+# Nothing below this renders until the ledger is unlocked. Placed directly
+# after set_page_config (which must be the first Streamlit call) and before
+# any widget, so a locked session cannot paint identity data behind the
+# form. Demo mode is exempt -- see components/vault_gate.py.
+if not vault_gate.require_unlock():
+    st.stop()
+
+
+# ---------------------------------------------------------------------------
+# Autonomous background engine
+# ---------------------------------------------------------------------------
+# @st.cache_resource is what makes this exactly one scheduler. Streamlit
+# reruns this whole script on every widget interaction and once per browser
+# session, so an unguarded BackgroundScheduler() here would start a new
+# daemon thread pool on every click. cache_resource caches on the function,
+# not the session: the body runs once per server process and every later
+# rerun -- and every other browser tab -- gets that same object back.
+#
+# The returned scheduler is deliberately never read into session state and
+# never touched from a callback. Its jobs run on their own threads and talk
+# only to broker_ledger and review_queue, both of which open a connection
+# per call; see utils/agent_scheduler.py for why that matters.
+#
+# Demo mode gets no scheduler. Its database is a per-session temp file that
+# disappears, and the hosted demo build (render.yaml) runs on a shared IP
+# where unattended broker sweeps are exactly what must not happen.
+@st.cache_resource(show_spinner=False)
+def _start_agent_engine(db_path: str, review_db_path: str):
+    return agent_scheduler.build_scheduler(db_path, review_db_path)
+
+
+if not runtime_mode.is_demo_mode() and config.AGENT_SCHEDULER_ENABLED:
+    broker_ledger.init_ledger(runtime_mode.db_path())
+    agent_engine = _start_agent_engine(
+        runtime_mode.db_path(), config.REVIEW_QUEUE_DB_PATH)
+else:
+    agent_engine = None
 
 
 # ---------------------------------------------------------------------------
@@ -211,6 +257,8 @@ with st.sidebar:
         st.warning("☁️ **Online runtime active**\n- Passive recon only (Gravatar, PGP, certificate transparency)\n- Heavy sweeps disabled to protect the shared IP")
     else:
         st.success("🖥️ **Desktop runtime active**\n- Full active sweeps enabled\n- Unrestricted 700+ site checks")
+
+vault_gate.render_lock_control()
 
 if runtime_mode.is_demo_mode():
     if st.sidebar.button("⚡ Load presentation demo", width="stretch", type="primary",

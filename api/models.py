@@ -161,3 +161,22 @@ class RemediateRequest(BaseModel):
                 "nothing to remediate: send at least one exposure, "
                 "or set probe_brokers to search data brokers")
         return self
+
+
+class OptOutRequest(BaseModel):
+    """One broker opt-out form to fill.
+
+    Bounded like every other model here: this is the identity the automator
+    types into a third party's form, so the edge is where its size is fixed.
+    `email` is where the broker's confirmation link lands -- use a masked
+    address, not the subject's real inbox.
+    """
+
+    first_name: str = Field(..., min_length=1, max_length=100)
+    last_name: str = Field(..., min_length=1, max_length=100)
+    city: str = Field("", max_length=100)
+    state: str = Field("", max_length=64)
+    age: str = Field("", max_length=3, description="Some brokers disambiguate on age.")
+    email: EmailStr
+    broker: str = Field(..., min_length=1, max_length=64,
+                        description="Broker id; must be one the engine has an automator for.")

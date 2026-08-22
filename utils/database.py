@@ -16,12 +16,15 @@ import json
 import os
 import sys
 import base64
+import hashlib
 import logging
 import argparse
 from contextlib import contextmanager
 from pathlib import Path
 
 from cryptography.fernet import Fernet
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from dotenv import load_dotenv
 
 _log = logging.getLogger("database")
@@ -73,6 +76,167 @@ def _load_or_generate_key() -> bytes:
 
 
 
+# ---------------------------------------------------------------------------
+# Master-password vault (ported from chino/GLM.py VaultManager)
+# ---------------------------------------------------------------------------
+# chino derived its Fernet key from a master password with PBKDF2-HMAC-SHA256
+# at 480k iterations. That part is kept. What is NOT kept is its salt:
+#
+#     salt = b'data_broker_agent_v1'   # chino/GLM.py:272
+#
+# A salt hardcoded into the source is the same salt on every install, which
+# is what a salt exists to prevent -- it lets one precomputed table attack
+# every user of the program at once. chino's own comment conceded the point
+# ("In production, use random salt stored separately"). So this generates 16
+# random bytes per install and stores them beside the database.
+#
+# The salt is not a secret and does not need protecting; it needs to be
+# unique and durable. Losing it means the password no longer derives the
+# same key, so it lives in data/ with the database it belongs to.
+#
+# WHY THE VAULT IS AN OVERLAY AND NOT A REPLACEMENT
+#
+# There is already real data in data/tracker.db encrypted under the .env
+# ENCRYPTION_KEY. Switching the cipher outright would render every one of
+# those rows unreadable -- silently, because _decrypt() returns the input
+# unchanged when it cannot decrypt. So:
+#
+#   * reads try the vault cipher first, then fall back to the legacy .env
+#     key, so pre-vault rows keep opening;
+#   * writes use the vault when one is unlocked, and the legacy key when
+#     none is, so the headless surfaces (api/, main.py, pytest) that never
+#     prompt for a password behave exactly as they did before.
+#
+# The Streamlit app requires the password at launch (pages/ gate). That is a
+# UI-layer decision and deliberately not enforced here: making import-time
+# password entry mandatory in this module would break the FastAPI service,
+# which has no console to prompt at.
+
+SALT_FILENAME = "vault.salt"
+KDF_ITERATIONS = 480_000
+SALT_LENGTH = 16
+
+
+def _salt_path(db_path: str | None = None) -> Path:
+    base = Path(db_path).parent if db_path else Path("data")
+    return base / SALT_FILENAME
+
+
+def load_or_create_salt(db_path: str | None = None) -> bytes:
+    """The per-install PBKDF2 salt, generated on first use."""
+    path = _salt_path(db_path)
+    if path.exists():
+        salt = path.read_bytes()
+        if len(salt) == SALT_LENGTH:
+            return salt
+        _log.warning("Vault salt at %s is malformed; regenerating.", path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    salt = os.urandom(SALT_LENGTH)
+    path.write_bytes(salt)
+    try:
+        path.chmod(0o600)
+    except OSError:
+        pass
+    return salt
+
+
+def derive_vault_key(master_password: str, salt: bytes) -> bytes:
+    """PBKDF2-HMAC-SHA256 -> a urlsafe-base64 Fernet key."""
+    if not master_password:
+        raise ValueError("Master password must not be empty.")
+    kdf = PBKDF2HMAC(
+        algorithm=hashes.SHA256(),
+        length=32,
+        salt=salt,
+        iterations=KDF_ITERATIONS,
+    )
+    return base64.urlsafe_b64encode(kdf.derive(master_password.encode()))
+
+
+class VaultManager:
+    """Encrypts and decrypts PII under a key derived from a master password."""
+
+    def __init__(self, master_password: str, db_path: str | None = None):
+        self._salt = load_or_create_salt(db_path)
+        self._fernet = Fernet(derive_vault_key(master_password, self._salt))
+
+    def encrypt(self, plaintext: str) -> str:
+        if not plaintext:
+            return ""
+        return self._fernet.encrypt(str(plaintext).encode()).decode()
+
+    def decrypt(self, ciphertext: str) -> str:
+        if not ciphertext:
+            return ""
+        return self._fernet.decrypt(
+            ciphertext.encode() if isinstance(ciphertext, str) else ciphertext
+        ).decode()
+
+    @staticmethod
+    def hash_for_verification(value: str) -> str:
+        """One-way hash, for checking a value matches without storing it."""
+        return hashlib.sha256(value.encode()).hexdigest()
+
+
+# The unlocked vault for this process, or None. Set by unlock_vault().
+_VAULT: "VaultManager | None" = None
+
+# A password check that does not store the password. Written on first
+# unlock; every later unlock must produce the same digest or it is the
+# wrong password and we refuse rather than silently writing rows the
+# original password can never read back.
+_VERIFIER_FILENAME = "vault.verifier"
+
+
+def _verifier_path(db_path: str | None = None) -> Path:
+    base = Path(db_path).parent if db_path else Path("data")
+    return base / _VERIFIER_FILENAME
+
+
+def unlock_vault(master_password: str, db_path: str | None = None) -> bool:
+    """Derive and install the vault cipher for this process.
+
+    Returns True on success. Raises ValueError when the password does not
+    match the one this vault was created with.
+    """
+    global _VAULT
+    salt = load_or_create_salt(db_path)
+    digest = hashlib.sha256(
+        derive_vault_key(master_password, salt)
+    ).hexdigest()
+
+    path = _verifier_path(db_path)
+    if path.exists():
+        if path.read_text().strip() != digest:
+            raise ValueError("Incorrect master password.")
+    else:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(digest)
+        try:
+            path.chmod(0o600)
+        except OSError:
+            pass
+
+    _VAULT = VaultManager(master_password, db_path)
+    _log.info("Vault unlocked.")
+    return True
+
+
+def lock_vault() -> None:
+    """Drop the in-memory vault cipher."""
+    global _VAULT
+    _VAULT = None
+
+
+def vault_is_unlocked() -> bool:
+    return _VAULT is not None
+
+
+def vault_exists(db_path: str | None = None) -> bool:
+    """True once a master password has been set on this install."""
+    return _verifier_path(db_path).exists()
+
+
 _CIPHER = None
 
 def _cipher() -> Fernet:
@@ -84,18 +248,37 @@ def _cipher() -> Fernet:
 
 
 def _encrypt(value) -> str | None:
-    """Encrypt a string value, or return None if the value is None/empty."""
+    """Encrypt a string value, or return None if the value is None/empty.
+
+    Uses the unlocked master-password vault when there is one, and the
+    legacy .env key otherwise -- see the vault notes above.
+    """
     if value is None or value == "":
         return value
     s = str(value)
-    return _cipher().encrypt(s.encode()).decode() if s else ""
+    if not s:
+        return ""
+    if _VAULT is not None:
+        return _VAULT.encrypt(s)
+    return _cipher().encrypt(s.encode()).decode()
 
 
 def _decrypt(value) -> str | None:
-    """Decrypt a string value, handling None and already-plaintext gracefully."""
+    """Decrypt a string value, handling None and already-plaintext gracefully.
+
+    Tries the unlocked vault first, then the legacy .env key. The fallback
+    is what keeps rows written before the vault existed readable after it
+    is introduced; without it those rows would come back as ciphertext
+    strings and look, to every caller, like corrupted names.
+    """
     if value is None or value == "":
         return value
     s = str(value)
+    if _VAULT is not None:
+        try:
+            return _VAULT.decrypt(s)
+        except Exception:
+            pass
     try:
         return _cipher().decrypt(s.encode()).decode()
     except Exception:

@@ -36,11 +36,20 @@ those in full will exhaust memory long before it exhausts the site list. The
 cap is well above where detection strings and <head> metadata live.
 """
 import asyncio
+from email.utils import parsedate_to_datetime
 import hashlib
+import os
 import random
 import time
+from datetime import datetime, timezone
+from urllib.parse import urlsplit
 
 import aiohttp
+
+try:
+    from aiohttp_socks import ProxyConnector
+except ImportError:  # pragma: no cover - optional dependency
+    ProxyConnector = None
 
 from applog import get_logger
 from footprint_scanner import (
@@ -58,6 +67,12 @@ DEFAULT_CONCURRENCY = 50
 DEFAULT_PER_HOST = 4
 DEFAULT_TIMEOUT = 15
 JITTER_RANGE_MS = (20, 50)
+DEFAULT_RATE_LIMIT_RPS = 2.0
+DEFAULT_MAX_RETRIES = 2
+DEFAULT_BACKOFF_BASE_SECONDS = 0.5
+MAX_BACKOFF_SECONDS = 30.0
+RETRYABLE_STATUS = frozenset({429, 503})
+SOCKS_SCHEMES = frozenset({"socks5", "socks5h"})
 
 # 2 MB. Above any real profile page; below the point where a few hundred
 # concurrent forum indexes become a memory problem.
@@ -88,6 +103,192 @@ BASE_HEADERS = {
     "Sec-Fetch-Mode": "navigate",
     "Sec-Fetch-Site": "none",
 }
+
+
+def _host(url: str) -> str:
+    return (urlsplit(url).hostname or "").lower().rstrip(".")
+
+
+def load_proxy_urls(value: str | None = None) -> tuple[str, ...]:
+    """Load validated proxy URLs from ``RECON_PROXIES``."""
+    raw = os.getenv("RECON_PROXIES", "") if value is None else value
+    proxies = []
+    for item in raw.replace("\n", ",").split(","):
+        proxy = item.strip()
+        scheme = urlsplit(proxy).scheme.lower()
+        if proxy and scheme in {"http", "https", "socks5", "socks5h"}:
+            proxies.append(proxy)
+    return tuple(dict.fromkeys(proxies))
+
+
+class ProxyRotator:
+    """Round-robin proxy selection with a direct-request fallback."""
+
+    def __init__(self, proxies=()):
+        self.proxies = tuple(proxies)
+        self._index = 0
+
+    @classmethod
+    def from_environment(cls) -> "ProxyRotator":
+        return cls(load_proxy_urls())
+
+    def next(self) -> str | None:
+        if not self.proxies:
+            return None
+        proxy = self.proxies[self._index % len(self.proxies)]
+        self._index += 1
+        return proxy
+
+    def socks_proxies(self) -> tuple[str, ...]:
+        return tuple(proxy for proxy in self.proxies
+                     if urlsplit(proxy).scheme.lower() in SOCKS_SCHEMES)
+
+    async def open_socks_sessions(self) -> dict:
+        """Open pooled sessions for configured SOCKS proxies when supported."""
+        socks = self.socks_proxies()
+        if ProxyConnector is None:
+            # Without a SOCKS connector these requests would leave the host
+            # directly. On a tool whose whole point is not scanning from the
+            # operator's own IP, that has to be loud, not a silent fallback.
+            if socks:
+                _log.warning(
+                    "%d SOCKS proxy/proxies configured but aiohttp-socks is not "
+                    "installed -- those requests will go out DIRECT. "
+                    "Install aiohttp-socks or drop them from RECON_PROXIES.",
+                    len(socks))
+            return {}
+        return {proxy: aiohttp.ClientSession(connector=ProxyConnector.from_url(proxy))
+                for proxy in socks}
+
+    @staticmethod
+    async def close_sessions(sessions: dict) -> None:
+        for session in sessions.values():
+            await session.close()
+
+
+class TokenBucketRateLimiter:
+    """Async per-domain token bucket with one-token burst capacity."""
+
+    def __init__(self, requests_per_second: float = DEFAULT_RATE_LIMIT_RPS,
+                 sensitive_hosts=()):
+        self.requests_per_second = max(float(requests_per_second), 0.0)
+        self.sensitive_hosts = {str(host).lower().strip().rstrip(".")
+                                for host in sensitive_hosts if str(host).strip()}
+        self._buckets = {}
+
+    @classmethod
+    def from_environment(cls) -> "TokenBucketRateLimiter":
+        raw_hosts = os.getenv("RECON_SENSITIVE_HOSTS", "")
+        hosts = [host for host in raw_hosts.replace("\n", ",").split(",") if host.strip()]
+        try:
+            rps = float(os.getenv("RECON_RATE_LIMIT_RPS", DEFAULT_RATE_LIMIT_RPS))
+        except ValueError:
+            rps = DEFAULT_RATE_LIMIT_RPS
+        return cls(rps, hosts)
+
+    def _bucket(self, host: str) -> dict:
+        if host not in self._buckets:
+            self._buckets[host] = {
+                "tokens": 1.0, "updated": time.monotonic(), "lock": asyncio.Lock()}
+        return self._buckets[host]
+
+    def should_limit(self, url: str, *, sensitive: bool = False) -> bool:
+        host = _host(url)
+        return bool(self.requests_per_second and
+                    (sensitive or host in self.sensitive_hosts))
+
+    async def acquire(self, url: str, *, sensitive: bool = False) -> None:
+        """Wait for one token; callers targeting one host queue on its bucket."""
+        if not self.should_limit(url, sensitive=sensitive):
+            return
+        host = _host(url)
+        bucket = self._bucket(host)
+        while True:
+            async with bucket["lock"]:
+                now = time.monotonic()
+                bucket["tokens"] = min(
+                    1.0, bucket["tokens"] +
+                    (now - bucket["updated"]) * self.requests_per_second)
+                bucket["updated"] = now
+                if bucket["tokens"] >= 1.0:
+                    bucket["tokens"] -= 1.0
+                    return
+                wait_for = (1.0 - bucket["tokens"]) / self.requests_per_second
+            await asyncio.sleep(wait_for)
+
+
+PerDomainRateLimiter = TokenBucketRateLimiter
+
+
+def _retry_after_seconds(headers: dict) -> float | None:
+    value = headers.get("Retry-After") or headers.get("retry-after")
+    if not value:
+        return None
+    try:
+        return max(0.0, min(float(value), MAX_BACKOFF_SECONDS))
+    except ValueError:
+        try:
+            retry_at = parsedate_to_datetime(value)
+            if retry_at.tzinfo is None:
+                retry_at = retry_at.replace(tzinfo=timezone.utc)
+            return max(0.0, min(
+                (retry_at - datetime.now(timezone.utc)).total_seconds(),
+                MAX_BACKOFF_SECONDS))
+        except (TypeError, ValueError, OverflowError):
+            return None
+
+
+def _env_int(name: str, default: int, minimum: int = 0) -> int:
+    try:
+        return max(int(os.getenv(name, default)), minimum)
+    except ValueError:
+        return default
+
+
+def _env_float(name: str, default: float, minimum: float = 0.0) -> float:
+    try:
+        return max(float(os.getenv(name, default)), minimum)
+    except ValueError:
+        return default
+
+
+async def _request_with_retries(session, request: dict, site: dict, *,
+                                rate_limiter: TokenBucketRateLimiter,
+                                proxy_rotator: ProxyRotator,
+                                socks_sessions: dict, timeout: int,
+                                max_retries: int, backoff_base: float) -> dict:
+    sensitive = bool(site.get("sensitive") or site.get("rate_limit") or
+                     "broker" in str(site.get("cat", "")).lower())
+    for attempt in range(max_retries + 1):
+        await rate_limiter.acquire(request["url"], sensitive=sensitive)
+        proxy = proxy_rotator.next()
+        request_session = socks_sessions.get(proxy, session)
+        request_kwargs = {
+            "headers": _headers_for(site), "data": request["body"],
+            "timeout": aiohttp.ClientTimeout(total=timeout),
+            "allow_redirects": True, "max_redirects": 5,
+        }
+        # aiohttp's own `proxy=` kwarg speaks HTTP CONNECT only; SOCKS needs a
+        # connector, which lives on its own pre-opened session.
+        if proxy and request_session is session and urlsplit(proxy).scheme.lower() not in SOCKS_SCHEMES:
+            request_kwargs["proxy"] = proxy
+        async with request_session.request(
+            request["method"], request["url"], **request_kwargs) as response:
+            if response.status in RETRYABLE_STATUS and attempt < max_retries:
+                # Body is not read here: it is about to be discarded, and on a
+                # rate-limit page that read is pure latency and bandwidth.
+                retry_after = _retry_after_seconds(response.headers)
+                delay = retry_after if retry_after is not None else min(
+                    backoff_base * (2 ** attempt), MAX_BACKOFF_SECONDS)
+                await asyncio.sleep(delay)
+                continue
+            return {
+                "status": response.status,
+                "content": await _read_capped(response),
+                "content_type": response.headers.get("Content-Type", ""),
+                "final_url": str(response.url) if response.url else "",
+                "attempts": attempt + 1,
+            }
 
 
 def pick_user_agent(site_name: str) -> str:
@@ -218,7 +419,9 @@ async def _read_capped(response) -> str:
         return raw.decode("utf-8", errors="ignore")
 
 
-async def _check_site(session, site, account, semaphore, timeout, extract_metadata):
+async def _check_site(session, site, account, semaphore, timeout, extract_metadata,
+                      rate_limiter, proxy_rotator, socks_sessions, max_retries,
+                      backoff_base):
     request = build_request(site, account)
     row = {
         "platform": site.get("name", "Unknown platform"),
@@ -232,6 +435,7 @@ async def _check_site(session, site, account, semaphore, timeout, extract_metada
         "protection": ", ".join(site.get("protection") or []),
         "http_status": None,
         "response_time_ms": None,
+        "retries": 0,
         "metadata": {},
     }
 
@@ -243,26 +447,21 @@ async def _check_site(session, site, account, semaphore, timeout, extract_metada
             if rejection:
                 verdict, reason = ERROR, rejection
             else:
-                async with session.request(
-                    request["method"],
-                    request["url"],
-                    headers=_headers_for(site),
-                    data=request["body"],
-                    timeout=aiohttp.ClientTimeout(total=timeout),
-                    allow_redirects=True,
-                    max_redirects=5,
-                ) as response:
-                    content = await _read_capped(response)
-                    row["http_status"] = response.status
-                    final_url = str(response.url) if response.url else ""
-                    verdict, reason = classify(site, response.status, content,
+                fetched = await _request_with_retries(
+                    session, request, site, rate_limiter=rate_limiter,
+                    proxy_rotator=proxy_rotator, socks_sessions=socks_sessions,
+                    timeout=timeout, max_retries=max_retries,
+                    backoff_base=backoff_base)
+                row["http_status"] = fetched["status"]
+                row["retries"] = fetched["attempts"] - 1
+                content = fetched["content"]
+                final_url = fetched["final_url"]
+                verdict, reason = classify(site, fetched["status"], content,
                                                final_url=final_url)
-                    if extract_metadata and verdict in (CONFIRMED, POSSIBLE):
-                        row["metadata"] = metadata_extractor.extract(
-                            content,
-                            content_type=response.headers.get("Content-Type", ""),
-                            self_host=_self_host(request["url"]),
-                        )
+                if extract_metadata and verdict in (CONFIRMED, POSSIBLE):
+                    row["metadata"] = metadata_extractor.extract(
+                        content, content_type=fetched["content_type"],
+                        self_host=_self_host(request["url"]))
         except asyncio.TimeoutError:
             verdict, reason = ERROR, "timed out"
         except aiohttp.TooManyRedirects:
@@ -293,7 +492,11 @@ async def _check_site(session, site, account, semaphore, timeout, extract_metada
 
 async def scan(account: str, sites: list, *, concurrency: int = DEFAULT_CONCURRENCY,
                timeout: int = DEFAULT_TIMEOUT, per_host: int = DEFAULT_PER_HOST,
-               extract_metadata: bool = True, on_progress=None) -> list:
+               extract_metadata: bool = True, on_progress=None,
+               rate_limiter: TokenBucketRateLimiter | None = None,
+               proxy_rotator: ProxyRotator | None = None,
+               max_retries: int | None = None,
+               backoff_base: float | None = None) -> list:
     """Probe `account` across `sites`, returning one row per site.
 
     Sites whose handle regex rejects the account are returned as SKIPPED
@@ -328,20 +531,34 @@ async def scan(account: str, sites: list, *, concurrency: int = DEFAULT_CONCURRE
     semaphore = asyncio.Semaphore(concurrency)
     connector = aiohttp.TCPConnector(limit=concurrency, limit_per_host=per_host,
                                      ttl_dns_cache=300)
+    rate_limiter = rate_limiter or TokenBucketRateLimiter.from_environment()
+    proxy_rotator = proxy_rotator or ProxyRotator.from_environment()
+    max_retries = (_env_int("RECON_MAX_RETRIES", DEFAULT_MAX_RETRIES)
+                   if max_retries is None else max(0, max_retries))
+    backoff_base = (_env_float("RECON_BACKOFF_BASE_SECONDS", DEFAULT_BACKOFF_BASE_SECONDS)
+                    if backoff_base is None else max(0.0, backoff_base))
     results = []
     async with aiohttp.ClientSession(connector=connector) as session:
-        tasks = [
-            asyncio.ensure_future(
-                _check_site(session, site, account, semaphore, timeout, extract_metadata))
-            for site in probeable
-        ]
-        completed = 0
-        for coro in asyncio.as_completed(tasks):
-            row = await coro
-            results.append(row)
-            completed += 1
-            if on_progress:
-                on_progress(completed, len(tasks), row)
+        socks_sessions = await proxy_rotator.open_socks_sessions()
+        try:
+            tasks = [
+                asyncio.ensure_future(
+                    _check_site(session, site, account, semaphore, timeout, extract_metadata,
+                                rate_limiter, proxy_rotator, socks_sessions, max_retries,
+                                backoff_base))
+                for site in probeable
+            ]
+            completed = 0
+            for coro in asyncio.as_completed(tasks):
+                row = await coro
+                results.append(row)
+                completed += 1
+                if on_progress:
+                    on_progress(completed, len(tasks), row)
+        finally:
+            # A cancelled scan (the API's job store cancels these) must not
+            # leave the proxy sessions open behind it.
+            await proxy_rotator.close_sessions(socks_sessions)
 
     return results + skipped
 

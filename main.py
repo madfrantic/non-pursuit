@@ -21,6 +21,12 @@ def build_parser() -> argparse.ArgumentParser:
     target = parser.add_mutually_exclusive_group(required=True)
     target.add_argument("--username", help="Username to scan across the site registry.")
     target.add_argument("--domain", help="Domain to inspect with DNS, RDAP, and TLS checks.")
+    # chino/GLM.py had a CLI fallback that printed the agent dashboard when
+    # PySide6 was missing. The Qt layer is gone, but reading campaign state
+    # without starting a Streamlit server is independently useful, so the
+    # verb survives its original reason for existing.
+    target.add_argument("--agent-stats", action="store_true",
+                        help="Print broker-agent ledger counts and exit.")
     parser.add_argument("--email", default="", help="Optional email identity seed.")
     parser.add_argument("--name", default="", help="Optional name identity seed.")
     parser.add_argument("--output", type=Path, help="Write JSON to this file instead of stdout.")
@@ -29,6 +35,19 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 async def run(args: argparse.Namespace) -> dict:
+    if args.agent_stats:
+        import broker_ledger
+        import config as app_config
+        import review_queue
+
+        db_path = app_config.LEDGER_DB_PATH
+        broker_ledger.init_ledger(db_path)
+        return {
+            "ledger": broker_ledger.get_dashboard_stats(db_path),
+            "review_queue": review_queue.stats(app_config.REVIEW_QUEUE_DB_PATH),
+            "scheduled_tasks": broker_ledger.get_scheduled_tasks(db_path),
+        }
+
     if args.domain:
         return {"target": {"domain": args.domain}, "infrastructure": await infra_checker.check_hosts([args.domain])}
 

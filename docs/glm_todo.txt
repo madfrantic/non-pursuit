@@ -1,0 +1,11 @@
+project/
+├── main.py              # The code above
+├── requirements.txt     # Dependencies
+├── README.md           # Documentation
+├── data/
+│   └── brokers.json    # (Optional) Extended broker definitions
+└── ~/.data_broker_agent/  # Created at runtime
+    ├── agent.db        # Encrypted database
+    ├── agent.log       # Application log
+    ├── evidence/       # Screenshots
+    └── reports/        # Generated reports

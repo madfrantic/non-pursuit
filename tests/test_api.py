@@ -11,6 +11,7 @@ Every outbound call is faked. All test targets use RFC 2606 reserved names
 quietly probing a real person's account on a real platform.
 """
 import asyncio
+import json
 
 import pytest
 from fastapi.testclient import TestClient
@@ -65,8 +66,15 @@ SUBJECT = {
 
 
 @pytest.fixture
-def wired(monkeypatch):
-    """A client whose every outbound call is a local fake."""
+def wired(monkeypatch, tmp_path):
+    """A client whose every outbound call is a local fake.
+
+    The review queue is redirected to a tmp file too: it is the one store the
+    API writes to on its own, and a test run must not leave rows in the
+    developer's real data/review_queue.db.
+    """
+    monkeypatch.setattr(main, "REVIEW_QUEUE_DB", str(tmp_path / "review_queue.db"))
+
     async def fake_scan(account, sites, **kwargs):
         return [dict(row) for row in SCAN_ROWS]
 
@@ -444,6 +452,139 @@ def test_templates_expose_signoff_state(wired):
     assert "ccpa_deletion_demand.j2" in names
     assert names["ccpa_deletion_demand.j2"]["signed_off"] is True
     assert names["platform_erasure_request.j2"]["signed_off"] is False
+
+
+# ----------------------------------------------------------------- opt-out
+
+def test_optout_brokers_lists_only_what_has_an_automator(wired):
+    body = wired.get("/api/optout/brokers").json()
+    assert body["brokers"] == list(main.optout_engine.supported_brokers())
+    assert body["dry_run_only"] is True
+
+
+def test_optout_trigger_queues_the_requested_broker(wired, monkeypatch):
+    calls = []
+    monkeypatch.setattr(main.optout_engine, "execute_optout",
+                        lambda broker, target, email: calls.append(
+                            (broker, target, email)) or {"status": "simulated_success"})
+
+    response = wired.post("/api/optout/trigger", json={
+        "first_name": "Test", "last_name": "Subject", "city": "Austin",
+        "state": "CA", "age": "35", "email": "testsubject@example.com",
+        "broker": "Example"})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["broker"] == "example"
+    assert body["dry_run"] is True
+    # The background task runs on the way out of the request.
+    assert calls == [("example", {"first_name": "Test", "last_name": "Subject",
+                                  "city": "Austin", "state": "CA", "age": "35"},
+                      "testsubject@example.com")]
+
+
+def test_optout_rejects_a_broker_with_no_automator(wired, monkeypatch):
+    def must_not_run(*args, **kwargs):
+        raise AssertionError("an unsupported broker must not reach the engine")
+
+    monkeypatch.setattr(main.optout_engine, "execute_optout", must_not_run)
+    response = wired.post("/api/optout/trigger", json={
+        "first_name": "Test", "last_name": "Subject", "city": "Austin",
+        "state": "CA", "email": "testsubject@example.com", "broker": "spokeo"})
+
+    assert response.status_code == 422
+    assert "spokeo" in response.json()["detail"]
+
+
+def test_optout_bounds_its_input(wired):
+    response = wired.post("/api/optout/trigger", json={
+        "first_name": "T" * 500, "last_name": "Subject",
+        "email": "testsubject@example.com", "broker": "example"})
+    assert response.status_code == 422
+
+
+# ------------------------------------------------------ human review queue
+
+def test_a_filled_form_leaves_a_task_for_a_person(wired, monkeypatch):
+    """The engine fills and stops, so finishing the run is not finishing the job."""
+    monkeypatch.setattr(main.optout_engine, "execute_optout",
+                        lambda *a, **k: {"status": "simulated_success"})
+    wired.post("/api/optout/trigger", json={
+        "first_name": "Test", "last_name": "Subject",
+        "email": "testsubject@example.com", "broker": "example"})
+
+    pending = wired.get("/api/review").json()["pending"]
+    assert [item["target"] for item in pending] == ["example"]
+    assert pending[0]["reason"] == main.review_queue.SUBMIT_REQUIRES_SIGNOFF
+
+
+def test_a_failed_run_queues_a_different_reason(wired, monkeypatch):
+    monkeypatch.setattr(main.optout_engine, "execute_optout",
+                        lambda *a, **k: {"status": "error", "error": "browser unavailable"})
+    wired.post("/api/optout/trigger", json={
+        "first_name": "Test", "last_name": "Subject",
+        "email": "testsubject@example.com", "broker": "example"})
+
+    pending = wired.get("/api/review").json()["pending"]
+    assert pending[0]["reason"] == main.review_queue.SITE_UNREACHABLE
+
+
+def test_review_queue_starts_empty_and_reports_its_vocabulary(wired):
+    body = wired.get("/api/review").json()
+    assert body["pending"] == []
+    assert body["stats"]["total"] == 0
+    assert main.review_queue.SUBMIT_REQUIRES_SIGNOFF in body["reasons"]
+
+
+def test_a_review_item_is_resolved_by_id(wired, monkeypatch):
+    monkeypatch.setattr(main.optout_engine, "execute_optout",
+                        lambda *a, **k: {"status": "simulated_success"})
+    wired.post("/api/optout/trigger", json={
+        "first_name": "Test", "last_name": "Subject",
+        "email": "testsubject@example.com", "broker": "example"})
+    item_id = wired.get("/api/review").json()["pending"][0]["id"]
+
+    body = wired.post(f"/api/review/{item_id}/resolve").json()
+    assert body["changed"] is True
+    assert body["stats"]["resolved"] == 1
+    assert wired.get("/api/review").json()["pending"] == []
+
+
+def test_resolving_an_unknown_review_item_is_404(wired):
+    assert wired.post("/api/review/9999/resolve").status_code == 404
+
+
+def test_an_unknown_resolve_outcome_is_422(wired, monkeypatch):
+    monkeypatch.setattr(main.optout_engine, "execute_optout",
+                        lambda *a, **k: {"status": "simulated_success"})
+    wired.post("/api/optout/trigger", json={
+        "first_name": "Test", "last_name": "Subject",
+        "email": "testsubject@example.com", "broker": "example"})
+    item_id = wired.get("/api/review").json()["pending"][0]["id"]
+
+    response = wired.post(f"/api/review/{item_id}/resolve?outcome=mostly")
+    assert response.status_code == 422
+
+
+def test_a_broker_with_no_automator_never_reaches_the_queue(wired):
+    """A 422 tells the caller directly; queueing it too would double-report."""
+    wired.post("/api/optout/trigger", json={
+        "first_name": "Test", "last_name": "Subject",
+        "email": "testsubject@example.com", "broker": "spokeo"})
+    assert wired.get("/api/review").json()["pending"] == []
+
+
+def test_queue_rows_carry_no_subject_identity(wired, monkeypatch):
+    """The queue is durable; it must not become a second store of PII."""
+    monkeypatch.setattr(main.optout_engine, "execute_optout",
+                        lambda *a, **k: {"status": "simulated_success"})
+    wired.post("/api/optout/trigger", json={
+        "first_name": "Testfirstname", "last_name": "Testlastname",
+        "city": "Austin", "email": "testsubject@example.com", "broker": "example"})
+
+    blob = json.dumps(wired.get("/api/review").json())
+    for secret in ("Testfirstname", "Testlastname", "Austin", "testsubject@example.com"):
+        assert secret not in blob
 
 
 # -------------------------------------------------------------------- CORS

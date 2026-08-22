@@ -163,6 +163,15 @@ LOG_PATH = "logs/non_pursuit.log"
 # counters shipping as if they were real usage.
 USAGE_METRICS_DB_PATH = "data/usage_metrics.db"
 
+# Outstanding human work (utils/review_queue.py) -- the steps automation
+# deliberately stopped short of: a filled-but-unsubmitted opt-out form, a
+# CAPTCHA, a broker with no automator. Its own file rather than tracker.db
+# for two reasons: a tracker.db schema change is a Human Validation Zone
+# under CLAUDE.md, and a chore list churns daily while a statutory campaign
+# does not. Gitignored because its `note` column is free text and will
+# eventually hold a name someone pasted in.
+REVIEW_QUEUE_DB_PATH = "data/review_queue.db"
+
 # How old a broker's own last_verified date can get before Results flags the
 # row as due for a human to re-confirm its compliance email / opt-out URL /
 # notes still work. Much longer than RECHECK_STALE_DAYS (30 days) above --
@@ -170,3 +179,21 @@ USAGE_METRICS_DB_PATH = "data/usage_metrics.db"
 # is about whether a broker's *contact info* is still fresh, and broker
 # contact info drifts far slower than a person's exposure status does.
 BROKER_STALE_DAYS = 180
+
+# Evidence chain (utils/optout_engine.py capture_evidence). A screenshot of a
+# broker's search results is a page with the user's PII rendered on it, so
+# these files are gitignored for the same reason logs/ and data/tracker.db
+# are. Each capture's SHA256 is recorded in the ledger's `evidence` table at
+# capture time -- that digest, not the PNG, is what makes the file evidence.
+EVIDENCE_DIR = "data/evidence"
+
+# Broker-agent ledger (utils/broker_ledger.py): profiles, brokers, scans,
+# removals, evidence, activity log. Shares data/tracker.db with the Phase 1
+# tables so a removal can be joined to the statutory request it belongs to.
+LEDGER_DB_PATH = "data/tracker.db"
+
+# Autonomous background engine (utils/agent_scheduler.py). Intervals in days.
+# Scanning and verification only -- never submission; see the module docstring.
+AGENT_SCAN_INTERVAL_DAYS = 7
+AGENT_VERIFY_INTERVAL_DAYS = 14
+AGENT_SCHEDULER_ENABLED = True

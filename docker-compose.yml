@@ -1,0 +1,51 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    environment:
+      API_KEY: ${API_KEY:?Set API_KEY in .env before starting the stack}
+      RECON_RATE_LIMIT_RPS: ${RECON_RATE_LIMIT_RPS:-2}
+      RECON_SENSITIVE_HOSTS: ${RECON_SENSITIVE_HOSTS:-}
+      RECON_PROXIES: ${RECON_PROXIES:-}
+      RECON_MAX_RETRIES: ${RECON_MAX_RETRIES:-2}
+      RECON_BACKOFF_BASE_SECONDS: ${RECON_BACKOFF_BASE_SECONDS:-0.5}
+    command: [ "uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1" ]
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./utils/statutory_letters:/app/utils/statutory_letters:ro
+    healthcheck:
+      test: [ "CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)" ]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+
+  ui:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      NONPURSUIT_API_URL: http://api:8000
+      STREAMLIT_SERVER_ADDRESS: 0.0.0.0
+      STREAMLIT_SERVER_PORT: 8501
+      STREAMLIT_SERVER_HEADLESS: "true"
+      STREAMLIT_SERVER_ENABLECORS: "false"
+      STREAMLIT_BROWSER_GATHER_USAGE_STATS: "false"
+    command: [ "streamlit", "run", "frontend/app.py", "--server.address=0.0.0.0", "--server.port=8501", "--server.headless=true", "--server.enableCORS=false", "--browser.gatherUsageStats=false" ]
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./utils/statutory_letters:/app/utils/statutory_letters:ro
+    healthcheck:
+      test: [ "CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8501/_stcore/health', timeout=3)" ]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3

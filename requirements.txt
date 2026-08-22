@@ -13,6 +13,11 @@ fpdf2>=2.7,<3.0  # PDF export of the OSINT dossier (pdf_generator.generate_osint
                  # Python, no system binaries, unlike pdfkit/wkhtmltopdf
 requests>=2.31,<3.0  # used by Results' IP/ISP lookup (calls ipinfo.io), and to fetch the WhatsMyName site list
 aiohttp>=3.9,<4.0  # concurrent account-existence checks in utils/footprint_scanner.py
+aiohttp-socks>=0.10,<1.0  # optional SOCKS5/SOCKS5H proxy connectors for recon_engine.py
+APScheduler>=3.10,<4.0  # background monitoring/verification engine (utils/agent_scheduler.py).
+                        # chino used apscheduler.schedulers.qt.QtScheduler, which needs a Qt
+                        # event loop; the Qt layer was dropped in the merge, so this uses
+                        # BackgroundScheduler, which owns its own daemon threads.
 pytest>=8.0,<9.0  # dev dependency: run with `pytest tests/`
 fastapi>=0.115,<1.0  # remediation API surface (api/)
 uvicorn>=0.30,<1.0  # ASGI server for the remediation API

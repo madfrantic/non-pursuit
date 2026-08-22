@@ -45,7 +45,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import BackgroundTasks, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
@@ -58,14 +58,16 @@ import broker_probe                                    # noqa: E402
 import identity_graph                                  # noqa: E402
 import infra_checker                                   # noqa: E402
 import metadata_extractor                              # noqa: E402
+import optout_engine                                   # noqa: E402
 import privacy_contacts                                # noqa: E402
 import recon_engine                                    # noqa: E402
 import remediation                                     # noqa: E402
+import review_queue                                    # noqa: E402
 import site_registry                                   # noqa: E402
 from applog import get_logger                          # noqa: E402
 
 from api.models import (                               # noqa: E402
-    JobRef, JobStatus, RemediateRequest, ScanRequest, TemplateType,
+    JobRef, JobStatus, OptOutRequest, RemediateRequest, ScanRequest, TemplateType,
 )
 
 _log = get_logger("api")
@@ -84,6 +86,11 @@ DEFAULT_ORIGINS = (
 # exposure report in memory.
 JOB_TTL_SECONDS = 3600
 MAX_JOBS = 64
+
+# Outstanding human work, in its own store (see utils/review_queue.py). Unlike
+# the job dict above this DOES survive a restart -- a form left filled and
+# unsubmitted is still filled and unsubmitted tomorrow.
+REVIEW_QUEUE_DB = str(ROOT_DIR / "data" / "review_queue.db")
 
 STATUS_QUEUED = "queued"
 STATUS_RUNNING = "running"
@@ -541,4 +548,129 @@ async def templates() -> dict:
         "directory": str(remediation.TEMPLATES_DIR),
         "note": "Sign-off is a human's decision recorded in "
                 "remediation.SIGNED_OFF_TEMPLATES, not a property of the file.",
+    }
+
+
+def _run_optout(broker: str, target: dict, proxy_email: str) -> None:
+    """Drive one broker opt-out form. Runs in a worker thread, not the loop.
+
+    The engine fills and stops, so the run finishing is not the task
+    finishing -- a person still has to review the form and submit it. That
+    outstanding step is queued in review_queue rather than left implicit;
+    without it a dry-run fill nobody went back to complete is indistinguishable
+    from a completed removal.
+
+    Nothing here is logged or queued that names the subject: `logs/` is
+    gitignored precisely because it must not accumulate PII (CLAUDE.md), and a
+    broker id plus an outcome is enough to debug a failed run.
+    """
+    result = optout_engine.execute_optout(broker, target, proxy_email)
+    status = result.get("status", "unknown")
+    if status == "error":
+        _log.error("Opt-out run for broker %s failed: %s", broker,
+                   result.get("error", "unknown error"))
+        reason = review_queue.SITE_UNREACHABLE
+    else:
+        _log.info("Opt-out run for broker %s finished: %s", broker, status)
+        reason = review_queue.SUBMIT_REQUIRES_SIGNOFF
+
+    try:
+        review_queue.add_item(REVIEW_QUEUE_DB, broker, "optout", reason)
+    except Exception:  # noqa: BLE001
+        # The opt-out itself already ran; failing to file the follow-up note
+        # must not be reported as the opt-out failing.
+        _log.exception("Could not queue review follow-up for broker %s", broker)
+
+
+@app.get("/api/optout/brokers")
+async def optout_brokers() -> dict:
+    """Broker ids /api/optout/trigger will accept.
+
+    The UI reads this rather than carrying its own list, so a dropdown can
+    never offer a broker the engine has no automator for.
+    """
+    return {
+        "brokers": list(optout_engine.supported_brokers()),
+        "dry_run_only": True,
+    }
+
+
+@app.post("/api/optout/trigger")
+async def trigger_optout(request: OptOutRequest,
+                         background_tasks: BackgroundTasks) -> dict:
+    """Queue a broker opt-out form fill. Fills only -- it does not submit.
+
+    This is the same contract as /api/remediate: the pipeline can prepare the
+    request end to end and still cannot make it on someone's behalf. See
+    optout_engine's module docstring for why the submit step is not wired.
+
+    An unsupported broker is a 422, not a silent fallback to the example
+    automator -- returning "deployed" for a broker with no automator behind it
+    would tell the caller their data was acted on when it was not.
+    """
+    supported = optout_engine.supported_brokers()
+    broker = request.broker.strip().lower()
+    if broker not in supported:
+        raise HTTPException(
+            status_code=422,
+            detail=f"no opt-out automator for '{request.broker}'; "
+                   f"supported: {', '.join(supported)}")
+
+    target = {
+        "first_name": request.first_name,
+        "last_name": request.last_name,
+        "city": request.city,
+        "state": request.state,
+        "age": request.age,
+    }
+    # Playwright's sync API blocks; a sync background task keeps it off the
+    # event loop (starlette runs it in a worker thread).
+    background_tasks.add_task(_run_optout, broker, target, str(request.email))
+    return {
+        "status": "queued",
+        "broker": broker,
+        "dry_run": True,
+        "note": "The form is filled and left unsubmitted. Review it and submit "
+                "the opt-out yourself.",
+    }
+
+
+# ------------------------------------------------------- human review queue
+
+@app.get("/api/review")
+async def review_items() -> dict:
+    """Work automation stopped short of, most urgent first.
+
+    This is the counterpart to every `requires_human_signoff` flag the rest of
+    the API returns: those say a step needs a person, and this is the list of
+    the ones still waiting for one.
+    """
+    items = review_queue.pending_items(REVIEW_QUEUE_DB)
+    return {
+        "pending": items,
+        "stats": review_queue.stats(REVIEW_QUEUE_DB),
+        "reasons": review_queue.REASONS,
+    }
+
+
+@app.post("/api/review/{item_id}/resolve")
+async def resolve_review_item(
+        item_id: int,
+        outcome: str = Query(review_queue.RESOLVED,
+                             description="resolved or skipped.")) -> dict:
+    """Close one queued task by id.
+
+    By id, never by its position in the pending list -- that distinction is
+    the whole bug this queue was ported to fix; see utils/review_queue.py.
+    """
+    try:
+        changed = review_queue.resolve_item(REVIEW_QUEUE_DB, item_id, outcome)
+    except ValueError as exc:
+        raise HTTPException(status_code=404 if "No review item" in str(exc)
+                            else 422, detail=str(exc)) from exc
+    return {
+        "item_id": item_id,
+        "outcome": outcome,
+        "changed": changed,
+        "stats": review_queue.stats(REVIEW_QUEUE_DB),
     }
