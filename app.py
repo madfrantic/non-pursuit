@@ -1,6 +1,6 @@
 import sys
 import os
-from datetime import datetime
+from datetime import date, datetime
 
 import streamlit as st
 import pandas as pd
@@ -358,80 +358,216 @@ elif mode == "✉️ Data Broker Deletion":
     letters_component.render(brokers_df)
 
 elif mode == "⚖️ NY Expungement":
-    st.title("⚖️ New York record-sealing intake")
-    st.caption("Compare your paperwork against a transparent screening calculation. This is general information, not a legal determination.")
+    st.title("⚖️ New York record-sealing screening")
+    st.caption("Screens one conviction against all five New York sealing pathways, then drafts the CPL 160.59 motion. Guidance, not a legal determination.")
+
+    with st.expander("How the five pathways differ", icon="📖"):
+        st.markdown(
+            """
+            | Statute | Trigger | Reaches | Seal |
+            | --- | --- | --- | --- |
+            | **CPL 160.50** | Automatic | Dismissals, acquittals | Full |
+            | **CPL 160.55** | Automatic | Violations, traffic infractions | **Partial** — court file stays public |
+            | **CPL 160.57** | Automatic (Clean Slate) | Misdemeanours (3 yr), felonies (8 yr) | Full |
+            | **CPL 160.58** | Petition | Drug convictions after diversion/DTAP | Conditional — a new arrest unseals |
+            | **CPL 160.59** | Petition | ≤2 convictions, ≤1 felony, 10 yr | Full, at the judge's discretion |
+
+            The two clocks run differently on purpose. Clean Slate measures from **release**
+            from incarceration; CPL 160.59 measures ten years from **sentencing** and then
+            excludes time served, which pushes the filing date later.
+            """
+        )
 
     with st.form("ny_sealing_intake"):
-        st.subheader("Case metadata")
-        jurisdiction = st.text_input("Jurisdiction", value="New York State")
-        court_type = st.selectbox("Court type", ["Criminal Court", "Supreme Court"])
-        docket = st.text_input("Docket or indictment number")
+        st.subheader("Applicant")
+        ac = st.columns(3)
+        applicant_name = ac[0].text_input("Full name", value=st.session_state.get("user_name", ""))
+        applicant_aka = ac[1].text_input("AKA(s)")
+        applicant_nysid = ac[2].text_input("NYSID", placeholder="Optional")
+        ac2 = st.columns(3)
+        applicant_dob = ac2[0].date_input("Date of birth", value=None, min_value=date(1920, 1, 1))
+        applicant_address = ac2[1].text_input("Street address")
+        applicant_csz = ac2[2].text_input("City, State ZIP")
 
-        st.subheader("Offense details")
-        penal_law = st.text_input("Penal Law section", placeholder="PL 155.25")
-        offense_description = st.text_input("Offense description", placeholder="Petit Larceny")
-        charge_level = st.selectbox("Charge level", ["Violation", "Misdemeanor", "Felony"])
-        felony_class = st.selectbox("Felony class", ["None", "A", "B", "C", "D", "E", "I"])
-        is_sex_offense = st.checkbox("Sex offense under Article 130 / COR 168-a")
-        is_article_220_drug = st.checkbox("Article 220 drug felony exception applies")
+        st.subheader("Case")
+        cc = st.columns(3)
+        docket = cc[0].text_input("Docket or indictment number")
+        court_name = cc[1].text_input("Court name", placeholder="NY County Criminal Court")
+        county = cc[2].text_input("County", placeholder="New York")
 
-        st.subheader("Timeline and current status")
-        sentencing_date = st.date_input("Sentencing date", value=None)
-        incarceration_served = st.checkbox("Incarceration was served")
-        release_date = st.date_input("Release date", value=None, disabled=not incarceration_served)
-        supervision_completed = st.checkbox("Probation/parole completed")
-        completion_date = st.date_input("Supervision completion date", value=None, disabled=not supervision_completed)
-        pending_ny = st.checkbox("Pending New York charges")
-        pending_out_of_state = st.checkbox("Pending out-of-state felony")
+        st.subheader("Offense")
+        oc = st.columns(3)
+        charge_level = oc[0].selectbox("Charge level", ny_sealing.CHARGE_LEVELS, index=3)
+        penal_law = oc[1].text_input("Penal Law section", placeholder="PL 155.25")
+        offense_description = oc[2].text_input("Offense description", placeholder="Petit Larceny")
+        oc2 = st.columns(3)
+        felony_class = oc2[0].selectbox("Felony class", ["None", *ny_sealing.FELONY_CLASSES])
+        sentence_term = oc2[1].text_input("Sentence term", placeholder="Time served")
+        is_out_of_state = oc2[2].checkbox("Conviction outside New York")
+
+        ex = st.columns(4)
+        is_sex_offense = ex[0].checkbox("Article 130 sex offense")
+        requires_sora = ex[1].checkbox("SORA registration required")
+        is_violent_felony = ex[2].checkbox("Violent felony (PL 70.02)")
+        is_attempt = ex[3].checkbox("Attempt / conspiracy")
+
+        st.subheader("Timeline")
+        tc = st.columns(3)
+        conviction_date = tc[0].date_input("Conviction date", value=None)
+        sentencing_date = tc[1].date_input("Sentencing date", value=None)
+        incarceration_served = tc[2].checkbox("Incarceration was served")
+        tc2 = st.columns(3)
+        release_date = tc2[0].date_input("Release date", value=None, disabled=not incarceration_served)
+        supervision_completed = tc2[1].checkbox("Probation/parole completed", value=True)
+        conditional_discharge = tc2[2].checkbox("Conditional discharge imposed")
+
+        st.subheader("Current status")
+        sc = st.columns(4)
+        pending_ny = sc[0].checkbox("Pending NY charges")
+        pending_out_of_state = sc[1].checkbox("Pending out-of-state felony")
+        total_convictions = sc[2].number_input("Total convictions", min_value=0, max_value=20, value=1)
+        total_felonies = sc[3].number_input("Of those, felonies", min_value=0, max_value=20, value=0)
         subsequent_date = st.date_input("Most recent subsequent conviction date", value=None)
+        diversion_completed = st.checkbox("Judicial diversion or DTAP completed (CPL 160.58)")
+
+        st.subheader("Reasons for the court (CPL 160.59 affidavit)")
+        discretionary_factors = st.text_area(
+            "Why should the court grant sealing?",
+            placeholder="Rehabilitation, employment, education, community ties, letters of support.",
+            height=90, label_visibility="collapsed")
 
         audit_targets = st.multiselect(
             "Commercial audit targets",
             ["Checkr", "Sterling", "HireRight", "LexisNexis"],
-            default=["Checkr", "Sterling", "HireRight", "LexisNexis"],
-        )
-        submitted = st.form_submit_button("Calculate screening result", type="primary")
+            default=["Checkr", "Sterling", "HireRight", "LexisNexis"])
+        submitted = st.form_submit_button("Run screening", type="primary")
 
     if submitted:
-        payload = {
-            "case_metadata": {"jurisdiction": jurisdiction, "court_type": court_type, "docket_or_indictment_no": docket},
+        case_payload = {
+            "case_metadata": {
+                "docket_or_indictment_no": docket, "court_name": court_name, "county": county,
+            },
             "offense_details": {
-                "penal_law_section": penal_law, "offense_description": offense_description,
-                "charge_level": charge_level, "felony_class": None if felony_class == "None" else felony_class,
-                "is_sex_offense": is_sex_offense, "is_article_220_drug": is_article_220_drug,
+                "charge_level": charge_level,
+                "penal_law_section": penal_law,
+                "offense_description": offense_description,
+                "felony_class": None if felony_class == "None" else felony_class,
+                "is_sex_offense": is_sex_offense or None,
+                "requires_sora": requires_sora,
+                "is_violent_felony": is_violent_felony,
+                "is_attempt": is_attempt,
+                "is_out_of_state": is_out_of_state,
             },
             "timeline_inputs": {
-                "sentencing_date": sentencing_date, "incarceration_served": incarceration_served,
+                "conviction_date": conviction_date,
+                "sentencing_date": sentencing_date,
+                "sentence_term": sentence_term,
+                "incarceration_served": incarceration_served,
                 "release_date": release_date if incarceration_served else None,
-                "probation_parole_completed": supervision_completed, "completion_date": completion_date,
+                "probation_parole_completed": supervision_completed,
+                "conditional_discharge_imposed": conditional_discharge,
+                "diversion_or_dtap_completed": diversion_completed,
             },
             "current_status_flags": {
-                "has_pending_ny_charges": pending_ny, "has_pending_out_of_state_felony": pending_out_of_state,
+                "has_pending_ny_charges": pending_ny,
+                "has_pending_out_of_state_felony": pending_out_of_state,
                 "subsequent_conviction_date": subsequent_date,
+                "total_convictions": total_convictions,
+                "total_felony_convictions": total_felonies,
             },
         }
-        result = ny_sealing.eligibility(payload)
+
+        screening = ny_sealing.screen(case_payload)
         usage_metrics.record_event(config.USAGE_METRICS_DB_PATH, usage_metrics.SEALING_SCREENED)
-        if result["status"] == ny_sealing.STATUS_SEALED:
-            st.success(f"Screening result: {result['status']}")
-        elif result["status"] == ny_sealing.STATUS_PENDING:
-            st.warning(f"Screening result: {result['status']}")
+
+        headline = screening.headline
+        if headline is None:
+            st.error("Enter a charge level to screen this record.")
         else:
-            st.error(f"Screening result: {result['status']}")
-        st.write(result["reason"])
-        if "threshold_date" in result:
-            st.write(f"Clock start: {result['start_date']} | Threshold date: {result['threshold_date']} | Days elapsed: {result['days_elapsed']}")
-        st.info(result.get("implementation_window_note", "Use the official court process to verify the result."))
+            _TONE = {
+                ny_sealing.STATUS_SEALED: st.success,
+                ny_sealing.STATUS_ELIGIBLE_TO_PETITION: st.success,
+                ny_sealing.STATUS_PENDING: st.warning,
+                ny_sealing.STATUS_DISQUALIFIED: st.error,
+                ny_sealing.STATUS_NOT_APPLICABLE: st.info,
+            }
+            _TONE[headline.status](
+                f"**{headline.statute} — {headline.status}** · {headline.label}")
+            st.write(headline.reason)
+            if headline.seal_scope == ny_sealing.SCOPE_PARTIAL:
+                st.warning(
+                    "This is a **partial** seal. DCJS, police and prosecutor records are "
+                    "sealed; the court file is not, so the conviction stays findable in "
+                    "court records.", icon="⚠️")
+            elif headline.seal_scope == ny_sealing.SCOPE_CONDITIONAL:
+                st.warning(
+                    "This seal is **conditional** — a later misdemeanour or felony arrest "
+                    "unseals it.", icon="⚠️")
 
-        st.subheader("State versus private audit")
-        for instruction in ny_sealing.audit_instructions(audit_targets):
-            st.write(f"- {instruction}")
+            st.subheader("Every pathway")
+            st.dataframe(
+                [
+                    {
+                        "Statute": p.statute,
+                        "Pathway": p.label,
+                        "Trigger": p.mechanism.title(),
+                        "Status": p.status,
+                        "Seal": p.seal_scope.title(),
+                        "Earliest date": str(p.threshold_date or "—"),
+                        "Why": p.reason,
+                    }
+                    for p in screening.pathways
+                ],
+                width="stretch", hide_index=True)
 
-        st.subheader("Employment questionnaire script")
-        st.code("I have no reportable conviction that is legally required to be disclosed for this question. Please evaluate any record under New York law and provide the report and basis for any adverse action.")
+            for note in screening.charge.classification_notes:
+                st.caption(f"Classification: {note}")
 
-        st.subheader("Commercial-report dispute language")
-        st.code("I dispute the completeness and accuracy of the criminal-record information reported about me. Please reinvestigate under 15 U.S.C. § 1681e(b), delete information that is inaccurate, incomplete, sealed, or not legally reportable, and provide the results and source of your investigation. New York Human Rights Law § 296(16) also restricts discriminatory use of criminal-history information.")
+            st.caption(
+                "Statutory clock arithmetic in this screen has not had the manual "
+                "sign-off CLAUDE.md requires for deadline math. Verify every date "
+                "against the Certificate of Disposition.")
+
+            petition = screening.by_statute(ny_sealing.CPL_160_59)
+            if petition and petition.applicable and petition.status != ny_sealing.STATUS_DISQUALIFIED:
+                st.subheader("CPL 160.59 motion")
+                record = ny_sealing.build_record(
+                    {
+                        "name": applicant_name, "aka": applicant_aka,
+                        "nysid": applicant_nysid, "dob": applicant_dob,
+                        "address": applicant_address, "city_state_zip": applicant_csz,
+                        "email": st.session_state.get("user_email", ""),
+                    },
+                    [case_payload],
+                    discretionary_factors=discretionary_factors,
+                )
+                if record.blocking_issues:
+                    st.warning("**Before filing, resolve:**\n\n" + "\n".join(
+                        f"- {issue}" for issue in record.blocking_issues))
+                if record.venue:
+                    st.write(f"**File in:** {record.venue}")
+                if record.service_counties:
+                    st.write("**Serve the District Attorney of:** "
+                             + ", ".join(record.service_counties))
+                st.download_button(
+                    "⬇️ Download draft motion (PDF)",
+                    data=ny_sealing.fill_motion(record),
+                    file_name=f"cpl-160-59-motion-{(docket or 'draft').replace('/', '-')}.pdf",
+                    mime="application/pdf",
+                    type="primary")
+                st.caption(
+                    "A draft for checking your answers — not the court's form. File on the "
+                    "official Notice of Motion published by the NYS Unified Court System.")
+
+            st.subheader("State versus private audit")
+            for instruction in ny_sealing.audit_instructions(audit_targets, screening):
+                st.write(f"- {instruction}")
+
+            st.subheader("Employment questionnaire script")
+            st.code("I have no reportable conviction that is legally required to be disclosed for this question. Please evaluate any record under New York law and provide the report and basis for any adverse action.")
+
+            st.subheader("Commercial-report dispute language")
+            st.code("I dispute the completeness and accuracy of the criminal-record information reported about me. Please reinvestigate under 15 U.S.C. § 1681e(b), delete information that is inaccurate, incomplete, sealed, or not legally reportable, and provide the results and source of your investigation. New York Human Rights Law § 296(16) also restricts discriminatory use of criminal-history information.")
 
     st.link_button("Official NY courts guide", config.NY_COURT_EXPUNGEMENT_URL, icon="📚")
     st.info("Verify every date and disposition against the Certificate of Disposition and DCJS record. Consult a qualified New York criminal-defense attorney for case-specific advice.", icon="⚠️")

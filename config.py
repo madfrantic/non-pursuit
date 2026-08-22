@@ -86,9 +86,10 @@ STATE_RESOURCES = {
             "registration + one-shot-deletion bill (S9088 / A9642) was introduced in "
             "January 2026 and is still in committee, not law. If it's a criminal "
             "record you're trying to seal instead, this app's own NY Expungement "
-            "page covers real CPL 160.50 / 160.55 / 160.59 pathways — a "
-            "different kind of resource than DROP, but the most relevant "
-            "state-specific starting point available today."
+            "page screens a conviction against all five New York sealing pathways "
+            "(CPL 160.50, 160.55, 160.57 Clean Slate, 160.58 and 160.59) and drafts "
+            "a CPL 160.59 motion — screening guidance, not a legal determination, "
+            "and a different kind of resource than DROP."
         ),
         "action_label": "Go to NY Expungement",
         "action_mode": "⚖️ NY Expungement",

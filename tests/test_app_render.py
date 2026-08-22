@@ -226,3 +226,44 @@ def test_demo_mode_is_exempt_from_the_gate(monkeypatch, tmp_path):
     app = _run(monkeypatch, tmp_path, demo=True, unlock=False)
     assert not app.exception
     assert app.radio(key="nav_mode") is not None
+
+
+@pytest.mark.parametrize("demo", [False, True], ids=["local", "demo"])
+def test_ny_expungement_renders_without_exception(monkeypatch, tmp_path, demo):
+    """The four-stage rebuild put ~200 lines of new widgets on this page.
+
+    Every unit test around it is a pure-function test of ny_sealing; none
+    of them would catch a Streamlit widget raising at render time, which
+    is the failure mode a presentation would actually hit.
+    """
+    app = _run(monkeypatch, tmp_path, demo)
+    app.radio(key="nav_mode").set_value("⚖️ NY Expungement").run()
+    assert not app.exception
+
+
+@pytest.mark.parametrize("demo", [False, True], ids=["local", "demo"])
+def test_ny_expungement_screening_submits_without_exception(monkeypatch, tmp_path, demo):
+    """Submitting drives screen() -> build_record() -> fill_motion() and a
+    download button, which is the whole pipeline rendering for real."""
+    app = _run(monkeypatch, tmp_path, demo)
+    app.radio(key="nav_mode").set_value("⚖️ NY Expungement").run()
+
+    submit = next(b for b in app.button if b.label == "Run screening")
+    submit.set_value(True).run()
+
+    assert not app.exception
+    headings = [h.value for h in app.subheader]
+    # Proves stage 2 and stage 4 both ran: the pathway table is the
+    # screening output, the download button only exists once fill_motion()
+    # has returned real PDF bytes.
+    assert "Every pathway" in headings
+    assert "CPL 160.59 motion" in headings
+    assert len(app.dataframe) == 1
+    assert any(d.label.endswith("(PDF)") for d in app.download_button)
+
+
+@pytest.mark.parametrize("demo", [False, True], ids=["local", "demo"])
+def test_google_de_indexing_renders_without_exception(monkeypatch, tmp_path, demo):
+    app = _run(monkeypatch, tmp_path, demo)
+    app.radio(key="nav_mode").set_value("🚫 Google De-Indexing").run()
+    assert not app.exception

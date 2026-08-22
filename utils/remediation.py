@@ -43,6 +43,7 @@ from pathlib import Path
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
+import config
 import jurisdiction_router
 import letter_compiler
 import privacy_contacts
@@ -354,3 +355,176 @@ def _caveats(scored: dict, payloads: list) -> list:
             "start a statutory clock against somewhere that may not receive mail."
         )
     return caveats
+
+
+# ---------------------------------------------------------------------------
+# Google search-result escalation
+# ---------------------------------------------------------------------------
+# A broker taking a record down does not remove it from Google. The page
+# 404s while the search result, and often a cached snippet, keeps serving
+# the same name, address and phone number for weeks. DELISTED is therefore
+# not the end of the exposure -- it is the moment a *different* removal
+# path opens, and this section builds the links for it.
+#
+# WHY NO INDEXING API
+#
+# Google's Indexing API is restricted by policy to pages carrying
+# JobPosting or BroadcastEvent-in-VideoObject structured data, on a default
+# 200-request daily quota, with increases gated on that same structured
+# data. Its URL_DELETED verb only accepts URLs on a property you own and
+# have verified in Search Console. A broker's profile page is somebody
+# else's domain, so none of it reaches the thing we actually need removed.
+# The public removal tools below need no GCP project, no service account
+# and no site ownership.
+#
+# WHY WE DO NOT PREFILL THE TOOL FORMS
+#
+# Both Google tools are authenticated multi-step forms, not GET endpoints
+# with a documented URL parameter. Appending a guessed `?url=` would look
+# like a one-click escalation and silently drop the payload, which is worse
+# than an honest copy-paste. So each action carries the canonical tool URL
+# *and* the exact value to paste, and the UI presents them together.
+#
+# The one link that is genuinely prefillable is the index probe -- an
+# ordinary Google search the user could type themselves -- so that one is
+# built as a real, clickable query.
+
+GOOGLE_REFRESH_OUTDATED_URL = "https://search.google.com/search-console/remove-outdated-content"
+GOOGLE_SEARCH_URL = "https://www.google.com/search"
+
+ESCALATION_REFRESH = "refresh_outdated"
+ESCALATION_PII = "personal_info_removal"
+
+# Refresh Outdated Content is the right tool only once the page is actually
+# gone or materially changed -- it asks Google to re-crawl and drop what it
+# is still showing. That is exactly the DELISTED state and nothing earlier,
+# which is why this engine refuses to build an escalation for a campaign
+# that has not reached it.
+ESCALATABLE_STATUSES = frozenset({"DELISTED"})
+
+
+def google_index_probe_url(domain: str, name: str = "") -> str:
+    """A real, clickable Google query showing whether the record is still indexed.
+
+    This is the evidence step before any removal request: Refresh Outdated
+    Content wants to know what Google is still showing, and a `site:` query
+    is the fastest way to see it. Built as a genuine prefilled search
+    because, unlike the removal forms, this one is just a URL.
+    """
+    from urllib.parse import quote_plus
+
+    terms = f"site:{domain.strip()}" if domain else ""
+    if name.strip():
+        terms = f'{terms} "{name.strip()}"'.strip()
+    if not terms:
+        return GOOGLE_SEARCH_URL
+    return f"{GOOGLE_SEARCH_URL}?q={quote_plus(terms)}"
+
+
+def _refresh_outdated_action(record_url: str, name: str) -> dict:
+    return {
+        "kind": ESCALATION_REFRESH,
+        "label": "Refresh Outdated Content",
+        "url": GOOGLE_REFRESH_OUTDATED_URL,
+        "paste_value": record_url,
+        "primary": True,
+        "requires_account": True,
+        "why": (
+            "The broker page is gone but Google may still serve the old result "
+            "and its cached copy. This tool asks Google to re-crawl the dead URL "
+            "and drop what it is still showing."
+        ),
+        "how": (
+            "Open the tool, paste the URL above, and choose \"Content has been "
+            "removed\". Google will confirm the page 404s before actioning it, "
+            "which is why this only works once the record is verifiably gone."
+        ),
+        "note": (
+            "Public tool -- no site ownership or Search Console verification "
+            "needed. A Google account is required to submit."
+        ),
+    }
+
+
+def _pii_removal_action(record_url: str, name: str) -> dict:
+    return {
+        "kind": ESCALATION_PII,
+        "label": "Remove personal information",
+        "url": config.GOOGLE_PII_REMOVAL_URL,
+        "paste_value": record_url,
+        "primary": False,
+        "requires_account": True,
+        "why": (
+            "Fallback for what Refresh Outdated Content cannot reach: a broker "
+            "that re-lists the same dossier at a new URL, a mirror on a sister "
+            "domain, or a snippet that survives the re-crawl. This route argues "
+            "the content is personal information rather than merely stale."
+        ),
+        "how": (
+            "Open the form, paste the URL above, and select the categories of "
+            "personal information the page exposed -- typically home address and "
+            "phone number for a people-search record."
+        ),
+        "note": (
+            "Removes the result from Google Search only. It does not touch the "
+            "source site, which is what the statutory demand already did."
+        ),
+    }
+
+
+def plan_google_escalation(campaign: dict, profile: dict) -> dict:
+    """The Google removal payload for one delisted broker campaign.
+
+    Returns a payload whether or not it is actionable. An ineligible
+    campaign comes back with `eligible=False` and a reason, for the same
+    reason plan_broker_demands keeps its manual-check rows: a campaign
+    silently missing from the escalation list reads as "nothing to do here",
+    which is the opposite of true.
+    """
+    status = campaign.get("effective_status") or campaign.get("status") or ""
+    domain = (campaign.get("domain") or "").strip()
+    record_url = (campaign.get("profile_url") or "").strip()
+    name = (profile.get("name") or "").strip()
+
+    blocked = []
+    if status not in ESCALATABLE_STATUSES:
+        blocked.append(
+            f"campaign is {status or 'unknown'}, not DELISTED -- Refresh Outdated "
+            f"Content only actions a URL that is already gone")
+    if not record_url:
+        blocked.append(
+            "no record URL was captured for this campaign, and both Google tools "
+            "identify the content by its exact URL")
+
+    return {
+        "broker_name": campaign.get("broker_name", ""),
+        "domain": domain,
+        "record_url": record_url,
+        "status": status,
+        "delisted_on": campaign.get("date_verified_removed") or "",
+        "eligible": not blocked,
+        "blocked_reason": "; ".join(blocked),
+        "index_probe_url": google_index_probe_url(domain, name),
+        "actions": [
+            _refresh_outdated_action(record_url, name),
+            _pii_removal_action(record_url, name),
+        ] if not blocked else [],
+    }
+
+
+def plan_google_escalations(campaigns: list, profile: dict, *,
+                            eligible_only: bool = True) -> list:
+    """One Google removal payload per campaign, newest delisting first."""
+    payloads = [plan_google_escalation(c, profile) for c in campaigns or []]
+    if eligible_only:
+        payloads = [p for p in payloads if p["eligible"]]
+    return sorted(payloads, key=lambda p: p["delisted_on"], reverse=True)
+
+
+def google_escalation_summary(payloads: list) -> dict:
+    """Counts for the header strip above the escalation list."""
+    return {
+        "total": len(payloads),
+        "eligible": sum(1 for p in payloads if p["eligible"]),
+        "blocked": sum(1 for p in payloads if not p["eligible"]),
+    }

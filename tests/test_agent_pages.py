@@ -210,3 +210,50 @@ def test_demo_mode_starts_no_background_engine(monkeypatch, tmp_path):
     app.run()
     assert not app.exception
     assert built == []
+
+
+def test_removals_page_escalates_a_delisted_campaign_to_google(unlocked):
+    """The Google section joins to campaign_manager, not broker_ledger.
+
+    The parametrized page tests above seed only broker_ledger rows, so
+    this section renders its empty state for all of them. A DELISTED
+    campaign is what actually exercises it.
+    """
+    import campaign_manager
+
+    db = unlocked
+    campaign_id = campaign_manager.create_or_update_campaign(
+        db, "TruePeopleSearch", "truepeoplesearch.com",
+        profile_url="https://truepeoplesearch.com/find/person/abc123")
+    campaign_manager.mark_dispatched(db, campaign_id)
+    campaign_manager.record_delisting(db, campaign_id, evidence="404 on re-check")
+
+    app = _run("5_Removals.py")
+    assert not app.exception
+
+    rendered = " ".join(str(m.value) for m in app.markdown)
+    assert "TruePeopleSearch" in rendered
+    labels = [b.label for b in app.get("link_button")]
+    assert "Refresh Outdated Content" in labels
+    assert "Remove personal information" in labels
+    assert "Check if still indexed" in labels
+    # The record URL is offered for pasting, because neither Google form
+    # accepts it as a query parameter.
+    assert any("truepeoplesearch.com/find/person/abc123" in str(c.value)
+               for c in app.code)
+
+
+def test_removals_page_does_not_offer_google_for_a_live_campaign(unlocked):
+    """Refresh Outdated Content only actions a URL that is already gone."""
+    import campaign_manager
+
+    db = unlocked
+    campaign_id = campaign_manager.create_or_update_campaign(
+        db, "WhitePages", "whitepages.com",
+        profile_url="https://whitepages.com/name/abc")
+    campaign_manager.mark_dispatched(db, campaign_id)
+
+    app = _run("5_Removals.py")
+    assert not app.exception
+    assert "Refresh Outdated Content" not in [
+        b.label for b in app.get("link_button")]
