@@ -129,10 +129,10 @@ def _email_results_frame(results):
     return pd.DataFrame(
         [
             {
-                "Service": r["service"],
+                "Platform": r.get("platform") or r.get("service"),
                 "Status": CONFIDENCE_LABEL.get(r["confidence"], r["confidence"]),
-                "Vector": r["vector"],
-                "Details": r["reason"],
+                "Profile URL": r.get("profile_url") or "",
+                "Details": r.get("reason", ""),
             }
             for r in results
         ]
@@ -277,7 +277,10 @@ def render(show_title=True):
     # Display username scan results
     if results is not None:
         summary = footprint_scanner.summarize(results)
-        found = footprint_scanner.discoveries(results)
+        found = footprint_scanner.discoveries(results, confident_only=True)
+        needs_review = footprint_scanner.discoveries(results, confident_only=False)
+        # Subtract confirmed from needs_review to get only the ambiguous ones.
+        review_only = [r for r in needs_review if r["confidence"] != footprint_scanner.CONFIRMED]
 
         cols = st.columns(4)
         cols[0].metric("Confirmed", summary[footprint_scanner.CONFIRMED])
@@ -286,6 +289,7 @@ def render(show_title=True):
         cols[3].metric("Unreachable", summary[footprint_scanner.ERROR])
     else:
         found = []
+        review_only = []
 
     # Display email scan results
     if email_results is not None:
@@ -302,6 +306,7 @@ def render(show_title=True):
             width="stretch",
             hide_index=True,
             column_config={
+                "Profile URL": st.column_config.LinkColumn("Profile URL", display_text="Open"),
                 "Details": st.column_config.TextColumn("Details", width="medium"),
             },
         )
@@ -317,7 +322,7 @@ def render(show_title=True):
             st.caption("No email associations found to save.")
         st.divider()
 
-    if not found and email_results is None:
+    if not found and not review_only and email_results is None:
         st.success(
             f"No accounts surfaced for **{st.session_state.footprint_handle}** across "
             f"{len(results)} platforms."
@@ -325,14 +330,10 @@ def render(show_title=True):
         return
 
     if found:
-        st.subheader(f"👤 Discovered Usernames — {len(found)} for \"{st.session_state.footprint_handle}\"")
+        st.subheader(f"🟢 Confirmed Accounts — {len(found)} for \"{st.session_state.footprint_handle}\"")
         st.caption(
-            "🟢 Confirmed means the platform returned its own account-exists signal. "
-            "🟡 Review means the response was ambiguous -- a JavaScript-rendered page, say -- "
-            "so it needs a human look rather than being discarded. "
-            f"**{MANUAL_REVIEW_LABEL}** means an edge firewall answered instead of the "
-            "platform (LinkedIn does this to every automated request), so no automated "
-            "recheck will ever resolve it -- open the link and look."
+            "These platforms returned their own account-exists signal (matching status code "
+            "and expected content). These are real discoveries."
         )
 
         st.dataframe(
@@ -358,6 +359,42 @@ def render(show_title=True):
             saved = discovered_accounts.save_discoveries(runtime_mode.db_path(), found)
             st.session_state.pop("audit_zip", None)
             st.success(f"Saved {saved} account(s) to your closure worklist below.")
+
+    if review_only:
+        waf_blocked = [r for r in review_only if footprint_scanner.is_manual_review(r)]
+        ambiguous = [r for r in review_only if not footprint_scanner.is_manual_review(r)]
+
+        if ambiguous:
+            with st.expander(f"🟡 {len(ambiguous)} result(s) need manual review", icon="🔍"):
+                st.caption(
+                    "These returned an ambiguous response (HTTP 200 without a definitive match, "
+                    "or a site that doesn't define an exists-string). Open the link to check manually."
+                )
+                st.dataframe(
+                    _results_frame(ambiguous),
+                    width="stretch",
+                    hide_index=True,
+                    column_config={
+                        "Profile URL": st.column_config.LinkColumn("Profile URL", display_text="Open"),
+                        "Why": st.column_config.TextColumn("Why", width="medium"),
+                    },
+                )
+
+        if waf_blocked:
+            with st.expander(f"🛡️ {len(waf_blocked)} platform(s) blocked the scan", icon="⚠️"):
+                st.caption(
+                    "An edge firewall (WAF/CAPTCHA) answered instead of the platform. "
+                    "No automated recheck will resolve these — open the link and look."
+                )
+                st.dataframe(
+                    _results_frame(waf_blocked),
+                    width="stretch",
+                    hide_index=True,
+                    column_config={
+                        "Profile URL": st.column_config.LinkColumn("Profile URL", display_text="Open"),
+                        "Why": st.column_config.TextColumn("Why", width="medium"),
+                    },
+                )
 
     st.divider()
     st.subheader("Closure worklist")

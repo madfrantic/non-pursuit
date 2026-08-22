@@ -38,6 +38,14 @@ def _normalize_result(module: str, result: Any) -> Dict[str, Any]:
         return _unavailable(module, result)
     if not isinstance(result, dict):
         if isinstance(result, list):
+            # Footprint results include every verdict (CONFIRMED, POSSIBLE,
+            # NOT_FOUND, ERROR).  Only confirmed discoveries should appear
+            # in the dossier — the full list with its ambiguous rows stays
+            # available in the dedicated Footprint page.
+            if module == "footprint":
+                confirmed = footprint_scanner.discoveries(result, confident_only=True)
+                return {"module": module, "status": STATUS_SUCCESS if confirmed else STATUS_EMPTY,
+                        "records": confirmed, "count": len(confirmed)}
             return {"module": module, "status": STATUS_SUCCESS if result else STATUS_EMPTY, "records": result, "count": len(result)}
         return _unavailable(module, TypeError("scanner returned unexpected type"))
 
@@ -72,20 +80,37 @@ async def _run_footprint(handle: str) -> list:
         _log.error("Footprint scan failed: %s", exc)
         return []  # Return empty list instead of exception object
 
-async def _run_email(email: str) -> list:
-    """Scan email through passive OSINT vectors with resilient error handling."""
+async def _run_email(email: str) -> Dict[str, Any]:
+    """Scan email through passive OSINT vectors with resilient error handling.
+
+    Returns a result dict rather than a bare list so that "what we found"
+    and "what we checked" stay separate. scan_email() emits one row per
+    check including the misses; counting those as records reported four
+    findings for every address, whether or not anything was actually
+    found. `records` is now the real hits only, and the full check log
+    rides along under `checks` for the UI to show its work.
+    """
+    empty = {"module": "email", "status": STATUS_EMPTY, "records": [], "count": 0, "checks": []}
     if not email or "@" not in email:
-        return []
+        return empty
     try:
         results = await asyncio.to_thread(email_scanner.scan_email, email)
-        # Ensure we always return a list, even if it's empty
-        return results if isinstance(results, list) else []
+        if not isinstance(results, list):
+            return empty
+        findings = email_scanner.exposure_findings(results)
+        return {
+            "module": "email",
+            "status": STATUS_SUCCESS if findings else STATUS_EMPTY,
+            "records": findings,
+            "count": len(findings),
+            "checks": results,
+        }
     except asyncio.TimeoutError:
-        _log.warning("Email scan timed out for %s", email)
-        return []  # Return empty list, not exception
+        _log.warning("Email scan timed out")
+        return {**empty, "status": STATUS_UNAVAILABLE}
     except Exception as exc:
         _log.error("Email scan failed: %s", exc)
-        return []  # Return empty list instead of exception object
+        return {**empty, "status": STATUS_UNAVAILABLE}
 
 
 async def run_full_osint_sweep(profile_data: Dict[str, Any], passive_only: bool = False) -> Dict[str, Any]:
@@ -200,6 +225,7 @@ async def run_full_osint_sweep(profile_data: Dict[str, Any], passive_only: bool 
                 "status": em_result.get("status", STATUS_UNAVAILABLE),
                 "records": em_result.get("records", []),
                 "count": em_result.get("count", 0),
+                "checks": em_result.get("checks", []),
             },
         },
         "summary": {

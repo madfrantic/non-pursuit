@@ -179,21 +179,12 @@ class TestScanEmail:
     """Full email scan across all passive vectors."""
 
     def test_scan_runs_all_vectors(self):
-        """scan_email() calls all check functions."""
-        with patch("email_scanner.check_gravatar") as mock_grav, \
-             patch("email_scanner.check_libravatar") as mock_librav, \
-             patch("email_scanner.check_pgp_keys") as mock_pgp, \
-             patch("email_scanner.check_dns_records") as mock_dns:
-            mock_grav.return_value = (CONFIRMED, "test")
-            mock_librav.return_value = (NOT_FOUND, "test")
-            mock_pgp.return_value = (POSSIBLE, "test")
-            mock_dns.return_value = (CONFIRMED, "test")
-
-            results = scan_email("alice@example.com")
-            assert len(results) == 4
-            assert all(r["identifier"] == "alice@example.com" for r in results)
-            services = {r["service"] for r in results}
-            assert services == {"Gravatar", "Libravatar", "PGP Keys", "Domain DNS"}
+        """scan_email() calls multi-platform probers and DNS validation."""
+        results = scan_email("alice@example.com")
+        assert len(results) >= 12
+        assert all(r["identifier"] == "alice@example.com" for r in results)
+        services = {r["service"] for r in results}
+        assert {"Gravatar", "Libravatar", "PGP Keys", "Spotify", "Duolingo", "GitHub", "Domain DNS"}.issubset(services)
 
     def test_scan_empty_email(self):
         """Empty or invalid email returns empty results."""

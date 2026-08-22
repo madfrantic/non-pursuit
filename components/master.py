@@ -26,6 +26,7 @@ from osint_aggregator import run_full_osint_sweep
 import pdf_generator
 import profile_state
 import presentation_mode
+import usage_metrics
 
 _log = get_logger("master")
 
@@ -353,16 +354,28 @@ def render(brokers_df):
     # Validate email is present for email OSINT
     email_valid = profile.get("email", "").strip() and "@" in profile.get("email", "")
 
-    # Execution button
-    if st.button("⚡ Execute Master Recon", type="primary", use_container_width=True):
+    # Execution button or automatic trigger from profile save
+    trigger_recon = st.button("⚡ Execute Master Recon", type="primary", use_container_width=True)
+    if not trigger_recon and st.session_state.get("profile_saved_auto_scan"):
+        trigger_recon = True
+        st.session_state.profile_saved_auto_scan = False
+
+    if trigger_recon:
         progress_text = "Running comprehensive recon sweep across all modules concurrently..."
         my_bar = st.progress(0, text=progress_text)
         try:
             if st.session_state.get("presentation_mode"):
                 st.session_state.osint_findings = asyncio.run(presentation_mode.get_mock_osint_findings())
+                usage_metrics.record_event(config.USAGE_METRICS_DB_PATH, usage_metrics.FOOTPRINT_SCAN_RUN)
+                usage_metrics.record_event(config.USAGE_METRICS_DB_PATH, usage_metrics.EMAIL_SCAN_RUN)
                 my_bar.progress(100, text="Mock recon sweep complete (Presentation Mode).")
             else:
                 is_cloud = runtime_mode.is_cloud_deployment()
+                if profile.get("handle") and not is_cloud:
+                    usage_metrics.record_event(config.USAGE_METRICS_DB_PATH, usage_metrics.FOOTPRINT_SCAN_RUN)
+                if email_valid:
+                    usage_metrics.record_event(config.USAGE_METRICS_DB_PATH, usage_metrics.EMAIL_SCAN_RUN)
+
                 st.session_state.osint_findings = asyncio.run(
                     run_full_osint_sweep(_osint_profile(), passive_only=is_cloud)
                 )
@@ -400,7 +413,7 @@ def render(brokers_df):
     exposure_icon = "🔴" if total_exposure > 2 else "🟡" if total_exposure > 0 else "🟢"
     c1, c2, c3, c4 = st.columns(4)
     c1.metric(f"{exposure_icon} Exposure score", total_exposure)
-    c2.metric("🔴 Critical breaches", email_count)
+    c2.metric("📧 Email exposures", email_count)
     c3.metric("👤 Exposed handles", fp_count)
     c4.metric("📬 Deletion targets", len(brokers_df))
 

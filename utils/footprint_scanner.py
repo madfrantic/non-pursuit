@@ -123,7 +123,8 @@ def validate_target_url(url: str) -> str | None:
     return None
 
 
-def classify(site: dict, status_code: int | None, content: str) -> tuple[str, str]:
+def classify(site: dict, status_code: int | None, content: str,
+             *, final_url: str = "") -> tuple[str, str]:
     """Sort one response into (verdict, reason).
 
     Precedence is deliberate and order-sensitive:
@@ -132,13 +133,17 @@ def classify(site: dict, status_code: int | None, content: str) -> tuple[str, st
       3. m_string present     -> NOT_FOUND (guarded against the empty-string trap)
       4. m_code == status     -> NOT_FOUND (skipped when m_code == e_code)
       5. e_code + e_string    -> CONFIRMED
-      6. bare 200             -> POSSIBLE (soft 200 / JS-rendered page)
-    7. 3xx without following a redirect -> POSSIBLE
-    8. anything else        -> NOT_FOUND
+      6. bare 200             -> NOT_FOUND if page is too short or redirected
+                                  to a generic route; POSSIBLE otherwise
+      7. anything else        -> NOT_FOUND
 
     A site that defines no e_string (2 of them) can only ever match on
     status code, which is thin evidence for asserting someone owns an
     account -- those resolve to POSSIBLE, not CONFIRMED.
+
+    ``final_url`` is the URL after following redirects. When the request
+    followed a redirect and landed on a generic route (login, signup, 404,
+    homepage), the response is a miss, not an ambiguous hit.
     """
     if status_code is None:
         return ERROR, "no response"
@@ -164,12 +169,36 @@ def classify(site: dict, status_code: int | None, content: str) -> tuple[str, st
             return POSSIBLE, "status matched; site defines no exists-string"
 
     if status_code == 200:
+        # Redirect landed on a generic page (login, signup, 404 route,
+        # homepage) -- that's a miss, not an ambiguous hit.
+        if final_url and _is_generic_landing(final_url):
+            return NOT_FOUND, f"redirected to generic page ({final_url})"
+        # Very short responses almost always mean an empty/error page, not
+        # a real profile.  1 KB is well below any real profile page.
+        if len(content) < 1024:
+            return NOT_FOUND, "HTTP 200 but response too short to contain a profile"
         return POSSIBLE, "HTTP 200 without a definitive match"
 
-    if 300 <= status_code < 400:
-        return POSSIBLE, f"redirect requires review (HTTP {status_code})"
-
     return NOT_FOUND, f"no match (HTTP {status_code})"
+
+
+# Segments that indicate a generic landing page rather than a real profile.
+_GENERIC_SEGMENTS = frozenset({
+    "/login", "/signin", "/sign-in", "/signup", "/sign-up", "/register",
+    "/404", "/not-found", "/notfound", "/home", "/explore", "/search",
+    "/join", "/auth",
+})
+
+
+def _is_generic_landing(url: str) -> bool:
+    """True when *url* looks like a login, signup, 404, or homepage --
+    destinations that sites redirect to when a profile doesn't exist."""
+    try:
+        path = urlsplit(url).path.rstrip("/").lower()
+    except ValueError:
+        return False
+    # Exact match or prefix match ("/login/next?..." still counts).
+    return any(path == seg or path.startswith(seg + "/") for seg in _GENERIC_SEGMENTS)
 
 
 def _protection_note(site: dict) -> str:
@@ -235,10 +264,14 @@ async def _check_site(session, site, account, semaphore, timeout):
                              if key.lower() not in {"host", "content-length"}},
                     data=request["body"],
                     timeout=aiohttp.ClientTimeout(total=timeout),
-                    allow_redirects=False,
+                    allow_redirects=True,
+                    max_redirects=5,
                 ) as response:
                     content = await response.text(errors="ignore")
-                    verdict, reason = classify(site, response.status, content)
+                    final_url = str(response.url) if response.url else ""
+                    verdict, reason = classify(
+                        site, response.status, content, final_url=final_url,
+                    )
         except asyncio.TimeoutError:
             verdict, reason = ERROR, "timed out"
         except Exception as exc:
@@ -322,20 +355,31 @@ def _extract_social_avatar_url(platform: str, handle: str) -> str:
     return builder(handle_clean) if builder else ""
 
 
-def discoveries(results: list) -> list:
-    """Just the rows worth showing a human: confirmed hits first, then
-    the ones needing review. NOT_FOUND and ERROR are dropped.
+def discoveries(results: list, confident_only: bool = True) -> list:
+    """Just the rows worth showing a human: confirmed hits by default,
+    with ambiguous results available when ``confident_only`` is False.
+
+    When confident_only is True (the default), only CONFIRMED results are
+    returned — these have both a matching status code and exists-string,
+    so they are genuine discoveries. POSSIBLE results (WAF blocks, bare
+    200s, sites with no exists-string) are excluded to prevent the flood
+    of false positives that made the old behaviour useless.
 
     Adds avatar URLs for social platforms where available, so the UI
     can display a visual confirmation card. Only extracts avatars if
     target_identifier is present (it always is in real scans, but test
     fixtures may omit it).
     """
+    if confident_only:
+        keep_verdicts = {CONFIRMED}
+    else:
+        keep_verdicts = {CONFIRMED, POSSIBLE}
+
     keep = []
     for r in results:
-        if r["confidence"] in (CONFIRMED, POSSIBLE):
+        if r["confidence"] in keep_verdicts:
             if "avatar_url" not in r and "target_identifier" in r:
                 r["avatar_url"] = _extract_social_avatar_url(r["platform"], r["target_identifier"])
             keep.append(r)
     order = {CONFIRMED: 0, POSSIBLE: 1}
-    return sorted(keep, key=lambda r: (order[r["confidence"]], r["platform"].lower()))
+    return sorted(keep, key=lambda r: (order.get(r["confidence"], 2), r["platform"].lower()))

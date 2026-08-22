@@ -1,31 +1,3 @@
-[theme]
-# Security-blue palette: the same register 1Password, NordVPN, and most
-# password managers use -- calmer teals and warm golds read as spa/finance,
-# not vigilance. Native theme only; no custom CSS ships with the app, so
-# this file is the entire visual identity.
-base = "dark"
-primaryColor = "#2563eb"
-backgroundColor = "#0b1120"
-secondaryBackgroundColor = "#16213a"
-textColor = "#e2e8f0"
-borderColor = "#28344f"
-font = "sans-serif"                  # system stack -- no third-party font fetch
-codeFont = "monospace"
-baseRadius = "6px"                   # tightened from the 8px default: control
-buttonRadius = "6px"                 # panel, not a soft consumer app
-showWidgetBorder = true
-showSidebarBorder = true
-
-greenColor = "#22c55e"
-redColor = "#ef4444"
-
-[theme.sidebar]
-backgroundColor = "#0b1120"
-secondaryBackgroundColor = "#16213a"
-textColor = "#e2e8f0"
-borderColor = "#28344f"
-primaryColor = "#2563eb"
-
 [server]
 headless = true
 enableCORS = false

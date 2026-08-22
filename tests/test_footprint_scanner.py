@@ -55,9 +55,19 @@ def test_not_found_on_missing_code_alone():
     assert verdict == NOT_FOUND
 
 
-def test_soft_200_without_match_is_possible():
-    """A JS-rendered page returns 200 with neither marker present."""
+def test_soft_200_short_response_is_not_found():
+    """A JS-rendered page returning 200 with a tiny body is treated as not
+    found -- real profile pages are always larger than 1 KB."""
     verdict, reason = classify(make_site(), 200, "<html><body><div id='root'></div></body></html>")
+    assert verdict == NOT_FOUND
+    assert "too short" in reason
+
+
+def test_soft_200_long_response_without_match_is_possible():
+    """A 200 response with a substantial body but no e_string match is
+    still ambiguous and needs manual review."""
+    long_content = "<html><body>" + "x" * 2000 + "</body></html>"
+    verdict, reason = classify(make_site(), 200, long_content)
     assert verdict == POSSIBLE
     assert "200" in reason
 
@@ -76,10 +86,27 @@ def test_no_response_is_error():
     assert verdict == ERROR
 
 
-def test_redirect_requires_review_without_following_it():
-    verdict, reason = classify(make_site(), 302, "")
+def test_redirect_to_generic_page_is_not_found():
+    """When following redirects lands on /login, /signup, or /404, the
+    profile does not exist -- it's not ambiguous, it's a miss."""
+    long_body = "<html><body>" + "x" * 2000 + "</body></html>"
+    verdict, reason = classify(
+        make_site(), 200, long_body,
+        final_url="https://example.com/login",
+    )
+    assert verdict == NOT_FOUND
+    assert "generic" in reason.lower()
+
+
+def test_redirect_to_profile_url_is_still_possible():
+    """If redirect lands on a non-generic URL (e.g. the profile itself),
+    classify should treat it as any other 200."""
+    long_body = "<html><body>" + "x" * 2000 + "</body></html>"
+    verdict, _ = classify(
+        make_site(), 200, long_body,
+        final_url="https://example.com/users/alice",
+    )
     assert verdict == POSSIBLE
-    assert "redirect" in reason
 
 
 def test_target_url_rejects_non_https_and_private_addresses():
@@ -182,12 +209,25 @@ def test_summarize_counts_each_verdict():
     assert summary[ERROR] == 1
 
 
-def test_discoveries_drops_misses_and_ranks_confirmed_first():
+def test_discoveries_default_returns_only_confirmed():
+    """The default (confident_only=True) drops POSSIBLE along with
+    NOT_FOUND and ERROR, so only genuine discoveries are shown."""
     results = [
         _result("Zeta", POSSIBLE), _result("Alpha", CONFIRMED),
         _result("Beta", NOT_FOUND), _result("Gamma", ERROR),
     ]
     found = discoveries(results)
+    assert [r["platform"] for r in found] == ["Alpha"]
+
+
+def test_discoveries_with_confident_only_false_includes_possible():
+    """When confident_only=False, both CONFIRMED and POSSIBLE are returned,
+    with CONFIRMED ranked first."""
+    results = [
+        _result("Zeta", POSSIBLE), _result("Alpha", CONFIRMED),
+        _result("Beta", NOT_FOUND), _result("Gamma", ERROR),
+    ]
+    found = discoveries(results, confident_only=False)
     assert [r["platform"] for r in found] == ["Alpha", "Zeta"]
 
 
@@ -247,5 +287,6 @@ def test_unprotected_site_failure_stays_an_error():
 
 def test_manual_review_is_false_for_an_ordinary_ambiguous_row():
     from footprint_scanner import is_manual_review
-    _, reason = classify(make_site(), 200, "<div id='root'></div>")
+    long_body = "<html><body>" + "x" * 2000 + "</body></html>"
+    _, reason = classify(make_site(), 200, long_body)
     assert not is_manual_review({"reason": reason})

@@ -11,7 +11,7 @@ or side effects). The goal is mapping email exposure without alerting the target
 """
 import hashlib
 import socket
-from urllib.parse import urlencode
+from urllib.parse import quote, urlencode
 
 import requests
 
@@ -25,6 +25,9 @@ GRAVATAR_JSON_FORMAT = "?d=404&format=json"
 LIBRAVATAR_API = "https://www.libravatar.org/avatar"
 LIBRAVATAR_JSON_FORMAT = "?d=404&format=json"
 
+# The email goes in the *path*, not a ?q= parameter. The query form
+# 301-redirects and then 404s for every address, which is why this vector
+# reported ERROR on every scan until it was checked against the live API.
 PGP_API = "https://keys.openpgp.org/vks/v1/by-email"
 
 CONFIRMED = "CONFIRMED"
@@ -83,7 +86,9 @@ def check_libravatar(email: str) -> tuple[str, str]:
     try:
         hash_val = _libravatar_hash(email)
         url = f"{LIBRAVATAR_API}/{hash_val}{LIBRAVATAR_JSON_FORMAT}"
-        response = requests.get(url, timeout=TIMEOUT, allow_redirects=False)
+        # www.libravatar.org 301s to the apex domain. Without following it
+        # this check reported ERROR for every address ever scanned.
+        response = requests.get(url, timeout=TIMEOUT, allow_redirects=True)
         if response.status_code == 200:
             return CONFIRMED, "Libravatar profile found"
         elif response.status_code == 404:
@@ -99,24 +104,31 @@ def check_pgp_keys(email: str) -> tuple[str, str]:
 
     Returns (verdict, reason). Checks for public encryption key associations
     without modifying anything.
+
+    The endpoint answers with an ASCII-armored key block, not JSON -- a 200
+    carrying "BEGIN PGP PUBLIC KEY BLOCK" is the hit, and 404 is the miss.
     """
     if not email or "@" not in email:
         return NOT_FOUND, "invalid email format"
 
     try:
-        params = {"q": email}
-        url = f"{PGP_API}?{urlencode(params)}"
-        response = requests.get(url, timeout=TIMEOUT, allow_redirects=False)
+        url = f"{PGP_API}/{quote(email)}"
+        response = requests.get(url, timeout=TIMEOUT, allow_redirects=True)
         if response.status_code == 200:
             try:
                 data = response.json()
-                keys = data.get("keys", [])
-                if keys:
-                    return CONFIRMED, f"PGP public key(s) found ({len(keys)} key(s) registered)"
-                else:
-                    return NOT_FOUND, "PGP 200 OK but no keys for this email"
+                if isinstance(data, dict) and "keys" in data:
+                    keys = data.get("keys", [])
+                    if keys:
+                        count = len(keys)
+                        s = "s" if count != 1 else ""
+                        return CONFIRMED, f"PGP public key registered ({count} key{s})"
+                    return NOT_FOUND, "PGP 200 OK but no keys in response"
             except Exception:
-                return POSSIBLE, "PGP server returned data but unparseable"
+                pass
+            if "BEGIN PGP PUBLIC KEY BLOCK" in response.text:
+                return CONFIRMED, "PGP public key registered for this address"
+            return NOT_FOUND, "PGP 200 OK but no key block returned"
         elif response.status_code == 404:
             return NOT_FOUND, "PGP 404 (no keys registered)"
         else:
@@ -151,75 +163,129 @@ def check_dns_records(email: str) -> tuple[str, str]:
         return ERROR, f"DNS check failed: {str(e)[:60]}"
 
 
-def scan_email(email: str) -> list:
-    """Scan an email through all passive vectors.
+import holehe_scanner
 
-    Returns list of result dicts: [
-        {
-            "service": "Gravatar" | "Libravatar" | "PGP Keys" | "Domain DNS",
-            "identifier": email,
-            "confidence": CONFIRMED | POSSIBLE | NOT_FOUND | ERROR,
-            "reason": str,
-            "vector": str,
-        },
-        ...
-    ]
+
+def scan_email(email: str) -> list:
+    """Scan an email through all passive Holehe-style multi-platform vectors
+    and DNS hygiene validation.
+
+    Returns list of result dicts for each probed service.
     """
     email = (email or "").strip().lower()
     if not email or "@" not in email:
         return []
 
-    results = []
-    checks = [
-        ("Gravatar", "avatar_service", check_gravatar),
-        ("Libravatar", "avatar_service", check_libravatar),
-        ("PGP Keys", "encryption_key", check_pgp_keys),
-        ("Domain DNS", "domain_validation", check_dns_records),
-    ]
+    try:
+        results = holehe_scanner.scan_email_sync(email)
+    except Exception as exc:
+        _log.warning("Holehe async email scan failed: %s", exc)
+        results = []
 
-    for service, vector, check_fn in checks:
-        try:
-            verdict, reason = check_fn(email)
-            results.append({
-                "service": service,
-                "identifier": email,
-                "confidence": verdict,
-                "reason": reason,
-                "vector": vector,
-            })
-        except Exception as e:
-            email_token = hashlib.sha256(email.encode("utf-8")).hexdigest()[:12]
-            _log.warning("Check %s failed for email token %s: %s", service, email_token, e)
-            results.append({
-                "service": service,
-                "identifier": email,
-                "confidence": ERROR,
-                "reason": f"Exception: {str(e)[:60]}",
-                "vector": vector,
-            })
+    # If holehe scan returned nothing (e.g. offline sandbox without event loop),
+    # fall back to standard built-in probes
+    if not results:
+        checks = [
+            ("Gravatar", "avatar_service", check_gravatar),
+            ("Libravatar", "avatar_service", check_libravatar),
+            ("PGP Keys", "encryption_key", check_pgp_keys),
+        ]
+        for service, vector, check_fn in checks:
+            try:
+                verdict, reason = check_fn(email)
+                results.append({
+                    "platform": service,
+                    "service": service,
+                    "identifier": email,
+                    "target_identifier": email,
+                    "confidence": verdict,
+                    "reason": reason,
+                    "vector": vector,
+                    "profile_url": _PROFILE_URL_BUILDERS.get(service, lambda e: "")(email),
+                    "avatar_url": _extract_avatar_url(service, email, None),
+                })
+            except Exception as e:
+                results.append({
+                    "platform": service,
+                    "service": service,
+                    "identifier": email,
+                    "target_identifier": email,
+                    "confidence": ERROR,
+                    "reason": f"Exception: {str(e)[:60]}",
+                    "vector": vector,
+                })
+
+    # Append passive DNS hygiene check
+    try:
+        verdict, reason = check_dns_records(email)
+        results.append({
+            "platform": "Domain DNS",
+            "service": "Domain DNS",
+            "identifier": email,
+            "target_identifier": email,
+            "confidence": verdict,
+            "reason": reason,
+            "vector": "domain_validation",
+        })
+    except Exception as e:
+        results.append({
+            "platform": "Domain DNS",
+            "service": "Domain DNS",
+            "identifier": email,
+            "target_identifier": email,
+            "confidence": ERROR,
+            "reason": f"DNS check failed: {str(e)[:60]}",
+            "vector": "domain_validation",
+        })
 
     return results
 
 
 EMAIL_CATEGORY = "email"
 
-# Where a human goes to see the association for themselves. Libravatar
-# has no public profile page (only the avatar endpoint), and a resolving
-# MX record isn't a profile at all, so neither gets a link rather than
-# being handed a URL that proves nothing.
+# Which services, when CONFIRMED, represent an actual public exposure of
+# this address.
+EXPOSURE_SERVICES = frozenset({
+    "Gravatar",
+    "Libravatar",
+    "PGP Keys",
+    "Spotify",
+    "Duolingo",
+    "Pinterest",
+    "Chess.com",
+    "GitHub",
+    "Adobe",
+    "Substack",
+    "Imgur",
+})
+
+
+def exposure_findings(results: list) -> list:
+    """The subset of scan results that are real, positive exposures."""
+    return [
+        row for row in results
+        if row.get("confidence") in (CONFIRMED, POSSIBLE)
+        and (row.get("service") in EXPOSURE_SERVICES or row.get("platform") in EXPOSURE_SERVICES)
+    ]
+
+
+# Where a human goes to see the association for themselves.
 _PROFILE_URL_BUILDERS = {
     "Gravatar": lambda email: f"https://gravatar.com/{_gravatar_hash(email)}",
     "PGP Keys": lambda email: f"{PGP_API}?{urlencode({'q': email})}",
+    "Spotify": lambda email: "https://open.spotify.com",
+    "Duolingo": lambda email: "https://www.duolingo.com",
+    "Pinterest": lambda email: "https://www.pinterest.com",
+    "Chess.com": lambda email: "https://www.chess.com",
+    "GitHub": lambda email: "https://github.com",
+    "Adobe": lambda email: "https://account.adobe.com",
+    "Substack": lambda email: "https://substack.com",
+    "Imgur": lambda email: "https://imgur.com",
 }
 
 
 def _extract_avatar_url(service: str, email: str, response_data: dict | None) -> str:
-    """Extract a displayable avatar image URL from a service response.
-
-    Gravatar and Libravatar both return avatar images at predictable URLs
-    built from the email hash. For Libravatar, we use the endpoint URL
-    directly; for Gravatar, the CDN address is stable.
-    """
+    """Extract a displayable avatar image URL from a service response."""
     if service == "Gravatar":
         hash_val = _gravatar_hash(email)
         return f"https://www.gravatar.com/avatar/{hash_val}?s=128&d=404"
@@ -232,33 +298,31 @@ def _extract_avatar_url(service: str, email: str, response_data: dict | None) ->
 def email_discoveries(results: list) -> list:
     """Reshape scan results into discovered_accounts rows.
 
-    Only CONFIRMED and POSSIBLE carry through. A NOT_FOUND is the absence
-    of an association, and writing those to a table called
-    "discovered_accounts" would inflate every downstream count -- the
-    audit summary included -- with things that were never found.
-
-    The identifier is the email itself, so re-scanning the same address
-    updates its rows rather than accumulating duplicates (the table's
-    UNIQUE(platform, target_identifier) does the work).
-
-    Avatar URLs are included for visual confirmation: Gravatar and
-    Libravatar both serve avatar images at hash-based URLs.
+    Only CONFIRMED and POSSIBLE carry through. Avatar URLs and direct
+    profile links are attached for visual confirmation.
     """
     rows = []
     for result in results:
-        if result["confidence"] not in (CONFIRMED, POSSIBLE):
+        if result.get("confidence") not in (CONFIRMED, POSSIBLE):
             continue
-        email = result["identifier"]
-        service = result["service"]
+        email = result.get("identifier") or result.get("target_identifier")
+        service = result.get("platform") or result.get("service")
+        if not service or service == "Domain DNS":
+            continue
         builder = _PROFILE_URL_BUILDERS.get(service)
+        profile_url = result.get("profile_url") or (builder(email) if builder else "")
+        avatar_url = result.get("avatar_url") or _extract_avatar_url(service, email, None)
         rows.append({
             "platform": service,
             "category": EMAIL_CATEGORY,
             "target_identifier": email,
-            "profile_url": builder(email) if builder else "",
-            "avatar_url": _extract_avatar_url(service, email, None),
-            "confidence": result["confidence"],
-            "reason": result["reason"],
+            "profile_url": profile_url,
+            "avatar_url": avatar_url,
+            "confidence": result.get("confidence"),
+            "reason": result.get("reason", ""),
+            "emailrecovery": result.get("emailrecovery"),
+            "phoneNumber": result.get("phoneNumber"),
+            "rate_limited": result.get("rate_limited", False),
         })
     return rows
 
