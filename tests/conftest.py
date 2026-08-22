@@ -10,6 +10,31 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "utils"))
 
 @pytest.fixture(autouse=True)
+def override_db_paths(monkeypatch, tmp_path):
+    """Redirect all SQLite DB paths to a temporary directory for tests.
+    This keeps the production configuration (data/ directory) untouched
+    while ensuring writeable locations during the sandboxed test run.
+    """
+    import config
+    # Helper to create a path inside the temporary directory
+    def tmp_file(name: str) -> str:
+        return str(tmp_path / name)
+
+    # List of config attributes that point to SQLite files
+    db_attrs = [
+        "TRACKER_DB_PATH",
+        "CAMPAIGNS_DB_PATH",
+        "EXPOSURE_DB_PATH",
+        "PROFILE_DB_PATH",
+        "FOOTPRINT_DB_PATH",
+        "USAGE_METRICS_DB_PATH",
+        "REVIEW_QUEUE_DB_PATH",
+        "LEDGER_DB_PATH",
+    ]
+    for attr in db_attrs:
+        monkeypatch.setattr(config, attr, tmp_file(attr.lower() + ".db"))
+
+@pytest.fixture(autouse=True)
 def disable_network_calls(monkeypatch):
     """
     Enforce zero network egress in test mode. Blocks unmocked outbound

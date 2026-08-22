@@ -26,16 +26,29 @@ def _configure_root():
     global _configured
     if _configured:
         return
-    Path(config.LOG_PATH).parent.mkdir(parents=True, exist_ok=True)
-    handler = RotatingFileHandler(
-        config.LOG_PATH, maxBytes=1_000_000, backupCount=2, encoding="utf-8"
-    )
-    handler.setFormatter(
-        logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
-    )
-    root = logging.getLogger("non_pursuit")
-    root.setLevel(logging.INFO)
-    root.addHandler(handler)
+    # Ensure the log directory exists; if creation fails (e.g., read‑only FS), fall back to console logging.
+    try:
+        Path(config.LOG_PATH).parent.mkdir(parents=True, exist_ok=True)
+        handler = RotatingFileHandler(
+            config.LOG_PATH, maxBytes=1_000_000, backupCount=2, encoding="utf-8"
+        )
+        handler.setFormatter(
+            logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
+        )
+        root = logging.getLogger("non_pursuit")
+        root.setLevel(logging.INFO)
+        root.addHandler(handler)
+    except OSError as e:
+        # If we cannot write to the log file (common in sandbox), use a simple stream handler.
+        root = logging.getLogger("non_pursuit")
+        root.setLevel(logging.INFO)
+        stream_handler = logging.StreamHandler()
+        stream_handler.setFormatter(
+            logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
+        )
+        root.addHandler(stream_handler)
+        # Log the fallback event.
+        root.debug(f"Logging to file failed ({e}); using console stream handler.")
     _configured = True
 
 
