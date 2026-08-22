@@ -530,15 +530,26 @@ def handle_is_valid(site: dict, account: str) -> bool:
         return True
 
 
-def select_sites(registry: dict, include_nsfw: bool = False,
+def select_sites(registry: dict, include_nsfw: bool = True,
                  sources: tuple = SOURCE_PRECEDENCE,
                  categories: list | None = None,
                  account: str | None = None) -> list:
     """The site list a scan should run against.
 
-    NSFW stays excluded unless explicitly requested, matching
-    wmn_dataset.select_sites() -- probing adult sites with someone's real
-    handle is not a surprise a compliance tool should spring on them.
+    NSFW is INCLUDED by default. This is the maximum-coverage default and
+    it is deliberate: an adult-platform account is the single most damaging
+    kind of forgotten exposure, so a footprint sweep that silently skips
+    that category reports a clean bill of health it did not actually earn.
+    Omitting it is the surprise, not including it.
+
+    The trade-off this accepts is that a sweep now probes adult platforms
+    with the subject's real handle. That is the right default for a tool
+    whose subject is its own operator, and callers scanning on someone
+    else's behalf are expected to pass include_nsfw=False.
+
+    The HTTP API does not inherit this default: api/main._select_sites
+    always passes include_nsfw explicitly from ScanRequest.options, whose
+    own default stays False, so a remote caller must still opt in.
     """
     sites = [s for s in registry.get("sites", []) if s.get("source") in sources]
     if not include_nsfw:
