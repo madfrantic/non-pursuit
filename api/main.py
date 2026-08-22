@@ -447,6 +447,39 @@ async def job_result(job_id: str) -> dict:
     return job["result"]
 
 
+def _completed_job_result(job_id: str) -> dict:
+    job = app.state.jobs.get(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="unknown or expired job")
+    if job["status"] == STATUS_FAILED:
+        raise HTTPException(status_code=500, detail=job["error"])
+    if job["status"] != STATUS_DONE:
+        raise HTTPException(status_code=409,
+                            detail=f"job is {job['status']}; no result yet")
+    return job["result"]
+
+
+@app.get("/api/jobs/{job_id}/report")
+async def job_report(job_id: str) -> dict:
+    """Return the identity graph and compliance report for a completed job."""
+    result = _completed_job_result(job_id)
+    return {
+        "identity_confidence": result.get("identity_confidence", {}),
+        "exposures": result.get("exposures", []),
+        "brokers": result.get("brokers", []),
+        "infrastructure": result.get("infrastructure", {}),
+        "scan": result.get("scan", {}),
+        "caveats": result.get("caveats", []),
+    }
+
+
+@app.get("/api/jobs/{job_id}/payloads")
+async def job_payloads(job_id: str) -> dict:
+    """Return generated deletion payloads without exposing other report data."""
+    result = _completed_job_result(job_id)
+    return result.get("remediation", {"payloads": []})
+
+
 @app.post("/api/remediate")
 async def remediate(request: RemediateRequest) -> dict:
     """Draft demand letters for exposures a person has already reviewed."""

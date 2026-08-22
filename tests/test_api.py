@@ -119,6 +119,25 @@ def test_health_reports_coverage(wired):
     assert body["registry_status"] == "cached"
 
 
+def test_completed_job_has_report_and_payload_views(wired):
+    submitted = wired.post("/api/scan", json={"subject": SUBJECT,
+                                              "options": {"min_confidence": 40}})
+    job_id = submitted.json()["job_id"]
+    for _ in range(200):
+        status = wired.get(f"/api/jobs/{job_id}").json()
+        if status["status"] in ("done", "failed"):
+            break
+        asyncio.run(asyncio.sleep(0.01))
+
+    assert status["status"] == "done"
+    report = wired.get(f"/api/jobs/{job_id}/report")
+    payloads = wired.get(f"/api/jobs/{job_id}/payloads")
+    assert report.status_code == 200
+    assert payloads.status_code == 200
+    assert report.json()["exposures"]
+    assert "payloads" in payloads.json()
+
+
 def test_health_warns_when_registry_is_empty(monkeypatch):
     monkeypatch.setattr(main.site_registry, "ensure_registry",
                         lambda *a, **k: ({"sites": []}, "unavailable"))
