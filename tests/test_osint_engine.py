@@ -132,3 +132,68 @@ def test_certspotter_fallback_on_crtsh_504(monkeypatch):
     
     assert len(certs) == 1
     assert certs[0]["name_value"] == "fallback.example.com"
+
+
+def test_normalize_result_email_list_retains_all_probed_results():
+    from osint_aggregator import _normalize_result
+    raw_checks = [
+        {"platform": "Gravatar", "service": "Gravatar", "confidence": "CONFIRMED", "reason": "found"},
+        {"platform": "Spotify", "service": "Spotify", "confidence": "POSSIBLE", "reason": "detected"},
+        {"platform": "Pornhub", "service": "Pornhub", "confidence": "CONFIRMED", "reason": "found"},
+        {"platform": "eBay", "service": "eBay", "confidence": "CONFIRMED", "reason": "found"},
+    ]
+    normalized = _normalize_result("email", raw_checks)
+    assert normalized["status"] == STATUS_SUCCESS
+    assert normalized["count"] == 4
+    assert len(normalized["records"]) == 4
+
+
+def test_normalize_result_syncs_dict_count_with_records_length():
+    from osint_aggregator import _normalize_result
+    out_of_sync = {
+        "status": STATUS_SUCCESS,
+        "records": [{"service": "Gravatar"}, {"service": "Spotify"}, {"service": "eBay"}],
+        "count": 102,
+    }
+    normalized = _normalize_result("email", out_of_sync)
+    assert normalized["count"] == 3
+    assert len(normalized["records"]) == 3
+
+
+def test_osint_sweep_score_matches_result_count_with_raw_checks():
+    raw_email_checks = [
+        {"platform": "Gravatar", "service": "Gravatar", "confidence": "CONFIRMED", "reason": "found"},
+        {"platform": "Spotify", "service": "Spotify", "confidence": "POSSIBLE", "reason": "detected"},
+        {"platform": "eBay", "service": "eBay", "confidence": "CONFIRMED", "reason": "detected"},
+    ]
+
+    raw_footprint = [
+        {"platform": "GitHub", "confidence": "CONFIRMED", "reason": "exists"},
+        {"platform": "Reddit", "confidence": "CONFIRMED", "reason": "exists"},
+    ]
+
+    with patch("osint_aggregator.scan_sec", new=AsyncMock(return_value={"status": STATUS_EMPTY, "records": []})), \
+         patch("osint_aggregator.scan_courtlistener", new=AsyncMock(return_value={"status": STATUS_EMPTY, "records": []})), \
+         patch("osint_aggregator.scan_fec", new=AsyncMock(return_value={"status": STATUS_EMPTY, "records": []})), \
+         patch("osint_aggregator.scan_github", new=AsyncMock(return_value={"status": STATUS_EMPTY, "records": []})), \
+         patch("osint_aggregator.scan_infrastructure", new=AsyncMock(return_value={"status": STATUS_EMPTY, "certificates": [], "domain_info": {}})), \
+         patch("osint_aggregator._run_footprint", new=AsyncMock(return_value=raw_footprint)), \
+         patch("osint_aggregator._run_email", new=AsyncMock(return_value=raw_email_checks)):
+        sweep = run(run_full_osint_sweep({"name": "Jane Doe", "handle": "janedoe", "email": "jane@example.com"}))
+
+    assert sweep["email"]["count"] == 3
+    assert len(sweep["email"]["records"]) == 3
+    assert sweep["footprint"]["count"] == 2
+    assert len(sweep["footprint"]["records"]) == 2
+    assert sweep["summary"]["total_exposures"] == 5
+    assert sweep["summary"]["total_exposures"] == (
+        sweep["sec"]["count"] +
+        sweep["courtlistener"]["count"] +
+        sweep["fec"]["count"] +
+        sweep["github"]["count"] +
+        sweep["infrastructure"]["count"] +
+        sweep["footprint"]["count"] +
+        sweep["email"]["count"]
+    )
+
+

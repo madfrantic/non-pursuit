@@ -37,15 +37,22 @@ _OSINT_STATUS_LABELS = {
     "unavailable": "⚪ Unavailable",
 }
 
+_OSINT_CONFIDENCE_BADGES = {
+    "CONFIRMED": "🟢 Confirmed",
+    "POSSIBLE": "🟡 Possible",
+    "NOT_FOUND": "⚪ Not Found",
+}
+
 
 def _osint_profile():
     profile = profile_state.get_profile(st.session_state)
     return {
-        "name": profile["full_name"],
-        "handle": profile["handle"],
-        "domain": profile["domain"],
-        "state": profile["state"],
-        "email": profile["email"],
+        "name": profile.get("full_name") or profile.get("name") or "",
+        "full_name": profile.get("full_name") or profile.get("name") or "",
+        "handle": profile.get("handle") or profile.get("username") or "",
+        "domain": profile.get("domain") or "",
+        "state": profile.get("state") or "",
+        "email": profile.get("email") or "",
     }
 
 
@@ -76,27 +83,28 @@ def _render_osint_records(result):
         st.caption("No records returned.")
         return
 
-    for record in records[:8]:
+    for record in records:
         if not isinstance(record, dict):
             st.write(str(record))
             continue
         try:
             label = next(
                 (record.get(key) for key in (
-                    "entity_name", "case_name", "contributor_name", "email", "subdomain", "domain", "platform", "service"
+                    "platform", "service", "site", "entity_name", "case_name", "contributor_name", "subdomain", "domain", "repository", "name", "email"
                 ) if record.get(key)),
                 "Finding",
             )
             detail = " · ".join(
                 str(record[key]) for key in (
-                    "filing_type", "filing_date", "court", "docket_number", "repository", "issuer", "registrar", "target_identifier", "confidence", "reason"
+                    "vector", "category", "filing_type", "filing_date", "date", "court", "docket_number", "repository", "recipient", "amount", "issuer", "registrar", "target_identifier", "reason", "breach", "description"
                 ) if record.get(key)
             )
+            badge = _OSINT_CONFIDENCE_BADGES.get(record.get("confidence"))
             with st.container(border=True):
-                st.markdown(f"**{label}**")
+                st.markdown(f"**{label}**" + (f" · {badge}" if badge else ""))
                 if detail:
                     st.caption(detail)
-                url = record.get("url") or record.get("court_url") or record.get("profile_url")
+                url = record.get("profile_url") or record.get("court_url") or record.get("url")
                 if url:
                     st.link_button("Open source", url, width="content")
         except Exception as e:
@@ -406,9 +414,33 @@ def render(brokers_df):
 
     summary = findings.get("summary", {})
     vectors = findings.get("vectors", {})
-    fp_count = vectors.get("footprint", {}).get("count", 0)
-    email_count = vectors.get("email", {}).get("count", 0)
-    total_exposure = summary.get("total_exposures", 0)
+
+    fp_vector = findings.get("footprint") or vectors.get("footprint") or {}
+    email_vector = findings.get("email") or vectors.get("email") or {}
+    github_vector = findings.get("github") or vectors.get("github") or {}
+    sec_vector = findings.get("sec") or vectors.get("sec") or {}
+    fec_vector = findings.get("fec") or vectors.get("fec") or {}
+    court_vector = findings.get("courtlistener") or vectors.get("courtlistener") or {}
+    infra_vector = findings.get("infrastructure") or vectors.get("infrastructure") or {}
+
+    fp_records = fp_vector.get("records", [])
+    email_records = email_vector.get("records", [])
+    github_records = github_vector.get("records", [])
+    sec_records = sec_vector.get("records", [])
+    fec_records = fec_vector.get("records", [])
+    court_records = court_vector.get("records", [])
+    infra_records = infra_vector.get("certificates", [])
+
+    fp_count = len(fp_records)
+    email_count = len(email_records)
+
+    total_exposure = (
+        fp_count + email_count + len(github_records) +
+        len(sec_records) + len(fec_records) + len(court_records) + len(infra_records)
+    )
+    
+    if "summary" in findings and isinstance(findings["summary"], dict):
+        findings["summary"]["total_exposures"] = total_exposure
     
     exposure_icon = "🔴" if total_exposure > 2 else "🟡" if total_exposure > 0 else "🟢"
     c1, c2, c3, c4 = st.columns(4)
@@ -417,19 +449,15 @@ def render(brokers_df):
     c3.metric("👤 Exposed handles", fp_count)
     c4.metric("📬 Deletion targets", len(brokers_df))
 
-    # Building the dossier costs a few hundred milliseconds, which is fine
-    # once per sweep and wasteful on every unrelated widget rerun -- so it
-    # is cached against the findings that produced it and dropped when a
-    # new sweep lands. A failure here must never take down the dashboard
-    # the presenter is standing in front of.
-    if "osint_dossier_pdf" not in st.session_state:
-        try:
+    # Build or retrieve the intelligence dossier PDF bytes
+    try:
+        if "osint_dossier_pdf" not in st.session_state or not st.session_state.get("osint_dossier_pdf"):
             st.session_state.osint_dossier_pdf = pdf_generator.build_dossier_bytes(
                 _osint_profile(), findings
             )
-        except Exception as exc:
-            _log.error("Dossier PDF generation failed: %s", exc)
-            st.session_state.osint_dossier_pdf = None
+    except Exception as exc:
+        _log.error("Dossier PDF generation failed: %s", exc)
+        st.session_state.osint_dossier_pdf = None
 
     if st.session_state.get("osint_dossier_pdf"):
         st.download_button(
@@ -450,13 +478,35 @@ def render(brokers_df):
     with st.container(border=True):
         c1, c2 = st.columns(2)
         with c1:
-            _render_osint_vector(findings.get("footprint", {}), "Social & Platform Footprint")
+            # Social & Platform Footprint section with diagnostics consistent with Email Exposure
+            handle_target = profile.get("handle") or (findings.get("profile") or {}).get("handle") or ""
+
+            if fp_count > 0 or fp_records:
+                _render_osint_vector(fp_vector, f"👤 Social & Platform Footprint ({fp_count} findings)")
+                fp_checks = fp_vector.get("checks", [])
+                if fp_checks and len(fp_checks) > fp_count:
+                    with st.expander(f"🔍 Probed platforms log ({fp_count} hits of {len(fp_checks)} platforms checked)"):
+                        st.caption(f"Showing all {len(fp_checks)} platforms probed:")
+                        for chk in fp_checks:
+                            if isinstance(chk, dict):
+                                chk_plat = chk.get("platform") or chk.get("service") or "Platform"
+                                chk_conf = chk.get("confidence", "UNKNOWN")
+                                chk_icon = "🟢" if chk_conf in ("CONFIRMED", "POSSIBLE") else "⚪"
+                                st.caption(f"{chk_icon} **{chk_plat}**: `{chk_conf}`")
+            elif not handle_target:
+                st.markdown("##### 👤 Social & Platform Footprint  ·  `⚪ Not Available`")
+                st.warning("No username / handle provided. Enter your handle in the 👤 Profile tab to scan for social platform footprints.")
+            elif fp_vector.get("status") == "unavailable":
+                st.markdown("##### 👤 Social & Platform Footprint  ·  `⚪ Scan Failed`")
+                st.caption(f"Footprint scan failed for: {handle_target}")
+                st.caption("This could be due to: timeout, rate limits, or network issues. Try again in a moment.")
+            else:
+                st.markdown("##### 👤 Social & Platform Footprint  ·  `🟢 Clean`")
+                st.caption(f"No exposed accounts found for @{handle_target} across probed platforms.")
         with c2:
             st.markdown("##### 🖼️ Public Media & Avatars")
-            fp_records = findings.get("footprint", {}).get("records", [])
-            em_records = findings.get("email", {}).get("records", [])
             found_avatars = False
-            for r in fp_records + em_records:
+            for r in fp_records + email_records:
                 if isinstance(r, dict) and r.get("avatar_url"):
                     st.image(r["avatar_url"], width=64, caption=r.get("platform") or r.get("service"))
                     found_avatars = True
@@ -466,42 +516,56 @@ def render(brokers_df):
     _section_header("🔐", "Data exposures & breaches")
     with st.container(border=True):
         # Email exposure section with detailed diagnostics
-        email_vector = findings.get("email", {})
-        email_count = email_vector.get("count", 0)
+        email_target = profile.get("email") or (findings.get("profile") or {}).get("email") or ""
 
-        if not profile.get("email"):
+        if email_count > 0 or email_records:
+            _render_osint_vector(email_vector, f"📧 Email & Identity Exposure ({email_count} findings)")
+            em_checks = email_vector.get("checks", [])
+            if em_checks and len(em_checks) > email_count:
+                with st.expander(f"🔍 Probed services log ({email_count} hits of {len(em_checks)} services checked)"):
+                    st.caption(f"Showing all {len(em_checks)} passive checks conducted across web services and registries:")
+                    for chk in em_checks:
+                        if isinstance(chk, dict):
+                            chk_plat = chk.get("platform") or chk.get("service") or "Service"
+                            chk_conf = chk.get("confidence", "UNKNOWN")
+                            chk_icon = "🟢" if chk_conf in ("CONFIRMED", "POSSIBLE") else "⚪"
+                            st.caption(f"{chk_icon} **{chk_plat}**: `{chk_conf}`")
+        elif not email_target:
             st.markdown("##### 📧 Email & Identity Exposure  ·  `⚪ Not Available`")
             st.warning("No email address provided. Enter your email in the 👤 Profile tab to scan for email exposures (Gravatar, PGP, breaches, etc.)")
-        elif not email_vector or email_vector.get("status") == "unavailable":
+        elif email_vector.get("status") == "unavailable":
             st.markdown("##### 📧 Email & Identity Exposure  ·  `⚪ Scan Failed`")
-            st.caption(f"Email scan failed for: {profile.get('email')}")
+            st.caption(f"Email scan failed for: {email_target}")
             st.caption("This could be due to: timeout, API limits, or network issues. Try again in a moment.")
-        elif email_count == 0:
+        else:
             st.markdown("##### 📧 Email & Identity Exposure  ·  `🟢 Clean`")
-            st.caption(f"No exposures found for {profile.get('email')} in:")
+            st.caption(f"No exposures found for {email_target} in:")
             cols = st.columns(2)
             cols[0].caption("• Gravatar profiles\n• PGP key servers")
             cols[1].caption("• Known breaches\n• DNS validation")
-        else:
-            _render_osint_vector(email_vector, f"📧 Email & Identity Exposure ({email_count} findings)")
 
         st.divider()
 
         # GitHub exposure section
-        _render_osint_vector(findings.get("github", {}), "Developer & Code Exposure")
+        gh_vector = findings.get("github") or findings.get("vectors", {}).get("github") or {}
+        _render_osint_vector(gh_vector, "Developer & Code Exposure")
 
     _section_header("🏛️", "Legal, financial & corporate footprint")
     with st.container(border=True):
         sec_col, fec_col, court_col = st.columns(3)
         with sec_col:
-            _render_osint_vector(findings.get("sec", {}), "SEC Filings")
+            sec_vector = findings.get("sec") or findings.get("vectors", {}).get("sec") or {}
+            _render_osint_vector(sec_vector, "SEC Filings")
         with fec_col:
-            _render_osint_vector(findings.get("fec", {}), "FEC Contributions")
+            fec_vector = findings.get("fec") or findings.get("vectors", {}).get("fec") or {}
+            _render_osint_vector(fec_vector, "FEC Contributions")
         with court_col:
-            _render_osint_vector(findings.get("courtlistener", {}), "Court Dockets")
+            cl_vector = findings.get("courtlistener") or findings.get("vectors", {}).get("courtlistener") or {}
+            _render_osint_vector(cl_vector, "Court Dockets")
             
     with st.container(border=True):
-        _render_osint_vector(findings.get("infrastructure", {}), "Domains & Certificates")
+        infra_vector = findings.get("infrastructure") or findings.get("vectors", {}).get("infrastructure") or {}
+        _render_osint_vector(infra_vector, "Domains & Certificates")
 
     _render_verification_vectors(brokers_df)
 

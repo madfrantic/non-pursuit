@@ -380,6 +380,190 @@ async def probe_imgur(email: str, session: aiohttp.ClientSession) -> Dict[str, A
         return _make_result("Imgur", "media", email, ERROR, f"Request failed: {str(exc)[:60]}")
 
 
+async def probe_pornhub(email: str, session: aiohttp.ClientSession) -> Dict[str, Any]:
+    """Check Pornhub registration status via front-end auth checker."""
+    url = "https://www.pornhub.com/front/authenticate"
+    headers = {"User-Agent": USER_AGENT, "X-Requested-With": "XMLHttpRequest"}
+    try:
+        async with session.post(url, headers=headers, data={"email": email}, timeout=aiohttp.ClientTimeout(total=DEFAULT_TIMEOUT)) as resp:
+            if resp.status == 200:
+                text = await resp.text()
+                if "email_taken" in text or "already in use" in text or "exists" in text or "true" in text.lower():
+                    return _make_result("Pornhub", "adult", email, CONFIRMED, "Account registered on Pornhub", "https://www.pornhub.com")
+                return _make_result("Pornhub", "adult", email, NOT_FOUND, "Email not registered on Pornhub")
+            elif resp.status == 429:
+                return _make_result("Pornhub", "adult", email, POSSIBLE, "Pornhub rate limited", rate_limited=True)
+            return _make_result("Pornhub", "adult", email, NOT_FOUND, f"Pornhub HTTP {resp.status}")
+    except Exception as exc:
+        return _make_result("Pornhub", "adult", email, ERROR, f"Request failed: {str(exc)[:60]}")
+
+
+async def probe_onlyfans(email: str, session: aiohttp.ClientSession) -> Dict[str, Any]:
+    """Check OnlyFans account presence via public check endpoint."""
+    url = "https://onlyfans.com/api2/v2/users/check_email"
+    headers = {"User-Agent": USER_AGENT, "Accept": "application/json"}
+    try:
+        async with session.post(url, headers=headers, json={"email": email}, timeout=aiohttp.ClientTimeout(total=DEFAULT_TIMEOUT)) as resp:
+            if resp.status == 200:
+                try:
+                    data = await resp.json()
+                    if data.get("exists") is True or data.get("is_registered") is True or data.get("taken") is True:
+                        return _make_result("OnlyFans", "adult", email, CONFIRMED, "Account registered on OnlyFans", "https://onlyfans.com")
+                    return _make_result("OnlyFans", "adult", email, NOT_FOUND, "Email not registered on OnlyFans")
+                except Exception:
+                    pass
+            elif resp.status == 429:
+                return _make_result("OnlyFans", "adult", email, POSSIBLE, "OnlyFans rate limited", rate_limited=True)
+            return _make_result("OnlyFans", "adult", email, NOT_FOUND, f"OnlyFans HTTP {resp.status}")
+    except Exception as exc:
+        return _make_result("OnlyFans", "adult", email, ERROR, f"Request failed: {str(exc)[:60]}")
+
+
+async def probe_xvideos(email: str, session: aiohttp.ClientSession) -> Dict[str, Any]:
+    """Check XVideos account registration status."""
+    url = f"https://www.xvideos.com/account/checkemail?email={quote(email)}"
+    headers = {"User-Agent": USER_AGENT, "X-Requested-With": "XMLHttpRequest"}
+    try:
+        async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=DEFAULT_TIMEOUT)) as resp:
+            if resp.status == 200:
+                text = await resp.text()
+                if "taken" in text or "exists" in text or "false" in text:
+                    return _make_result("XVideos", "adult", email, CONFIRMED, "Account registered on XVideos", "https://www.xvideos.com")
+                return _make_result("XVideos", "adult", email, NOT_FOUND, "Email not registered on XVideos")
+            elif resp.status == 429:
+                return _make_result("XVideos", "adult", email, POSSIBLE, "XVideos rate limited", rate_limited=True)
+            return _make_result("XVideos", "adult", email, NOT_FOUND, f"XVideos HTTP {resp.status}")
+    except Exception as exc:
+        return _make_result("XVideos", "adult", email, ERROR, f"Request failed: {str(exc)[:60]}")
+
+
+async def probe_stripchat(email: str, session: aiohttp.ClientSession) -> Dict[str, Any]:
+    """Check Stripchat email presence."""
+    url = f"https://stripchat.com/api/front/users/check-email?email={quote(email)}"
+    headers = {"User-Agent": USER_AGENT, "Accept": "application/json"}
+    try:
+        async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=DEFAULT_TIMEOUT)) as resp:
+            if resp.status == 200:
+                try:
+                    data = await resp.json()
+                    if data.get("isAvailable") is False or data.get("exists") is True:
+                        return _make_result("Stripchat", "adult", email, CONFIRMED, "Account registered on Stripchat", "https://stripchat.com")
+                    return _make_result("Stripchat", "adult", email, NOT_FOUND, "Email not registered on Stripchat")
+                except Exception:
+                    pass
+            elif resp.status == 429:
+                return _make_result("Stripchat", "adult", email, POSSIBLE, "Stripchat rate limited", rate_limited=True)
+            return _make_result("Stripchat", "adult", email, NOT_FOUND, f"Stripchat HTTP {resp.status}")
+    except Exception as exc:
+        return _make_result("Stripchat", "adult", email, ERROR, f"Request failed: {str(exc)[:60]}")
+
+
+async def probe_chaturbate(email: str, session: aiohttp.ClientSession) -> Dict[str, Any]:
+    """Check Chaturbate account presence."""
+    url = f"https://chaturbate.com/auth/check_email/?email={quote(email)}"
+    headers = {"User-Agent": USER_AGENT, "X-Requested-With": "XMLHttpRequest"}
+    try:
+        async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=DEFAULT_TIMEOUT)) as resp:
+            if resp.status == 200:
+                try:
+                    data = await resp.json()
+                    if data.get("success") is False or data.get("exists") is True or data.get("available") is False:
+                        return _make_result("Chaturbate", "adult", email, CONFIRMED, "Account registered on Chaturbate", "https://chaturbate.com")
+                    return _make_result("Chaturbate", "adult", email, NOT_FOUND, "Email not registered on Chaturbate")
+                except Exception:
+                    pass
+            elif resp.status == 429:
+                return _make_result("Chaturbate", "adult", email, POSSIBLE, "Chaturbate rate limited", rate_limited=True)
+            return _make_result("Chaturbate", "adult", email, NOT_FOUND, f"Chaturbate HTTP {resp.status}")
+    except Exception as exc:
+        return _make_result("Chaturbate", "adult", email, ERROR, f"Request failed: {str(exc)[:60]}")
+
+
+async def probe_twitter(email: str, session: aiohttp.ClientSession) -> Dict[str, Any]:
+    """Check X (Twitter) account availability."""
+    url = f"https://api.twitter.com/i/users/email_available.json?email={quote(email)}"
+    headers = {"User-Agent": USER_AGENT}
+    try:
+        async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=DEFAULT_TIMEOUT)) as resp:
+            if resp.status == 200:
+                try:
+                    data = await resp.json()
+                    if data.get("taken") is True:
+                        return _make_result("X (Twitter)", "social", email, CONFIRMED, "Account registered on X (Twitter)", "https://x.com")
+                    return _make_result("X (Twitter)", "social", email, NOT_FOUND, "Email not registered on X")
+                except Exception:
+                    pass
+            elif resp.status == 429:
+                return _make_result("X (Twitter)", "social", email, POSSIBLE, "X rate limited", rate_limited=True)
+            return _make_result("X (Twitter)", "social", email, NOT_FOUND, f"X HTTP {resp.status}")
+    except Exception as exc:
+        return _make_result("X (Twitter)", "social", email, ERROR, f"Request failed: {str(exc)[:60]}")
+
+
+async def probe_reddit(email: str, session: aiohttp.ClientSession) -> Dict[str, Any]:
+    """Check Reddit user association for email handle."""
+    handle = email.split("@")[0]
+    url = f"https://www.reddit.com/user/{quote(handle)}/about.json"
+    headers = {"User-Agent": USER_AGENT}
+    try:
+        async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=DEFAULT_TIMEOUT)) as resp:
+            if resp.status == 200:
+                try:
+                    data = await resp.json()
+                    if data.get("data", {}).get("name"):
+                        uname = data["data"]["name"]
+                        return _make_result("Reddit", "social", email, CONFIRMED, f"Reddit username association (@{uname})", f"https://reddit.com/user/{uname}")
+                except Exception:
+                    pass
+            elif resp.status == 429:
+                return _make_result("Reddit", "social", email, POSSIBLE, "Reddit rate limited", rate_limited=True)
+            return _make_result("Reddit", "social", email, NOT_FOUND, "No direct Reddit association")
+    except Exception as exc:
+        return _make_result("Reddit", "social", email, ERROR, f"Request failed: {str(exc)[:60]}")
+
+
+async def probe_ebay(email: str, session: aiohttp.ClientSession) -> Dict[str, Any]:
+    """Check eBay account existence."""
+    url = f"https://signin.ebay.com/identity/api/v1/user/exists?email={quote(email)}"
+    headers = {"User-Agent": USER_AGENT, "Accept": "application/json"}
+    try:
+        async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=DEFAULT_TIMEOUT)) as resp:
+            if resp.status == 200:
+                try:
+                    data = await resp.json()
+                    if data.get("exists") is True:
+                        return _make_result("eBay", "commerce", email, CONFIRMED, "Account registered on eBay", "https://www.ebay.com")
+                    return _make_result("eBay", "commerce", email, NOT_FOUND, "Email not registered on eBay")
+                except Exception:
+                    pass
+            elif resp.status == 429:
+                return _make_result("eBay", "commerce", email, POSSIBLE, "eBay rate limited", rate_limited=True)
+            return _make_result("eBay", "commerce", email, NOT_FOUND, f"eBay HTTP {resp.status}")
+    except Exception as exc:
+        return _make_result("eBay", "commerce", email, ERROR, f"Request failed: {str(exc)[:60]}")
+
+
+async def probe_snapchat(email: str, session: aiohttp.ClientSession) -> Dict[str, Any]:
+    """Check Snapchat registration."""
+    url = "https://accounts.snapchat.com/accounts/merlin/login"
+    headers = {"User-Agent": USER_AGENT, "Content-Type": "application/json"}
+    try:
+        async with session.post(url, headers=headers, json={"email": email}, timeout=aiohttp.ClientTimeout(total=DEFAULT_TIMEOUT)) as resp:
+            if resp.status == 200:
+                try:
+                    data = await resp.json()
+                    if data.get("status") == "TAKEN" or data.get("error_code") == "EMAIL_EXISTS":
+                        return _make_result("Snapchat", "social", email, CONFIRMED, "Account registered on Snapchat", "https://www.snapchat.com")
+                    return _make_result("Snapchat", "social", email, NOT_FOUND, "Email not registered on Snapchat")
+                except Exception:
+                    pass
+            elif resp.status == 429:
+                return _make_result("Snapchat", "social", email, POSSIBLE, "Snapchat rate limited", rate_limited=True)
+            return _make_result("Snapchat", "social", email, NOT_FOUND, f"Snapchat HTTP {resp.status}")
+    except Exception as exc:
+        return _make_result("Snapchat", "social", email, ERROR, f"Request failed: {str(exc)[:60]}")
+
+
 # ---------------------------------------------------------------------------
 # Master Probers Registry & Aggregated Scanner
 # ---------------------------------------------------------------------------
@@ -396,6 +580,15 @@ PROBERS = [
     ("Adobe", probe_adobe),
     ("Substack", probe_substack),
     ("Imgur", probe_imgur),
+    ("Pornhub", probe_pornhub),
+    ("OnlyFans", probe_onlyfans),
+    ("XVideos", probe_xvideos),
+    ("Stripchat", probe_stripchat),
+    ("Chaturbate", probe_chaturbate),
+    ("X (Twitter)", probe_twitter),
+    ("Reddit", probe_reddit),
+    ("eBay", probe_ebay),
+    ("Snapchat", probe_snapchat),
 ]
 
 

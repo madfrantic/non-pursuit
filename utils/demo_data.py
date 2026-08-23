@@ -65,6 +65,38 @@ DEMO_ACCOUNTS = [
         "profile_url": "https://github.com/jvale_91", "confidence": "CONFIRMED",
     },
     {
+        "platform": "eBay", "category": "commerce", "target_identifier": "jvale_91",
+        "profile_url": "https://www.ebay.com/usr/jvale_91", "confidence": "CONFIRMED",
+    },
+    {
+        "platform": "OnlyFans", "category": "adult", "target_identifier": "jvale_91",
+        "profile_url": "https://onlyfans.com/jvale_91", "confidence": "CONFIRMED",
+    },
+    {
+        "platform": "Pornhub", "category": "adult", "target_identifier": "jvale_91",
+        "profile_url": "https://www.pornhub.com/users/jvale_91", "confidence": "CONFIRMED",
+    },
+    {
+        "platform": "XVideos", "category": "adult", "target_identifier": "jvale_91",
+        "profile_url": "https://www.xvideos.com/profiles/jvale_91", "confidence": "CONFIRMED",
+    },
+    {
+        "platform": "Stripchat", "category": "adult", "target_identifier": "jvale_91",
+        "profile_url": "https://stripchat.com/jvale_91", "confidence": "CONFIRMED",
+    },
+    {
+        "platform": "Twitter / X", "category": "social", "target_identifier": "jvale_91",
+        "profile_url": "https://twitter.com/jvale_91", "confidence": "CONFIRMED",
+    },
+    {
+        "platform": "Instagram", "category": "social", "target_identifier": "jvale_91",
+        "profile_url": "https://instagram.com/jvale_91", "confidence": "CONFIRMED",
+    },
+    {
+        "platform": "Snapchat", "category": "social", "target_identifier": "jvale_91",
+        "profile_url": "https://www.snapchat.com/add/jvale_91", "confidence": "CONFIRMED",
+    },
+    {
         "platform": "Steam", "category": "gaming", "target_identifier": "jvale_91",
         "profile_url": "https://steamcommunity.com/id/jvale_91", "confidence": "POSSIBLE",
     },

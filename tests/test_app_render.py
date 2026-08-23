@@ -267,3 +267,53 @@ def test_google_de_indexing_renders_without_exception(monkeypatch, tmp_path, dem
     app = _run(monkeypatch, tmp_path, demo)
     app.radio(key="nav_mode").set_value("🚫 Google De-Indexing").run()
     assert not app.exception
+
+
+def test_intelligence_dossier_renders_social_and_email_findings(monkeypatch, tmp_path):
+    app = _run(monkeypatch, tmp_path, demo=False)
+    app.session_state["pf_full_name"] = "Jane Doe"
+    app.session_state["pf_email"] = "jane@example.com"
+    app.session_state["pf_handle"] = "janedoe"
+    app.session_state["osint_findings"] = {
+        "summary": {"total_exposures": 4},
+        "vectors": {
+            "footprint": {
+                "status": "success",
+                "count": 2,
+                "records": [
+                    {"platform": "GitHub", "category": "Development", "confidence": "CONFIRMED", "profile_url": "https://github.com/janedoe"},
+                    {"platform": "Reddit", "category": "Social", "confidence": "CONFIRMED", "profile_url": "https://reddit.com/u/janedoe"},
+                ],
+            },
+            "email": {
+                "status": "success",
+                "count": 2,
+                "records": [
+                    {"platform": "Gravatar", "service": "Gravatar", "confidence": "CONFIRMED", "reason": "profile found"},
+                    {"platform": "Have I Been Pwned", "service": "Have I Been Pwned", "confidence": "CONFIRMED", "reason": "breach found"},
+                ],
+            },
+        },
+    }
+    app.radio(key="nav_mode").set_value(MASTER).run()
+    assert not app.exception
+    # Check that metric values include the score of 4 and vector counts
+    metric_values = [m.value for m in app.metric]
+    assert 4 in metric_values or "4" in [str(v) for v in metric_values]
+
+
+def test_intelligence_dossier_handles_empty_fields_and_clean_diagnostics(monkeypatch, tmp_path):
+    app = _run(monkeypatch, tmp_path, demo=False)
+    app.session_state["pf_full_name"] = "Jane Doe"
+    app.session_state["pf_email"] = "jane@example.com"
+    app.session_state["pf_handle"] = ""  # No handle
+    app.session_state["osint_findings"] = {
+        "summary": {"total_exposures": 0},
+        "vectors": {
+            "footprint": {"status": "empty", "count": 0, "records": []},
+            "email": {"status": "empty", "count": 0, "records": []},
+        },
+    }
+    app.radio(key="nav_mode").set_value(MASTER).run()
+    assert not app.exception
+

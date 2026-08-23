@@ -243,30 +243,22 @@ def scan_email(email: str) -> list:
 
 EMAIL_CATEGORY = "email"
 
-# Which services, when CONFIRMED, represent an actual public exposure of
-# this address.
-EXPOSURE_SERVICES = frozenset({
-    "Gravatar",
-    "Libravatar",
-    "PGP Keys",
-    "Spotify",
-    "Duolingo",
-    "Pinterest",
-    "Chess.com",
-    "GitHub",
-    "Adobe",
-    "Substack",
-    "Imgur",
-})
-
 
 def exposure_findings(results: list) -> list:
-    """The subset of scan results that are real, positive exposures."""
+    """The positive hits from a sweep, across every probed service.
+
+    No service whitelist: an account on an adult platform, a marketplace or
+    a breach DB is an exposure exactly like a Gravatar profile is. Only the
+    confidence gate applies, so the caller's ``count`` stays equal to what
+    actually renders — the raw NOT_FOUND probes stay in ``checks``.
+    """
+    if not results or not isinstance(results, list):
+        return []
     return [
         row for row in results
-        if row.get("confidence") in (CONFIRMED, POSSIBLE)
-        and (row.get("service") in EXPOSURE_SERVICES or row.get("platform") in EXPOSURE_SERVICES)
+        if isinstance(row, dict) and row.get("confidence") in (CONFIRMED, POSSIBLE)
     ]
+
 
 
 # Where a human goes to see the association for themselves.
@@ -281,6 +273,15 @@ _PROFILE_URL_BUILDERS = {
     "Adobe": lambda email: "https://account.adobe.com",
     "Substack": lambda email: "https://substack.com",
     "Imgur": lambda email: "https://imgur.com",
+    "Pornhub": lambda email: "https://www.pornhub.com",
+    "OnlyFans": lambda email: "https://onlyfans.com",
+    "XVideos": lambda email: "https://www.xvideos.com",
+    "Stripchat": lambda email: "https://stripchat.com",
+    "Chaturbate": lambda email: "https://chaturbate.com",
+    "X (Twitter)": lambda email: "https://x.com",
+    "Reddit": lambda email: "https://reddit.com",
+    "eBay": lambda email: "https://www.ebay.com",
+    "Snapchat": lambda email: "https://www.snapchat.com",
 }
 
 

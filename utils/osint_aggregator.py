@@ -43,9 +43,18 @@ def _normalize_result(module: str, result: Any) -> Dict[str, Any]:
             # in the dossier — the full list with its ambiguous rows stays
             # available in the dedicated Footprint page.
             if module == "footprint":
-                confirmed = footprint_scanner.discoveries(result, confident_only=True)
+                confirmed = footprint_scanner.discoveries(result, confident_only=False)
                 return {"module": module, "status": STATUS_SUCCESS if confirmed else STATUS_EMPTY,
                         "records": confirmed, "count": len(confirmed)}
+            if module == "email":
+                findings = email_scanner.exposure_findings(result)
+                return {
+                    "module": module,
+                    "status": STATUS_SUCCESS if findings else STATUS_EMPTY,
+                    "records": findings,
+                    "count": len(findings),
+                    "checks": result,
+                }
             return {"module": module, "status": STATUS_SUCCESS if result else STATUS_EMPTY, "records": result, "count": len(result)}
         return _unavailable(module, TypeError("scanner returned unexpected type"))
 
@@ -55,11 +64,11 @@ def _normalize_result(module: str, result: Any) -> Dict[str, Any]:
     if module == "infrastructure":
         normalized.setdefault("certificates", [])
         normalized.setdefault("domain_info", {})
-        normalized.setdefault("cert_count", len(normalized["certificates"]))
-        normalized.setdefault("count", normalized["cert_count"])
+        normalized["cert_count"] = len(normalized["certificates"])
+        normalized["count"] = normalized["cert_count"]
     else:
         normalized.setdefault("records", [])
-        normalized.setdefault("count", len(normalized["records"]))
+        normalized["count"] = len(normalized["records"])
     return normalized
 
 

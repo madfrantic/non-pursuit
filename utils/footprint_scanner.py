@@ -358,18 +358,9 @@ def _extract_social_avatar_url(platform: str, handle: str) -> str:
 def discoveries(results: list, confident_only: bool = True) -> list:
     """Just the rows worth showing a human: confirmed hits by default,
     with ambiguous results available when ``confident_only`` is False.
-
-    When confident_only is True (the default), only CONFIRMED results are
-    returned — these have both a matching status code and exists-string,
-    so they are genuine discoveries. POSSIBLE results (WAF blocks, bare
-    200s, sites with no exists-string) are excluded to prevent the flood
-    of false positives that made the old behaviour useless.
-
-    Adds avatar URLs for social platforms where available, so the UI
-    can display a visual confirmation card. Only extracts avatars if
-    target_identifier is present (it always is in real scans, but test
-    fixtures may omit it).
     """
+    if not results or not isinstance(results, list):
+        return []
     if confident_only:
         keep_verdicts = {CONFIRMED}
     else:
@@ -377,9 +368,13 @@ def discoveries(results: list, confident_only: bool = True) -> list:
 
     keep = []
     for r in results:
-        if r["confidence"] in keep_verdicts:
+        if not isinstance(r, dict):
+            continue
+        if r.get("confidence") in keep_verdicts:
             if "avatar_url" not in r and "target_identifier" in r:
-                r["avatar_url"] = _extract_social_avatar_url(r["platform"], r["target_identifier"])
+                r["avatar_url"] = _extract_social_avatar_url(r.get("platform", ""), r["target_identifier"])
             keep.append(r)
     order = {CONFIRMED: 0, POSSIBLE: 1}
-    return sorted(keep, key=lambda r: (order.get(r["confidence"], 2), r["platform"].lower()))
+    return sorted(keep, key=lambda r: (order.get(r.get("confidence"), 2), str(r.get("platform", "")).lower()))
+
+

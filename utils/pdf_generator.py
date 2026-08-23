@@ -82,7 +82,10 @@ def _records(source: Any) -> List[dict]:
     if isinstance(source, dict):
         candidates = source.get("records")
         if candidates is None:
-            candidates = source.get("certificates", [])
+            candidates = list(source.get("certificates", []))
+            domain_info = source.get("domain_info")
+            if domain_info and isinstance(domain_info, dict) and (domain_info.get("domain") or domain_info.get("registrar")):
+                candidates = [domain_info, *candidates]
         source = candidates or []
     if not isinstance(source, Iterable) or isinstance(source, (str, bytes)):
         return []
@@ -91,8 +94,8 @@ def _records(source: Any) -> List[dict]:
 
 def _label_for(record: dict) -> str:
     """The most identifying field a record happens to carry."""
-    for key in ("platform", "service", "site", "entity_name", "email",
-                "subdomain", "domain", "repository", "name"):
+    for key in ("platform", "service", "site", "entity_name", "case_name",
+                "contributor_name", "subdomain", "domain", "repository", "name", "email"):
         if record.get(key):
             return _safe(record[key])
     return "Finding"
@@ -106,9 +109,20 @@ def _details_for(record: dict) -> List[str]:
         ("Confidence", "confidence"),
         ("Evidence", "reason"),
         ("Breach", "breach"),
+        ("Description", "description"),
+        ("Filing Type", "filing_type"),
+        ("Date", "filing_date"),
+        ("Date", "date"),
+        ("Court", "court"),
+        ("Docket", "docket_number"),
+        ("Repository", "repository"),
+        ("Recipient", "recipient"),
+        ("Amount", "amount"),
+        ("Target", "target_identifier"),
         ("Issuer", "issuer"),
         ("Registrar", "registrar"),
         ("URL", "profile_url"),
+        ("URL", "court_url"),
         ("URL", "url"),
     )
     lines = []
@@ -186,8 +200,17 @@ def _render_findings(doc: _Dossier, records: List[dict], empty_note: str) -> Non
         doc.pdf.ln(1.5)
 
 
-def generate_osint_pdf(profile: Dict[str, Any], footprint_results: Any,
-                       email_results: Any) -> bytes:
+def generate_osint_pdf(
+    profile: Dict[str, Any],
+    footprint_results: Any = None,
+    email_results: Any = None,
+    github_results: Any = None,
+    sec_results: Any = None,
+    fec_results: Any = None,
+    court_results: Any = None,
+    infra_results: Any = None,
+    **kwargs: Any,
+) -> bytes:
     """Build the intelligence dossier and return the PDF as bytes.
 
     Accepts empty or partial input on purpose: a dossier for a scan that
@@ -251,13 +274,35 @@ def generate_osint_pdf(profile: Dict[str, Any], footprint_results: Any,
 
     footprint = _records(footprint_results)
     emails = _records(email_results)
+    github = _records(github_results)
+    sec = _records(sec_results)
+    fec = _records(fec_results)
+    court = _records(court_results)
+    infra = _records(infra_results)
+
+    all_records = footprint + emails + github + sec + fec + court + infra
+
+    breakdown = []
+    if emails:
+        breakdown.append(f"{len(emails)} email exposure{'s' if len(emails) != 1 else ''}")
+    if footprint:
+        breakdown.append(f"{len(footprint)} account footprint{'s' if len(footprint) != 1 else ''}")
+    if github:
+        breakdown.append(f"{len(github)} developer/code exposure{'s' if len(github) != 1 else ''}")
+    if sec:
+        breakdown.append(f"{len(sec)} SEC filing{'s' if len(sec) != 1 else ''}")
+    if fec:
+        breakdown.append(f"{len(fec)} FEC contribution{'s' if len(fec) != 1 else ''}")
+    if court:
+        breakdown.append(f"{len(court)} court docket{'s' if len(court) != 1 else ''}")
+    if infra:
+        breakdown.append(f"{len(infra)} domain/cert record{'s' if len(infra) != 1 else ''}")
 
     doc.ln(2)
-    doc.body(
-        f"Total findings: {len(footprint) + len(emails)} "
-        f"({len(footprint)} account footprint, {len(emails)} email exposure)",
-        size=10, style="B",
-    )
+    summary_text = f"Total findings: {len(all_records)}"
+    if breakdown:
+        summary_text += f" ({', '.join(breakdown)})"
+    doc.body(summary_text, size=10, style="B")
     doc.rule()
 
     # --- findings -----------------------------------------------------
@@ -268,6 +313,26 @@ def generate_osint_pdf(profile: Dict[str, Any], footprint_results: Any,
     doc.heading("Account & Platform Footprint")
     _render_findings(doc, footprint,
                      "No account footprint was returned for this target.")
+
+    if github:
+        doc.heading("Developer & Code Exposures")
+        _render_findings(doc, github, "No code exposures found.")
+
+    if sec:
+        doc.heading("SEC Filings")
+        _render_findings(doc, sec, "No SEC filings found.")
+
+    if fec:
+        doc.heading("FEC Contributions")
+        _render_findings(doc, fec, "No FEC contributions found.")
+
+    if court:
+        doc.heading("Court Dockets")
+        _render_findings(doc, court, "No court dockets found.")
+
+    if infra:
+        doc.heading("Domains & Infrastructure")
+        _render_findings(doc, infra, "No domain/certificate records found.")
 
     doc.rule()
     doc.muted(
@@ -281,7 +346,7 @@ def generate_osint_pdf(profile: Dict[str, Any], footprint_results: Any,
 
 
 def build_dossier_bytes(profile: Dict[str, Any], findings: Dict[str, Any]) -> bytes:
-    """Convenience wrapper: pull the two vectors out of a full sweep result.
+    """Convenience wrapper: pull all vectors out of a full sweep result.
 
     run_full_osint_sweep() exposes each vector both at the top level and
     under "vectors"; presentation mode's mock mirrors that. Checking both
@@ -289,6 +354,16 @@ def build_dossier_bytes(profile: Dict[str, Any], findings: Dict[str, Any]) -> by
     """
     findings = findings or {}
     vectors = findings.get("vectors", {}) if isinstance(findings, dict) else {}
-    footprint = findings.get("footprint") or vectors.get("footprint") or {}
-    email = findings.get("email") or vectors.get("email") or {}
-    return generate_osint_pdf(profile, footprint, email)
+    def _get_vec(name):
+        return findings.get(name) or vectors.get(name) or {}
+
+    return generate_osint_pdf(
+        profile,
+        footprint_results=_get_vec("footprint"),
+        email_results=_get_vec("email"),
+        github_results=_get_vec("github"),
+        sec_results=_get_vec("sec"),
+        fec_results=_get_vec("fec"),
+        court_results=_get_vec("courtlistener"),
+        infra_results=_get_vec("infrastructure"),
+    )

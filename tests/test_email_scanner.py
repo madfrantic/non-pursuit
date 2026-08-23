@@ -298,3 +298,37 @@ class TestAvatarExtraction:
              "confidence": CONFIRMED, "reason": "found", "vector": "avatar_service"},
         ])
         assert rows[0]["avatar_url"].startswith("https://www.gravatar.com/avatar/")
+
+
+class TestExposureFindings:
+    """Exposure findings returns all probed services and adult sites without restrictive filtering."""
+
+    def test_exposure_findings_includes_adult_and_general_services(self):
+        from email_scanner import exposure_findings, CONFIRMED, POSSIBLE, NOT_FOUND
+        results = [
+            {"service": "Pornhub", "confidence": CONFIRMED, "reason": "account found"},
+            {"service": "OnlyFans", "confidence": CONFIRMED, "reason": "registered"},
+            {"service": "XVideos", "confidence": POSSIBLE, "reason": "ambiguous"},
+            {"service": "Spotify", "confidence": CONFIRMED, "reason": "registered"},
+            {"service": "Gravatar", "confidence": CONFIRMED, "reason": "profile"},
+            {"service": "eBay", "confidence": CONFIRMED, "reason": "registered"},
+            {"service": "Duolingo", "confidence": NOT_FOUND, "reason": "none"},
+        ]
+        findings = exposure_findings(results)
+        services = {f["service"] for f in findings}
+        # No service whitelist: adult, marketplace and mainstream hits all survive.
+        assert services == {"Pornhub", "OnlyFans", "XVideos", "Spotify", "Gravatar", "eBay"}
+        # ...but a NOT_FOUND probe is not an exposure, or the score inflates.
+        assert "Duolingo" not in services
+        assert len(findings) == 6
+
+    def test_exposure_findings_excludes_negative_probes(self):
+        """count must track rendered findings, not the raw probe volume."""
+        from email_scanner import exposure_findings, CONFIRMED, POSSIBLE, NOT_FOUND
+        results = [
+            {"service": "Pornhub", "confidence": CONFIRMED},
+            {"service": "eBay", "confidence": POSSIBLE},
+        ] + [{"service": f"Svc{i}", "confidence": NOT_FOUND} for i in range(100)]
+        assert len(exposure_findings(results)) == 2
+
+
