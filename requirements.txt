@@ -28,5 +28,3 @@ dnspython>=2.6,<3.0  # optional: MX/NS/TXT lookups in utils/infra_checker.py. Wi
                      # DNS check degrades to A/AAAA via the stdlib resolver and flags itself partial.
 python-whois>=0.9,<1.0  # optional: WHOIS fallback for the ccTLDs RDAP does not serve. RDAP is
                         # tried first and needs no dependency; this only covers the gaps.
-apscheduler
-cryptography
