@@ -197,3 +197,140 @@ def test_osint_sweep_score_matches_result_count_with_raw_checks():
     )
 
 
+
+
+class TestFECContributorMatching:
+    """The FEC contributor search is fuzzy; scan_fec must resolve it to one person.
+
+    Regression cover for the bug where every record the API returned was
+    normalized verbatim, so a "Jane Doe" sweep reported the donations of
+    every unrelated Jane in the file.
+    """
+
+    SUBJECT = {"name": "Jane Doe", "state": "CA", "city": "Oakland", "zip_code": "94612"}
+
+    @staticmethod
+    def _record(name, state="CA", city="Oakland", zip_code="94612", **extra):
+        # Field names match the real Schedule A response (contribution_
+        # receipt_amount, not contribution_amount) -- a prior version of
+        # this fixture used the wrong names and so never would have
+        # caught the bug where the normalizer read them.
+        record = {
+            "contributor_name": name,
+            "contributor_state": state,
+            "contributor_city": city,
+            "contributor_zip": zip_code,
+            "contribution_receipt_amount": 500,
+            "committee": {"name": "Some PAC"},
+        }
+        record.update(extra)
+        return record
+
+    def _scan(self, raw, subject=None):
+        subject = subject or self.SUBJECT
+        with patch.object(fec, "_search_contributions", new=AsyncMock(return_value=raw)):
+            return run(fec.scan_fec(
+                subject["name"],
+                subject.get("state"),
+                city=subject.get("city"),
+                zip_code=subject.get("zip_code"),
+            ))
+
+    def test_confident_match_on_unique_individual(self):
+        result = self._scan([self._record("DOE, JANE A")])
+        assert result["status"] == STATUS_SUCCESS
+        assert result["count"] == 1
+        assert result["records"][0]["contributor_name"] == "DOE, JANE A"
+        assert result["records"][0]["match_confidence"] == fec.CONFIRMED
+
+    def test_shared_first_name_is_not_a_match(self):
+        """The original bug: same first name, different surname."""
+        raw = [
+            self._record("SMITH, JANE"),
+            self._record("ROE, JANE"),
+            self._record("DOE, JANE"),
+        ]
+        result = self._scan(raw)
+        assert result["count"] == 1
+        assert result["records"][0]["contributor_name"] == "DOE, JANE"
+
+    def test_shared_first_name_only_yields_no_match(self):
+        raw = [self._record("SMITH, JANE"), self._record("ROE, JANE")]
+        result = self._scan(raw)
+        assert result["status"] == STATUS_EMPTY
+        assert result["records"] == []
+        assert "full name" in result["reason"]
+
+    def test_same_full_name_different_state_is_rejected(self):
+        """A Jane Doe in Texas is not the Jane Doe in California."""
+        result = self._scan([self._record("DOE, JANE", state="TX", city="Austin", zip_code="73301")])
+        assert result["status"] == STATUS_EMPTY
+        assert result["records"] == []
+
+    def test_ambiguous_namesakes_report_no_confident_match(self):
+        """Two same-named people, nothing in the profile to tell them apart."""
+        raw = [
+            self._record("DOE, JANE", state="CA", city="Oakland", zip_code="94612"),
+            self._record("DOE, JANE", state="NY", city="Albany", zip_code="12207"),
+        ]
+        bare = {"name": "Jane Doe"}
+        result = self._scan(raw, subject=bare)
+        assert result["status"] == STATUS_EMPTY
+        assert result["records"] == []
+        assert "share this name" in result["reason"]
+        assert result["screened"] == 2
+
+    def test_no_records_at_all_reports_empty(self):
+        result = self._scan([])
+        assert result["status"] == STATUS_EMPTY
+        assert result["records"] == []
+
+    def test_name_only_match_is_flagged_as_possible(self):
+        """Nothing available to corroborate -> surfaced, but not as confirmed."""
+        raw = [{"contributor_name": "Jane Doe", "contribution_receipt_amount": 250}]
+        result = self._scan(raw, subject={"name": "Jane Doe"})
+        assert result["status"] == STATUS_SUCCESS
+        assert result["records"][0]["match_confidence"] == fec.POSSIBLE
+        assert "no city, ZIP or employer" in result["reason"]
+
+    def test_normalized_record_carries_real_amount_and_recipient(self):
+        """Regression: the normalizer used to read contribution_amount,
+        employer and occupation -- fields that don't exist on the real
+        Schedule A response -- so every finding rendered as a $0 donation
+        with no committee, regardless of the actual contribution."""
+        raw = [self._record(
+            "DOE, JANE",
+            contribution_receipt_amount=2300.0,
+            contribution_receipt_date="2008-12-09",
+            contributor_employer="Acme Corp",
+            contributor_occupation="Engineer",
+        )]
+        result = self._scan(raw)
+        record = result["records"][0]
+        assert record["amount"] == 2300.0
+        assert record["date"] == "2008-12-09"
+        assert record["recipient"] == "Some PAC"
+        assert record["employer"] == "Acme Corp"
+        assert record["occupation"] == "Engineer"
+
+    def test_middle_initial_and_inverted_order_still_match(self):
+        for variant in ("DOE, JANE A", "Jane A. Doe", "jane doe", "DOE, J"):
+            result = self._scan([self._record(variant)])
+            assert result["count"] == 1, variant
+
+    def test_surname_match_alone_is_not_enough(self):
+        result = self._scan([self._record("DOE, ROBERT")])
+        assert result["status"] == STATUS_EMPTY
+        assert result["records"] == []
+
+    def test_employer_corroborates_when_locality_is_unknown(self):
+        raw = [{"contributor_name": "DOE, JANE", "contributor_employer": "Acme Corp"}]
+        with patch.object(fec, "_search_contributions", new=AsyncMock(return_value=raw)):
+            result = run(fec.scan_fec("Jane Doe", employer="Acme Corp"))
+        assert result["records"][0]["match_confidence"] == fec.CONFIRMED
+
+    def test_count_always_matches_rendered_records(self):
+        raw = [self._record("DOE, JANE"), self._record("SMITH, JANE"), self._record("DOE, JANE")]
+        result = self._scan(raw)
+        assert result["count"] == len(result["records"]) == 2
+        assert result["screened"] == 3

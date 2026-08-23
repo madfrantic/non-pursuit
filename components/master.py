@@ -53,6 +53,9 @@ def _osint_profile():
         "domain": profile.get("domain") or "",
         "state": profile.get("state") or "",
         "email": profile.get("email") or "",
+        # Disambiguators for the FEC contributor match (utils/osint/fec.py).
+        "city": profile.get("city") or "",
+        "zip_code": profile.get("zip_code") or "",
     }
 
 

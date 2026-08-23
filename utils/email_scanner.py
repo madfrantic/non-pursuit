@@ -271,6 +271,7 @@ _PROFILE_URL_BUILDERS = {
     "Chess.com": lambda email: "https://www.chess.com",
     "GitHub": lambda email: "https://github.com",
     "Adobe": lambda email: "https://account.adobe.com",
+    "Eventbrite": lambda email: "https://www.eventbrite.com",
     "Substack": lambda email: "https://substack.com",
     "Imgur": lambda email: "https://imgur.com",
     "Pornhub": lambda email: "https://www.pornhub.com",

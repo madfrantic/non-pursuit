@@ -81,6 +81,50 @@ def _make_result(
     }
 
 
+# Statuses where the service actually answered "no account under that address".
+# Every other non-2xx -- a WAF challenge, a malformed-request rejection, a
+# teapot, a gateway fault -- means the check could not be made at all.
+# Collapsing those into NOT_FOUND is manufactured negative evidence, and it is
+# exactly how Adobe (HTTP 400) and Chess.com (HTTP 226) vanished from every
+# sweep while Blackbird reported both. Same rule as the verification engine:
+# a check that could not be made is unknown, never a negative.
+DEFINITIVE_ABSENT_STATUSES = {404}
+RATE_LIMIT_STATUSES = {429, 503}
+
+
+def _undetermined(
+    platform: str,
+    category: str,
+    email: str,
+    status: int,
+    note: str = "",
+) -> Dict[str, Any]:
+    """Verdict for a probe that did not come back with a usable answer."""
+    suffix = f" ({note})" if note else ""
+    if status in DEFINITIVE_ABSENT_STATUSES:
+        return _make_result(
+            platform, category, email, NOT_FOUND,
+            f"No {platform} account found (HTTP {status}){suffix}",
+        )
+    if status in RATE_LIMIT_STATUSES:
+        return _make_result(
+            platform, category, email, POSSIBLE,
+            f"{platform} rate limited (HTTP {status}){suffix} — not resolvable automatically",
+            rate_limited=True,
+        )
+    if 200 <= status < 300:
+        return _make_result(
+            platform, category, email, POSSIBLE,
+            f"{platform} answered HTTP {status} but the response was unreadable{suffix} "
+            "— verify manually",
+        )
+    return _make_result(
+        platform, category, email, POSSIBLE,
+        f"{platform} could not be checked (HTTP {status}){suffix} "
+        "— blocked or endpoint changed, verify manually",
+    )
+
+
 # ---------------------------------------------------------------------------
 # Individual Platform Probers (Zero-Alert)
 # ---------------------------------------------------------------------------
@@ -171,7 +215,7 @@ async def probe_spotify(email: str, session: aiohttp.ClientSession) -> Dict[str,
                     pass
             elif resp.status == 429:
                 return _make_result("Spotify", "media", email, POSSIBLE, "Spotify rate limit reached", rate_limited=True)
-            return _make_result("Spotify", "media", email, NOT_FOUND, "Email available / not registered")
+            return _undetermined("Spotify", "media", email, resp.status)
     except Exception as exc:
         return _make_result("Spotify", "media", email, ERROR, f"Request failed: {str(exc)[:60]}")
 
@@ -207,7 +251,7 @@ async def probe_duolingo(email: str, session: aiohttp.ClientSession) -> Dict[str
                     pass
             elif resp.status == 429:
                 return _make_result("Duolingo", "education", email, POSSIBLE, "Duolingo rate limited", rate_limited=True)
-            return _make_result("Duolingo", "education", email, NOT_FOUND, "No Duolingo account found")
+            return _undetermined("Duolingo", "education", email, resp.status)
     except Exception as exc:
         return _make_result("Duolingo", "education", email, ERROR, f"Request failed: {str(exc)[:60]}")
 
@@ -233,9 +277,16 @@ async def probe_pinterest(email: str, session: aiohttp.ClientSession) -> Dict[st
                     pass
             elif resp.status == 429:
                 return _make_result("Pinterest", "social", email, POSSIBLE, "Pinterest rate limited", rate_limited=True)
-            return _make_result("Pinterest", "social", email, NOT_FOUND, f"Pinterest HTTP {resp.status}")
+            return _undetermined("Pinterest", "social", email, resp.status)
     except Exception as exc:
         return _make_result("Pinterest", "social", email, ERROR, f"Request failed: {str(exc)[:60]}")
+
+
+# A registered address answers 226 (IM Used) / "Email In Use"; an unregistered
+# one answers 200 / "Email Available". Keying only on 200, and reading a key
+# named `available` that the endpoint has never returned, made this probe
+# structurally incapable of ever reporting CONFIRMED.
+CHESS_OK_STATUSES = (200, 226)
 
 
 async def probe_chess(email: str, session: aiohttp.ClientSession) -> Dict[str, Any]:
@@ -247,17 +298,29 @@ async def probe_chess(email: str, session: aiohttp.ClientSession) -> Dict[str, A
     }
     try:
         async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=DEFAULT_TIMEOUT)) as resp:
-            if resp.status == 200:
+            if resp.status in CHESS_OK_STATUSES:
+                data = None
                 try:
                     data = await resp.json()
-                    if data.get("available") is False:
-                        return _make_result("Chess.com", "gaming", email, CONFIRMED, "Chess.com account registered", "https://www.chess.com")
-                    return _make_result("Chess.com", "gaming", email, NOT_FOUND, "No Chess.com account found")
                 except Exception:
-                    pass
+                    data = None
+                if isinstance(data, dict):
+                    # `isEmailAvailable` is the live field; `available` is kept
+                    # as a fallback for older recorded payloads.
+                    available = data.get("isEmailAvailable")
+                    if available is None:
+                        available = data.get("available")
+                    if available is False:
+                        return _make_result("Chess.com", "gaming", email, CONFIRMED, "Chess.com account registered", "https://www.chess.com")
+                    if available is True:
+                        return _make_result("Chess.com", "gaming", email, NOT_FOUND, "No Chess.com account found")
+                if resp.status == 226:
+                    # 226 is the "Email In Use" signal on its own.
+                    return _make_result("Chess.com", "gaming", email, CONFIRMED, "Chess.com account registered (HTTP 226)", "https://www.chess.com")
+                return _undetermined("Chess.com", "gaming", email, resp.status, "unrecognised availability payload")
             elif resp.status == 429:
                 return _make_result("Chess.com", "gaming", email, POSSIBLE, "Chess.com rate limited", rate_limited=True)
-            return _make_result("Chess.com", "gaming", email, NOT_FOUND, f"Chess.com HTTP {resp.status}")
+            return _undetermined("Chess.com", "gaming", email, resp.status)
     except Exception as exc:
         return _make_result("Chess.com", "gaming", email, ERROR, f"Request failed: {str(exc)[:60]}")
 
@@ -291,9 +354,16 @@ async def probe_github_email(email: str, session: aiohttp.ClientSession) -> Dict
                     pass
             elif resp.status in (403, 429):
                 return _make_result("GitHub", "code", email, POSSIBLE, "GitHub API rate limit reached", rate_limited=True)
-            return _make_result("GitHub", "code", email, NOT_FOUND, f"GitHub HTTP {resp.status}")
+            return _undetermined("GitHub", "code", email, resp.status)
     except Exception as exc:
         return _make_result("GitHub", "code", email, ERROR, f"Request failed: {str(exc)[:60]}")
+
+
+# The IMS endpoint rejects the request outright (HTTP 400) unless the body
+# declares the username type and the caller identifies a client id. Without
+# these two the probe answered 400 for every address on earth, which the old
+# catch-all then filed as "no Adobe ID registered".
+ADOBE_CLIENT_ID = "homepage_milo"
 
 
 async def probe_adobe(email: str, session: aiohttp.ClientSession) -> Dict[str, Any]:
@@ -302,25 +372,107 @@ async def probe_adobe(email: str, session: aiohttp.ClientSession) -> Dict[str, A
     headers = {
         "User-Agent": USER_AGENT,
         "Content-Type": "application/json",
+        "X-Ims-Clientid": ADOBE_CLIENT_ID,
         "X-Request-Id": hashlib.md5(email.encode()).hexdigest(),
     }
-    payload = json.dumps({"username": email})
+    payload = json.dumps({"username": email, "usernameType": "EMAIL"})
     try:
         async with session.post(url, headers=headers, data=payload, timeout=aiohttp.ClientTimeout(total=DEFAULT_TIMEOUT)) as resp:
             if resp.status == 200:
+                data = None
                 try:
                     data = await resp.json()
-                    if isinstance(data, list) and len(data) > 0:
-                        return _make_result("Adobe", "creativity", email, CONFIRMED, "Adobe ID registered", "https://account.adobe.com")
                 except Exception:
-                    pass
+                    data = None
+                if isinstance(data, list) and data:
+                    account = data[0] if isinstance(data[0], dict) else {}
+                    avatar_url = ""
+                    images = account.get("images")
+                    if isinstance(images, dict):
+                        avatar_url = images.get("230") or images.get("115") or images.get("100") or ""
+                    status = ""
+                    if isinstance(account.get("status"), dict):
+                        status = account["status"].get("code") or ""
+                    reason = f"Adobe ID registered ({status})" if status else "Adobe ID registered"
+                    return _make_result(
+                        "Adobe", "creativity", email, CONFIRMED, reason,
+                        profile_url="https://account.adobe.com",
+                        avatar_url=avatar_url,
+                    )
+                if isinstance(data, list):
+                    # An empty list is Adobe's genuine "no such account".
+                    return _make_result("Adobe", "creativity", email, NOT_FOUND, "No Adobe ID registered")
+                return _undetermined("Adobe", "creativity", email, resp.status, "unrecognised accounts payload")
             elif resp.status == 404:
                 return _make_result("Adobe", "creativity", email, NOT_FOUND, "No Adobe ID registered")
             elif resp.status == 429:
                 return _make_result("Adobe", "creativity", email, POSSIBLE, "Adobe rate limited", rate_limited=True)
-            return _make_result("Adobe", "creativity", email, NOT_FOUND, f"Adobe HTTP {resp.status}")
+            return _undetermined("Adobe", "creativity", email, resp.status)
     except Exception as exc:
         return _make_result("Adobe", "creativity", email, ERROR, f"Request failed: {str(exc)[:60]}")
+
+
+async def probe_eventbrite(email: str, session: aiohttp.ClientSession) -> Dict[str, Any]:
+    """Check Eventbrite account presence via the public user-lookup endpoint.
+
+    The lookup is CSRF-guarded: it needs a `csrftoken` cookie minted by a plain
+    GET of the homepage, echoed back in both the Cookie and X-CSRFToken headers.
+    That two-step is the only reason this platform had no prober here, and it is
+    why Blackbird reported Eventbrite hits that never appeared in a sweep.
+    """
+    homepage = "https://www.eventbrite.com/"
+    lookup = "https://www.eventbrite.com/api/v3/users/lookup/"
+    try:
+        csrftoken = ""
+        async with session.get(
+            homepage,
+            headers={"User-Agent": USER_AGENT},
+            timeout=aiohttp.ClientTimeout(total=DEFAULT_TIMEOUT),
+        ) as pre:
+            cookie = (getattr(pre, "cookies", None) or {}).get("csrftoken")
+            csrftoken = getattr(cookie, "value", "") or ""
+            if not csrftoken:
+                return _undetermined("Eventbrite", "social", email, pre.status, "no CSRF token issued")
+
+        headers = {
+            "User-Agent": USER_AGENT,
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "Referer": homepage,
+            "Cookie": f"csrftoken={csrftoken}",
+            "X-CSRFToken": csrftoken,
+        }
+        payload = json.dumps({"email": email, "source_user_id": "", "source_provider": ""})
+        async with session.post(
+            lookup, headers=headers, data=payload,
+            timeout=aiohttp.ClientTimeout(total=DEFAULT_TIMEOUT),
+        ) as resp:
+            if resp.status == 200:
+                data = None
+                try:
+                    data = await resp.json()
+                except Exception:
+                    data = None
+                if isinstance(data, dict) and "exists" in data:
+                    if data.get("exists") is True:
+                        user_id = str(data.get("user_id") or "")
+                        reason = f"Eventbrite account registered (User ID {user_id})" if user_id else "Eventbrite account registered"
+                        return _make_result(
+                            "Eventbrite", "social", email, CONFIRMED, reason,
+                            profile_url=homepage,
+                            others={
+                                "user_id": user_id,
+                                "email_verified": data.get("is_email_verified"),
+                                "sign_in_methods": data.get("sign_in_methods") or [],
+                            },
+                        )
+                    return _make_result("Eventbrite", "social", email, NOT_FOUND, "No Eventbrite account found")
+                return _undetermined("Eventbrite", "social", email, resp.status, "unrecognised lookup payload")
+            elif resp.status == 429:
+                return _make_result("Eventbrite", "social", email, POSSIBLE, "Eventbrite rate limited", rate_limited=True)
+            return _undetermined("Eventbrite", "social", email, resp.status)
+    except Exception as exc:
+        return _make_result("Eventbrite", "social", email, ERROR, f"Request failed: {str(exc)[:60]}")
 
 
 async def probe_substack(email: str, session: aiohttp.ClientSession) -> Dict[str, Any]:
@@ -350,7 +502,7 @@ async def probe_substack(email: str, session: aiohttp.ClientSession) -> Dict[str
                 return _make_result("Substack", "publishing", email, NOT_FOUND, "No Substack account associated")
             elif resp.status == 429:
                 return _make_result("Substack", "publishing", email, POSSIBLE, "Substack rate limited", rate_limited=True)
-            return _make_result("Substack", "publishing", email, NOT_FOUND, f"Substack HTTP {resp.status}")
+            return _undetermined("Substack", "publishing", email, resp.status)
     except Exception as exc:
         return _make_result("Substack", "publishing", email, ERROR, f"Request failed: {str(exc)[:60]}")
 
@@ -375,7 +527,7 @@ async def probe_imgur(email: str, session: aiohttp.ClientSession) -> Dict[str, A
                     pass
             elif resp.status == 429:
                 return _make_result("Imgur", "media", email, POSSIBLE, "Imgur rate limited", rate_limited=True)
-            return _make_result("Imgur", "media", email, NOT_FOUND, f"Imgur HTTP {resp.status}")
+            return _undetermined("Imgur", "media", email, resp.status)
     except Exception as exc:
         return _make_result("Imgur", "media", email, ERROR, f"Request failed: {str(exc)[:60]}")
 
@@ -393,7 +545,7 @@ async def probe_pornhub(email: str, session: aiohttp.ClientSession) -> Dict[str,
                 return _make_result("Pornhub", "adult", email, NOT_FOUND, "Email not registered on Pornhub")
             elif resp.status == 429:
                 return _make_result("Pornhub", "adult", email, POSSIBLE, "Pornhub rate limited", rate_limited=True)
-            return _make_result("Pornhub", "adult", email, NOT_FOUND, f"Pornhub HTTP {resp.status}")
+            return _undetermined("Pornhub", "adult", email, resp.status)
     except Exception as exc:
         return _make_result("Pornhub", "adult", email, ERROR, f"Request failed: {str(exc)[:60]}")
 
@@ -414,7 +566,7 @@ async def probe_onlyfans(email: str, session: aiohttp.ClientSession) -> Dict[str
                     pass
             elif resp.status == 429:
                 return _make_result("OnlyFans", "adult", email, POSSIBLE, "OnlyFans rate limited", rate_limited=True)
-            return _make_result("OnlyFans", "adult", email, NOT_FOUND, f"OnlyFans HTTP {resp.status}")
+            return _undetermined("OnlyFans", "adult", email, resp.status)
     except Exception as exc:
         return _make_result("OnlyFans", "adult", email, ERROR, f"Request failed: {str(exc)[:60]}")
 
@@ -432,7 +584,7 @@ async def probe_xvideos(email: str, session: aiohttp.ClientSession) -> Dict[str,
                 return _make_result("XVideos", "adult", email, NOT_FOUND, "Email not registered on XVideos")
             elif resp.status == 429:
                 return _make_result("XVideos", "adult", email, POSSIBLE, "XVideos rate limited", rate_limited=True)
-            return _make_result("XVideos", "adult", email, NOT_FOUND, f"XVideos HTTP {resp.status}")
+            return _undetermined("XVideos", "adult", email, resp.status)
     except Exception as exc:
         return _make_result("XVideos", "adult", email, ERROR, f"Request failed: {str(exc)[:60]}")
 
@@ -453,7 +605,7 @@ async def probe_stripchat(email: str, session: aiohttp.ClientSession) -> Dict[st
                     pass
             elif resp.status == 429:
                 return _make_result("Stripchat", "adult", email, POSSIBLE, "Stripchat rate limited", rate_limited=True)
-            return _make_result("Stripchat", "adult", email, NOT_FOUND, f"Stripchat HTTP {resp.status}")
+            return _undetermined("Stripchat", "adult", email, resp.status)
     except Exception as exc:
         return _make_result("Stripchat", "adult", email, ERROR, f"Request failed: {str(exc)[:60]}")
 
@@ -474,7 +626,7 @@ async def probe_chaturbate(email: str, session: aiohttp.ClientSession) -> Dict[s
                     pass
             elif resp.status == 429:
                 return _make_result("Chaturbate", "adult", email, POSSIBLE, "Chaturbate rate limited", rate_limited=True)
-            return _make_result("Chaturbate", "adult", email, NOT_FOUND, f"Chaturbate HTTP {resp.status}")
+            return _undetermined("Chaturbate", "adult", email, resp.status)
     except Exception as exc:
         return _make_result("Chaturbate", "adult", email, ERROR, f"Request failed: {str(exc)[:60]}")
 
@@ -495,7 +647,7 @@ async def probe_twitter(email: str, session: aiohttp.ClientSession) -> Dict[str,
                     pass
             elif resp.status == 429:
                 return _make_result("X (Twitter)", "social", email, POSSIBLE, "X rate limited", rate_limited=True)
-            return _make_result("X (Twitter)", "social", email, NOT_FOUND, f"X HTTP {resp.status}")
+            return _undetermined("X (Twitter)", "social", email, resp.status)
     except Exception as exc:
         return _make_result("X (Twitter)", "social", email, ERROR, f"Request failed: {str(exc)[:60]}")
 
@@ -517,7 +669,7 @@ async def probe_reddit(email: str, session: aiohttp.ClientSession) -> Dict[str, 
                     pass
             elif resp.status == 429:
                 return _make_result("Reddit", "social", email, POSSIBLE, "Reddit rate limited", rate_limited=True)
-            return _make_result("Reddit", "social", email, NOT_FOUND, "No direct Reddit association")
+            return _undetermined("Reddit", "social", email, resp.status)
     except Exception as exc:
         return _make_result("Reddit", "social", email, ERROR, f"Request failed: {str(exc)[:60]}")
 
@@ -538,7 +690,7 @@ async def probe_ebay(email: str, session: aiohttp.ClientSession) -> Dict[str, An
                     pass
             elif resp.status == 429:
                 return _make_result("eBay", "commerce", email, POSSIBLE, "eBay rate limited", rate_limited=True)
-            return _make_result("eBay", "commerce", email, NOT_FOUND, f"eBay HTTP {resp.status}")
+            return _undetermined("eBay", "commerce", email, resp.status)
     except Exception as exc:
         return _make_result("eBay", "commerce", email, ERROR, f"Request failed: {str(exc)[:60]}")
 
@@ -559,7 +711,7 @@ async def probe_snapchat(email: str, session: aiohttp.ClientSession) -> Dict[str
                     pass
             elif resp.status == 429:
                 return _make_result("Snapchat", "social", email, POSSIBLE, "Snapchat rate limited", rate_limited=True)
-            return _make_result("Snapchat", "social", email, NOT_FOUND, f"Snapchat HTTP {resp.status}")
+            return _undetermined("Snapchat", "social", email, resp.status)
     except Exception as exc:
         return _make_result("Snapchat", "social", email, ERROR, f"Request failed: {str(exc)[:60]}")
 
@@ -578,6 +730,7 @@ PROBERS = [
     ("Chess.com", probe_chess),
     ("GitHub", probe_github_email),
     ("Adobe", probe_adobe),
+    ("Eventbrite", probe_eventbrite),
     ("Substack", probe_substack),
     ("Imgur", probe_imgur),
     ("Pornhub", probe_pornhub),

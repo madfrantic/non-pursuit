@@ -187,3 +187,163 @@ def test_scan_email_sync_rejects_empty():
     assert scan_email_sync("") == []
     assert scan_email_sync("   ") == []
     assert scan_email_sync("no-at-sign") == []
+
+
+# ---------------------------------------------------------------------------
+# Completeness regressions: probes that used to report a false negative
+#
+# Blackbird reported Adobe, Eventbrite and Chess.com hits that this scanner
+# never surfaced. None of it was a filter downstream -- the probers themselves
+# manufactured NOT_FOUND out of answers that were not negatives.
+# ---------------------------------------------------------------------------
+
+from types import SimpleNamespace  # noqa: E402
+
+from holehe_scanner import (  # noqa: E402
+    PROBERS,
+    _undetermined,
+    probe_ebay,
+    probe_eventbrite,
+)
+
+
+class CookieJarResponse(MockResponse):
+    """MockResponse that also carries Set-Cookie values."""
+
+    def __init__(self, status=200, json_data=None, text_data="", cookies=None):
+        super().__init__(status=status, json_data=json_data, text_data=text_data)
+        self.cookies = {
+            name: SimpleNamespace(value=value)
+            for name, value in (cookies or {}).items()
+        }
+
+
+
+def test_probe_chess_found_on_http_226():
+    """A registered address answers 226 / isEmailAvailable=false, not 200."""
+    mock_session = MagicMock()
+    mock_session.get.return_value = MockResponse(
+        status=226, json_data={"isEmailAvailable": False, "reason": "Email In Use"})
+
+    res = run(probe_chess("chessmaster@example.com", mock_session))
+    assert res["confidence"] == CONFIRMED
+
+
+def test_probe_chess_not_found_reads_live_field_name():
+    mock_session = MagicMock()
+    mock_session.get.return_value = MockResponse(
+        status=200, json_data={"isEmailAvailable": True, "reason": "Email Available"})
+
+    res = run(probe_chess("newplayer@example.com", mock_session))
+    assert res["confidence"] == NOT_FOUND
+
+
+def test_probe_chess_226_with_unreadable_body_still_confirms():
+    """226 is the "Email In Use" signal even if the body cannot be parsed."""
+    mock_session = MagicMock()
+    resp = MockResponse(status=226)
+    resp._json_data = None
+    mock_session.get.return_value = resp
+
+    res = run(probe_chess("chessmaster@example.com", mock_session))
+    assert res["confidence"] == CONFIRMED
+
+
+def test_probe_adobe_sends_username_type_and_client_id():
+    """Without both of these the IMS endpoint 400s for every address."""
+    mock_session = MagicMock()
+    mock_session.post.return_value = MockResponse(
+        status=200, json_data=[{"status": {"code": "active"}}])
+
+    run(probe_adobe("designer@example.com", mock_session))
+
+    _, kwargs = mock_session.post.call_args
+    assert kwargs["headers"]["X-Ims-Clientid"]
+    assert '"usernameType": "EMAIL"' in kwargs["data"]
+
+
+def test_probe_adobe_extracts_avatar():
+    mock_session = MagicMock()
+    mock_session.post.return_value = MockResponse(status=200, json_data=[{
+        "status": {"code": "active"},
+        "images": {"230": "https://pps.services.adobe.com/img/230"},
+    }])
+
+    res = run(probe_adobe("designer@example.com", mock_session))
+    assert res["confidence"] == CONFIRMED
+    assert res["avatar_url"] == "https://pps.services.adobe.com/img/230"
+
+
+def test_probe_adobe_empty_list_is_a_real_negative():
+    mock_session = MagicMock()
+    mock_session.post.return_value = MockResponse(status=200, json_data=[])
+
+    res = run(probe_adobe("nobody@example.com", mock_session))
+    assert res["confidence"] == NOT_FOUND
+
+
+def test_probe_eventbrite_found_with_user_id():
+    mock_session = MagicMock()
+    mock_session.get.return_value = CookieJarResponse(
+        status=200, cookies={"csrftoken": "tok123"})
+    mock_session.post.return_value = MockResponse(status=200, json_data={
+        "user_id": "312969409971", "exists": True, "is_email_verified": False,
+        "sign_in_methods": ["password"],
+    })
+
+    res = run(probe_eventbrite("organiser@example.com", mock_session))
+    assert res["confidence"] == CONFIRMED
+    assert res["others"]["user_id"] == "312969409971"
+
+    _, kwargs = mock_session.post.call_args
+    assert kwargs["headers"]["X-CSRFToken"] == "tok123"
+
+
+def test_probe_eventbrite_not_found():
+    mock_session = MagicMock()
+    mock_session.get.return_value = CookieJarResponse(
+        status=200, cookies={"csrftoken": "tok123"})
+    mock_session.post.return_value = MockResponse(
+        status=200, json_data={"exists": False})
+
+    res = run(probe_eventbrite("nobody@example.com", mock_session))
+    assert res["confidence"] == NOT_FOUND
+
+
+def test_probe_eventbrite_without_csrf_is_undetermined_not_absent():
+    mock_session = MagicMock()
+    mock_session.get.return_value = CookieJarResponse(status=403, cookies={})
+
+    res = run(probe_eventbrite("organiser@example.com", mock_session))
+    assert res["confidence"] == POSSIBLE
+
+
+def test_eventbrite_is_registered_in_the_sweep():
+    assert "Eventbrite" in [name for name, _ in PROBERS]
+
+
+def test_undetermined_never_asserts_absence_from_a_block():
+    """403/405/412/418 mean the check failed, not that the account is absent."""
+    for status in (400, 403, 405, 412, 418, 500, 502):
+        res = _undetermined("Imgur", "media", "u@example.com", status)
+        assert res["confidence"] == POSSIBLE, status
+
+
+def test_undetermined_keeps_404_as_a_real_negative():
+    res = _undetermined("OnlyFans", "adult", "u@example.com", 404)
+    assert res["confidence"] == NOT_FOUND
+
+
+def test_undetermined_flags_rate_limits():
+    res = _undetermined("eBay", "commerce", "u@example.com", 429)
+    assert res["confidence"] == POSSIBLE
+    assert res["rate_limited"] is True
+
+
+def test_blocked_probe_is_not_reported_as_a_clean_miss():
+    """eBay answers 418 to unbrowsered clients; that is not "no account"."""
+    mock_session = MagicMock()
+    mock_session.get.return_value = MockResponse(status=418)
+
+    res = run(probe_ebay("shopper@example.com", mock_session))
+    assert res["confidence"] == POSSIBLE

@@ -133,6 +133,16 @@ HIBP_NOTIFY_URL = "https://haveibeenpwned.com/NotifyMe"
 # strings get fixed upstream. Gitignored alongside the rest of data/.
 WMN_DATASET_PATH = "data/wmn-data.json"
 
+# The merged OSINT tool catalog, built by scripts/import_osint_tools.py from
+# ten upstream sources. Deliberately a JSON file and not a table in
+# tracker.db: it holds no personal data, it is reproducible from upstream at
+# any time, and keeping it out of the tracker keeps public reference data
+# clear of the retention rules and the schema-migration path that exist for
+# the user's own case file. Committed rather than gitignored -- unlike the
+# WhatsMyName list above it carries no ShareAlike obligation, and shipping it
+# means the page works on a clean checkout without a five-minute import.
+OSINT_CATALOG_PATH = "data/osint_catalog.json"
+
 # Discovered accounts live in the same local SQLite file as everything else.
 FOOTPRINT_DB_PATH = "data/tracker.db"
 

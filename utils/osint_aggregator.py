@@ -131,10 +131,19 @@ async def run_full_osint_sweep(profile_data: Dict[str, Any], passive_only: bool 
     domain = profile_data.get("domain", "").strip()
     state = profile_data.get("state", "").strip()
     email = profile_data.get("email", "").strip()
+    # FEC contributor search is fuzzy; these let scan_fec confirm that a
+    # same-named donor is actually the subject. See utils/osint/fec.py.
+    city = (profile_data.get("city") or "").strip()
+    zip_code = (profile_data.get("zip_code") or "").strip()
 
     sec_task = scan_sec(full_name)
     courtlistener_task = scan_courtlistener(full_name)
-    fec_task = scan_fec(full_name, state if state else None)
+    fec_task = scan_fec(
+        full_name,
+        state if state else None,
+        city=city or None,
+        zip_code=zip_code or None,
+    )
     github_task = scan_github(handle)
     infrastructure_task = scan_infrastructure(domain)
     

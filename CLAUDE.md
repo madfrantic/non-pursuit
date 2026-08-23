@@ -33,6 +33,32 @@ deliberately not ported. And a verification that could not be made is recorded a
 (unknown), never `False`, so a blocked re-scan can't become manufactured evidence of
 non-compliance.
 
+## OSINT tool catalog (added 2026-08-23)
+
+A reference index of OSINT tools and datasets merged from ten upstream sources, surfaced as
+the `OSINT Toolkit` page. Read-only reference material — it scans nothing and touches no
+identity data.
+
+- `importers/` — one module per upstream, each exposing `fetch(client) -> list[dict]`. They
+  deduplicate nothing and write nothing; merging and persistence happen once, in the runner.
+  `_http.HttpClient` owns the per-host rate limit and GitHub's 403/Retry-After handling, so a
+  new source cannot forget to be polite.
+- `utils/osint_catalog.py` — `Catalog.merge_or_create_tool()`, URL normalisation, the
+  difflib name fallback, and the JSON reader/writer. Tool ids are UUID5 over the normalised
+  URL, which is what makes a re-import idempotent rather than duplicative.
+- `scripts/import_osint_tools.py` — the runner. Per-source error isolation; refuses to write
+  an empty catalog over a good one; `--limit` / `--only` / `--dry-run` for development.
+- `data/osint_catalog.json` — the output, and **committed, unlike the rest of `data/`**. It
+  holds no personal data and carries no ShareAlike obligation (unlike `data/wmn-data.json`),
+  and shipping it means the page works on a clean checkout without a five-minute import.
+
+**Three things to preserve.** The catalog stays out of `tracker.db` — public reference data
+must not inherit the retention rules and migration path written for the user's case file.
+Shodan, Censys, Maltego and Epieos stay hardcoded in `importers/static_entries.py`; their
+terms forbid scraping, so the honest options were a fixed entry or omission. And `provenance`
+must keep recording which source supplied each field — a merged row spanning seven upstreams
+is otherwise an unattributable claim.
+
 ## Workflow governance: apply `power-workflow`
 
 For any non-trivial work in this repo (new features, refactors, batch/automation scripts,
