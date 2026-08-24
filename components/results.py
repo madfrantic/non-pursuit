@@ -23,7 +23,7 @@ from datetime import datetime, timezone
 
 import streamlit as st
 import profile_state
-import requests
+import client_context
 
 import config
 import runtime_mode
@@ -97,22 +97,39 @@ def _staleness_note(entry):
     return "Checked today" if days == 0 else f"Last checked {days} {day_word} ago"
 
 
+_CLIENT_CONTEXT_FALLBACKS = {
+    "private": "Private network",
+    "rate_limited": "Rate limited",
+    "unreachable": "Unavailable",
+    "malformed": "Unavailable",
+}
+
+
 def _get_client_context():
-    """Best-effort lookup of IP and ISP metadata for the current user."""
+    """Best-effort lookup of IP and ISP metadata for the *visitor*.
+
+    This called `ipinfo.io/json` with no address, which geolocates
+    whoever makes the request -- meaning this server. On the desktop
+    build the server is the visitor's own machine, so the answer was
+    right by accident; on the hosted build it described the datacenter
+    and told a visitor in Queens they were in Virginia. It now
+    geolocates the forwarded client address, and only falls back to a
+    self-lookup when no proxy header is present.
+    """
     try:
-        response = requests.get("https://ipinfo.io/json", timeout=4)
-        if response.ok:
-            payload = response.json()
-            return {
-                "ip": payload.get("ip", "Unknown"),
-                "city": payload.get("city", "Unknown"),
-                "region": payload.get("region", "Unknown"),
-                "country": payload.get("country", "Unknown"),
-                "org": payload.get("org", "Unknown ISP"),
-            }
+        headers = st.context.headers or {}
     except Exception:
-        _log.exception("IP/ISP lookup via ipinfo.io failed")
-    return {"ip": "Unavailable", "city": "Unknown", "region": "Unknown", "country": "Unknown", "org": "Unknown ISP"}
+        headers = {}
+    ip = client_context.client_ip(headers)
+    info = client_context.lookup(ip)
+    fallback = _CLIENT_CONTEXT_FALLBACKS.get(info["status"], "Unknown")
+    return {
+        "ip": info["ip"] if info["status"] != "unreachable" else (ip or "Unavailable"),
+        "city": info.get("city") or fallback,
+        "region": info.get("region") or "",
+        "country": info.get("country") or "",
+        "org": info.get("org") or (fallback if fallback != "Unknown" else "Unknown ISP"),
+    }
 
 
 def _escape_graphviz_label(value: str) -> str:

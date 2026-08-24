@@ -64,7 +64,7 @@ def test_scan_runs_with_sockets_hard_blocked(footprint_map):
     with pytest.raises(RuntimeError):
         socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
-    results = matrix.scan("cuentas@gmail.com", footprint_map=footprint_map)
+    results = matrix.scan("jane.doe@example.com", footprint_map=footprint_map)
     assert len(results) == len(footprint_map["platforms"])
 
 
@@ -103,7 +103,7 @@ def test_seeded_identifiers_reference_real_platform_keys(footprint_map):
 # --- identifier handling ----------------------------------------------
 
 @pytest.mark.parametrize("value,expected", [
-    ("cuentas@gmail.com", matrix.IDENTIFIER_EMAIL),
+    ("jane.doe@example.com", matrix.IDENTIFIER_EMAIL),
     ("a.b+tag@sub.example.co.uk", matrix.IDENTIFIER_EMAIL),
     ("nonpursuit", matrix.IDENTIFIER_HANDLE),
     ("@nonpursuit", matrix.IDENTIFIER_HANDLE),
@@ -134,8 +134,8 @@ def test_empty_identifier_returns_empty(footprint_map):
 # --- mock lookup logic ------------------------------------------------
 
 def test_seeded_identifier_matches_its_seed_list_exactly(footprint_map):
-    seed = set(footprint_map["seeded_identifiers"]["cuentas@gmail.com"]["found"])
-    results = matrix.scan("cuentas@gmail.com", footprint_map=footprint_map)
+    seed = set(footprint_map["seeded_identifiers"]["jane.doe@example.com"]["found"])
+    results = matrix.scan("jane.doe@example.com", footprint_map=footprint_map)
     found = {r["platform_key"] for r in results if r["verdict"] == matrix.FOUND}
     assert found == seed
 
@@ -179,7 +179,7 @@ def test_handle_only_platform_is_unsupported_for_an_email(footprint_map):
 
 
 def test_profile_url_only_populated_on_a_hit(footprint_map):
-    results = matrix.scan("cuentas@gmail.com", footprint_map=footprint_map)
+    results = matrix.scan("jane.doe@example.com", footprint_map=footprint_map)
     for row in results:
         if row["verdict"] == matrix.FOUND:
             assert row["profile_url"] and "{account}" not in row["profile_url"]
@@ -190,13 +190,13 @@ def test_profile_url_only_populated_on_a_hit(footprint_map):
 def test_every_row_is_flagged_simulated(footprint_map):
     """The one property that must never regress: nothing from this module
     may present as a real finding."""
-    results = matrix.scan("cuentas@gmail.com", footprint_map=footprint_map)
+    results = matrix.scan("jane.doe@example.com", footprint_map=footprint_map)
     assert results and all(r["simulated"] is True for r in results)
     assert all(r["source"] == matrix.SOURCE_OFFLINE for r in results)
 
 
 def test_summarize_counts_cover_every_row(footprint_map):
-    results = matrix.scan("cuentas@gmail.com", footprint_map=footprint_map)
+    results = matrix.scan("jane.doe@example.com", footprint_map=footprint_map)
     assert sum(matrix.summarize(results).values()) == len(results)
 
 
@@ -205,7 +205,7 @@ def test_summarize_counts_cover_every_row(footprint_map):
 def test_results_expose_holehe_result_keys(footprint_map):
     """holehe's per-module dict shape, so both sources deserialise the
     same and can share the footprint_results table."""
-    results = matrix.scan("cuentas@gmail.com", footprint_map=footprint_map)
+    results = matrix.scan("jane.doe@example.com", footprint_map=footprint_map)
     for row in results:
         for key in ("exists", "emailrecovery", "phoneNumber", "others", "rateLimit"):
             assert key in row
@@ -238,19 +238,19 @@ def db(tmp_path):
 
 
 def test_save_persists_only_hits_by_default(db, footprint_map):
-    results = matrix.scan("cuentas@gmail.com", footprint_map=footprint_map)
+    results = matrix.scan("jane.doe@example.com", footprint_map=footprint_map)
     written = matrix.save_results(db, results)
     assert written == len(matrix.hits(results))
     assert len(matrix.get_results(db)) == written
 
 
 def test_save_can_include_misses_when_asked(db, footprint_map):
-    results = matrix.scan("cuentas@gmail.com", footprint_map=footprint_map)
+    results = matrix.scan("jane.doe@example.com", footprint_map=footprint_map)
     assert matrix.save_results(db, results, include_misses=True) == len(results)
 
 
 def test_rescanning_upserts_rather_than_duplicating(db, footprint_map):
-    results = matrix.scan("cuentas@gmail.com", footprint_map=footprint_map)
+    results = matrix.scan("jane.doe@example.com", footprint_map=footprint_map)
     matrix.save_results(db, results)
     matrix.save_results(db, results)
     stored = matrix.get_results(db)
@@ -259,7 +259,7 @@ def test_rescanning_upserts_rather_than_duplicating(db, footprint_map):
 
 
 def test_stored_row_round_trips_holehe_fields(db, footprint_map):
-    results = matrix.scan("cuentas@gmail.com", footprint_map=footprint_map)
+    results = matrix.scan("jane.doe@example.com", footprint_map=footprint_map)
     matrix.save_results(db, results)
     row = next(r for r in matrix.get_results(db) if r["platform_key"] == "x")
     assert row["exists_flag"] == 1
@@ -271,19 +271,19 @@ def test_stored_row_round_trips_holehe_fields(db, footprint_map):
 
 
 def test_get_results_scopes_to_one_identifier(db, footprint_map):
-    matrix.save_results(db, matrix.scan("cuentas@gmail.com", footprint_map=footprint_map))
+    matrix.save_results(db, matrix.scan("jane.doe@example.com", footprint_map=footprint_map))
     matrix.save_results(db, matrix.scan("nonpursuit", footprint_map=footprint_map))
     scoped = matrix.get_results(db, "@NonPursuit")
     assert scoped and all(r["identifier"] == "nonpursuit" for r in scoped)
 
 
 def test_delete_removes_one_identifier_only(db, footprint_map):
-    matrix.save_results(db, matrix.scan("cuentas@gmail.com", footprint_map=footprint_map))
+    matrix.save_results(db, matrix.scan("jane.doe@example.com", footprint_map=footprint_map))
     matrix.save_results(db, matrix.scan("nonpursuit", footprint_map=footprint_map))
     removed = matrix.delete_results(db, "nonpursuit")
     assert removed > 0
     assert matrix.get_results(db, "nonpursuit") == []
-    assert matrix.get_results(db, "cuentas@gmail.com") != []
+    assert matrix.get_results(db, "jane.doe@example.com") != []
 
 
 def test_saving_nothing_is_a_noop(db):
@@ -303,7 +303,7 @@ def test_table_lives_alongside_the_other_stores(db, footprint_map):
     import discovered_accounts
 
     discovered_accounts.init_db(db)
-    matrix.save_results(db, matrix.scan("cuentas@gmail.com", footprint_map=footprint_map))
+    matrix.save_results(db, matrix.scan("jane.doe@example.com", footprint_map=footprint_map))
     with sqlite3.connect(db) as conn:
         names = {r[0] for r in conn.execute(
             "SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
@@ -317,7 +317,7 @@ def test_discovered_rows_never_claim_confirmed(footprint_map):
     would let a mock finding reach the audit package as established
     fact."""
     rows = matrix.to_discovered_rows(
-        matrix.scan("cuentas@gmail.com", footprint_map=footprint_map))
+        matrix.scan("jane.doe@example.com", footprint_map=footprint_map))
     assert rows
     assert all(row["confidence"] == "POSSIBLE" for row in rows)
     assert all("simulated" in row["reason"] for row in rows)
@@ -328,7 +328,7 @@ def test_discovered_rows_fit_the_discovered_accounts_schema(db, footprint_map):
     import discovered_accounts
 
     rows = matrix.to_discovered_rows(
-        matrix.scan("cuentas@gmail.com", footprint_map=footprint_map))
+        matrix.scan("jane.doe@example.com", footprint_map=footprint_map))
     assert discovered_accounts.save_discoveries(db, rows) == len(rows)
     assert len(discovered_accounts.get_all(db)) == len(rows)
 

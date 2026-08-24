@@ -25,6 +25,7 @@ from google_dork import (
 from osint_aggregator import run_full_osint_sweep
 import pdf_generator
 import profile_state
+import client_context
 import presentation_mode
 import usage_metrics
 
@@ -36,6 +37,23 @@ _OSINT_STATUS_LABELS = {
     "low": "🟢 Low",
     "unavailable": "⚪ Unavailable",
 }
+
+# Who the dossier greets. A role, never a person: see the note at the
+# call site in render().
+OPERATOR_GREETING = "Welcome, System Operator"
+
+# The persona the breach panel falls back to when no target has been
+# entered, so the section is never blank in a walkthrough. Matches
+# presentation_mode.MOCK_PROFILE -- one demo identity, not two -- and is
+# always drawn with the sample-target caption beside it.
+DEMO_TARGET_NAME = presentation_mode.MOCK_PROFILE["name"]
+DEMO_TARGET_EMAIL = presentation_mode.MOCK_PROFILE["email"]
+DEMO_TARGET_DOMAIN = presentation_mode.MOCK_PROFILE["domain"]
+
+# The breach list renders this many findings up front, inside a fixed
+# scroll box, with the remainder one expander away.
+BREACH_PREVIEW_LIMIT = 3
+BREACH_SCROLLER_HEIGHT = 400
 
 _OSINT_CONFIDENCE_BADGES = {
     "CONFIRMED": "🟢 Confirmed",
@@ -108,7 +126,14 @@ def _add_to_worklist(record, label, identifier):
     return saved
 
 
-def _render_osint_records(result, key_prefix="", identifier_hint=""):
+def _render_osint_records(result, key_prefix="", identifier_hint="", limit=None):
+    """Draw one vector's findings.
+
+    `limit` caps what renders immediately and puts the rest behind an
+    expander. A breach sweep can return dozens of rows, each its own
+    bordered card with buttons, and an unbounded list pushed the whole
+    statutory action plan below three screens of scroll.
+    """
     if not result or not isinstance(result, dict):
         st.caption("⚠️ No data available.")
         return
@@ -123,6 +148,10 @@ def _render_osint_records(result, key_prefix="", identifier_hint=""):
     if not records:
         st.caption("No records returned.")
         return
+
+    held_back = []
+    if limit is not None and len(records) > limit:
+        records, held_back = records[:limit], records[limit:]
 
     for index, record in enumerate(records):
         if not isinstance(record, dict):
@@ -175,6 +204,14 @@ def _render_osint_records(result, key_prefix="", identifier_hint=""):
         except Exception as e:
             _log.warning("Error rendering record: %s", e)
             continue
+
+    if held_back:
+        with st.expander(f"Show {len(held_back)} more finding{'s' if len(held_back) != 1 else ''}"):
+            _render_osint_records(
+                {**result, "records": held_back, "module": result.get("module")},
+                key_prefix=f"{key_prefix}_more",
+                identifier_hint=identifier_hint,
+            )
 
 
 def _broker_domain(row):
@@ -274,7 +311,7 @@ def _section_header(icon, name):
     st.subheader(f"{icon} {name}")
 
 
-def _render_osint_vector(result, title, key_prefix="", identifier_hint=""):
+def _render_osint_vector(result, title, key_prefix="", identifier_hint="", limit=None):
     if not result:
         st.markdown(f"##### {title}  ·  `⚪ Unavailable`")
         st.caption("No data retrieved.")
@@ -282,7 +319,136 @@ def _render_osint_vector(result, title, key_prefix="", identifier_hint=""):
     status_key = _osint_status(result)
     badge = _OSINT_STATUS_LABELS.get(status_key, "⚪ Unavailable")
     st.markdown(f"##### {title}  ·  `{badge}`")
-    _render_osint_records(result, key_prefix=key_prefix, identifier_hint=identifier_hint)
+    _render_osint_records(
+        result, key_prefix=key_prefix, identifier_hint=identifier_hint, limit=limit,
+    )
+
+
+# What the network column says when there is no geolocation answer. Each
+# one names the actual cause: the panel used to print "Local Network /
+# Subnet" for all of them, including the hosted runtime where it was
+# simply wrong.
+_NETWORK_NOTES = {
+    "ok": "",
+    "private": "Private/LAN address — no public registry entry to resolve.",
+    "rate_limited": "Geolocation rate-limited by ipinfo.io (HTTP 429). Header data below is still live.",
+    "unreachable": "Geolocation lookup did not answer (timeout, DNS, or blocked egress).",
+    "malformed": "Geolocation returned an unreadable response.",
+    "no_proxy_header": "Local request — no forwarded address, so nothing to geolocate.",
+}
+
+_PRESENTATION_TELEMETRY = {
+    "client_ip": "198.51.100.42",
+    "reverse_dns": "pool-198-51-100-42.nycmny.fios.verizon.net",
+    "geo_info": "New York, NY [US-EAST]",
+    "user_agent": "Chrome 128 / macOS Sequoia 15.1",
+    "os_family": "macOS 15.1 (Sequoia)",
+    "browser_engine": "Blink / V8",
+    "accept_lang": "en-US, en;q=0.9",
+    "referrer": "Direct / None",
+    "dnt_status": "DNT: 0 (Not Set)",
+    "network_note": "",
+}
+
+
+@st.cache_data(ttl=900, show_spinner=False)
+def _cached_ip_lookup(ip):
+    """One geolocation call per address per 15 minutes.
+
+    Streamlit reruns the whole script on every widget interaction, so an
+    uncached lookup here meant one ipinfo.io request per click. The free
+    tier is roughly a thousand a day; a demo can spend that in an
+    afternoon and then show 429s on stage.
+    """
+    return client_context.lookup(ip)
+
+
+def _parse_user_agent(raw_ua):
+    """(display string, OS family, engine) from a User-Agent header."""
+    raw_ua = raw_ua or ""
+    if not raw_ua:
+        return ("Not disclosed", "Unknown OS", "Unknown Engine")
+    if "Mac" in raw_ua:
+        os_family = "macOS"
+    elif "Windows" in raw_ua:
+        os_family = "Windows"
+    elif "Android" in raw_ua:
+        os_family = "Android"
+    elif "Linux" in raw_ua:
+        os_family = "Linux"
+    else:
+        os_family = "Unknown OS"
+    # Order matters: every Chrome UA also contains "Safari", and Edge's
+    # contains both plus "Edg".
+    if "Firefox" in raw_ua:
+        engine = "Gecko"
+    elif "Chrome" in raw_ua or "Chromium" in raw_ua:
+        engine = "Blink / V8"
+    elif "Safari" in raw_ua:
+        engine = "WebKit"
+    else:
+        engine = "Unknown Engine"
+    return (raw_ua[:60], os_family, engine)
+
+
+def _connection_telemetry(lookup_fn=None):
+    """Everything the network/device/session columns render.
+
+    Split out of render() so it can be tested without a browser: it takes
+    only headers and st.context, and returns strings.
+    """
+    if st.session_state.get("presentation_mode"):
+        return dict(_PRESENTATION_TELEMETRY)
+
+    try:
+        headers = st.context.headers or {}
+    except Exception:
+        _log.exception("st.context.headers unavailable")
+        headers = {}
+
+    ctx = client_context.describe(headers, lookup_fn=lookup_fn or _cached_ip_lookup)
+    status = ctx["status"]
+
+    raw_ua = headers.get("User-Agent") or headers.get("user-agent") or ""
+    user_agent, os_family, browser_engine = _parse_user_agent(raw_ua)
+
+    accept_lang = headers.get("Accept-Language") or headers.get("accept-language") or ""
+    if not accept_lang:
+        # The browser reports its locale to Streamlit even when the header
+        # is stripped by a proxy.
+        accept_lang = getattr(st.context, "locale", None) or "Not disclosed"
+    if len(accept_lang) > 40:
+        accept_lang = accept_lang[:40] + "…"
+
+    dnt_val = headers.get("DNT") or headers.get("dnt") or ""
+    gpc_val = headers.get("Sec-GPC") or headers.get("sec-gpc") or ""
+    if gpc_val == "1":
+        dnt_status = "GPC: ✅ Active"
+    elif dnt_val == "1":
+        dnt_status = "DNT: ✅ Active"
+    else:
+        dnt_status = "DNT/GPC: ❌ Inactive"
+
+    # Browser-reported timezone beats the registry's guess when both are
+    # present -- it comes from the visitor's own clock, not from where
+    # their ISP happens to be registered.
+    browser_tz = getattr(st.context, "timezone", None)
+    geo_info = ctx["location"] or ctx.get("timezone") or browser_tz or "Not resolvable"
+    if ctx["location"] and browser_tz:
+        geo_info = f"{ctx['location']} · {browser_tz}"
+
+    return {
+        "client_ip": ctx["client_ip"] or "Not forwarded (local request)",
+        "reverse_dns": ctx.get("hostname") or "No PTR record",
+        "geo_info": geo_info,
+        "user_agent": user_agent,
+        "os_family": os_family,
+        "browser_engine": browser_engine,
+        "accept_lang": accept_lang,
+        "referrer": headers.get("Referer") or headers.get("referer") or "Direct / None",
+        "dnt_status": dnt_status,
+        "network_note": _NETWORK_NOTES.get(status, ""),
+    }
 
 
 def render(brokers_df):
@@ -303,91 +469,38 @@ def render(brokers_df):
     # Always read fresh profile state (not stale from input widget cache)
     profile = profile_state.get_profile(st.session_state)
 
-    full_or_first = (profile.get("first_name") or profile.get("full_name") or "").strip()
-    if full_or_first:
-        first_name = full_or_first.split()[0].lower()
-        st.markdown(f"## hello, {first_name}")
+    # Deliberately not the profile's name. The dossier's subject is whoever
+    # is being investigated -- in a demo, the seeded persona -- and greeting
+    # the reader with that name reads as though the tool has confused the
+    # two. A fixed role label also keeps any real operator's name off a
+    # screen that gets projected and screenshotted.
+    st.markdown(f"## **{OPERATOR_GREETING}**")
 
     # --- Combined Telemetry & Harvest Vector Card ---
     with st.container(border=True):
         st.markdown("### 🌐 What Your Connection Reveals Online")
         st.caption("A live look at what any website or tracker passively harvests about your identity and environment from this request alone.")
 
-        # Collect telemetry safely
-        if st.session_state.get("presentation_mode"):
-            client_ip = "198.51.100.42"
-            reverse_dns = "pool-198-51-100-42.nycmny.fios.verizon.net"
-            geo_info = "New York, NY [US-EAST]"
-            user_agent = "Chrome 128 / macOS Sequoia 15.1"
-            os_family = "macOS 15.1 (Sequoia)"
-            browser_engine = "Blink / V8"
-            accept_lang = "en-US, en;q=0.9"
-            referrer = "Direct / None"
-            dnt_status = "DNT: 0 (Not Set)"
-        else:
-            try:
-                headers = st.context.headers
-                client_ip = headers.get("X-Forwarded-For", headers.get("x-forwarded-for", "127.0.0.1 / Localhost"))
-                reverse_dns = headers.get("X-Client-Hostname", headers.get("x-client-hostname", "Localhost / Loopback"))
-                geo_info = headers.get("X-Timezone", headers.get("x-timezone", "Local Network / Subnet"))
-                raw_ua = headers.get("User-Agent", headers.get("user-agent", "Unknown"))
-                user_agent = raw_ua[:60] if raw_ua else "Unknown"
-                # Parse OS and browser from UA string
-                if "Mac" in raw_ua:
-                    os_family = "macOS"
-                elif "Windows" in raw_ua:
-                    os_family = "Windows"
-                elif "Linux" in raw_ua:
-                    os_family = "Linux"
-                else:
-                    os_family = "Unknown OS"
-                if "Chrome" in raw_ua:
-                    browser_engine = "Blink / V8"
-                elif "Firefox" in raw_ua:
-                    browser_engine = "Gecko"
-                elif "Safari" in raw_ua:
-                    browser_engine = "WebKit"
-                else:
-                    browser_engine = "Unknown Engine"
-                accept_lang = headers.get("Accept-Language", headers.get("accept-language", "Not Disclosed"))
-                if len(accept_lang) > 40:
-                    accept_lang = accept_lang[:40] + "…"
-                referrer = headers.get("Referer", headers.get("referer", "Direct / None"))
-                dnt_val = headers.get("DNT", headers.get("dnt", ""))
-                gpc_val = headers.get("Sec-GPC", headers.get("sec-gpc", ""))
-                if gpc_val == "1":
-                    dnt_status = "GPC: ✅ Active"
-                elif dnt_val == "1":
-                    dnt_status = "DNT: ✅ Active"
-                else:
-                    dnt_status = "DNT/GPC: ❌ Inactive"
-            except Exception:
-                client_ip = "127.0.0.1 / Localhost"
-                reverse_dns = "Localhost / Loopback"
-                geo_info = "Local Network / Subnet"
-                user_agent = "Unavailable"
-                os_family = "Unknown"
-                browser_engine = "Unknown"
-                accept_lang = "Not Disclosed"
-                referrer = "Direct / None"
-                dnt_status = "Standard Masked"
+        tele = _connection_telemetry()
 
         net_col, device_col, session_col = st.columns(3)
         with net_col:
             st.markdown("#### 📡 Network")
-            st.markdown(f"**Public IP Address**  \n<div style='font-size: 1.25rem; font-weight: 600; color: #D4AF37; font-family: var(--np-mono); margin-bottom: 0.4rem;'>{client_ip}</div>", unsafe_allow_html=True)
-            st.markdown(f"**Reverse DNS Host**  \n<div style='font-size: 1.0rem; color: #E8E2D4; font-family: var(--np-mono); margin-bottom: 0.4rem;'>{reverse_dns}</div>", unsafe_allow_html=True)
-            st.markdown(f"**Inferred Location**  \n<div style='font-size: 1.0rem; color: #E8E2D4; font-family: var(--np-mono);'>{geo_info}</div>", unsafe_allow_html=True)
+            st.markdown(f"**Public IP Address**  \n<div style='font-size: 1.25rem; font-weight: 600; color: #D4AF37; font-family: var(--np-mono); margin-bottom: 0.4rem;'>{tele['client_ip']}</div>", unsafe_allow_html=True)
+            st.markdown(f"**Reverse DNS Host**  \n<div style='font-size: 1.0rem; color: #E8E2D4; font-family: var(--np-mono); margin-bottom: 0.4rem;'>{tele['reverse_dns']}</div>", unsafe_allow_html=True)
+            st.markdown(f"**Inferred Location**  \n<div style='font-size: 1.0rem; color: #E8E2D4; font-family: var(--np-mono);'>{tele['geo_info']}</div>", unsafe_allow_html=True)
+            if tele["network_note"]:
+                st.caption(tele["network_note"])
         with device_col:
             st.markdown("#### 💻 Device")
-            st.markdown(f"**Operating System**  \n<div style='font-size: 1.25rem; font-weight: 600; color: #D4AF37; font-family: var(--np-mono); margin-bottom: 0.4rem;'>{os_family}</div>", unsafe_allow_html=True)
-            st.markdown(f"**Browser Engine**  \n<div style='font-size: 1.0rem; color: #E8E2D4; font-family: var(--np-mono); margin-bottom: 0.4rem;'>{browser_engine}</div>", unsafe_allow_html=True)
-            st.markdown(f"**User Agent String**  \n<div style='font-size: 0.9rem; color: #9AA3B2; font-family: var(--np-mono); word-break: break-all;'>{user_agent}</div>", unsafe_allow_html=True)
+            st.markdown(f"**Operating System**  \n<div style='font-size: 1.25rem; font-weight: 600; color: #D4AF37; font-family: var(--np-mono); margin-bottom: 0.4rem;'>{tele['os_family']}</div>", unsafe_allow_html=True)
+            st.markdown(f"**Browser Engine**  \n<div style='font-size: 1.0rem; color: #E8E2D4; font-family: var(--np-mono); margin-bottom: 0.4rem;'>{tele['browser_engine']}</div>", unsafe_allow_html=True)
+            st.markdown(f"**User Agent String**  \n<div style='font-size: 0.9rem; color: #B4BDCA; font-family: var(--np-mono); word-break: break-all;'>{tele['user_agent']}</div>", unsafe_allow_html=True)
         with session_col:
             st.markdown("#### 🛡️ Session")
-            st.markdown(f"**Privacy Signal (DNT/GPC)**  \n<div style='font-size: 1.2rem; font-weight: 600; font-family: var(--np-mono); margin-bottom: 0.4rem;'>{dnt_status}</div>", unsafe_allow_html=True)
-            st.markdown(f"**Accepted Languages**  \n<div style='font-size: 1.0rem; color: #E8E2D4; font-family: var(--np-mono); margin-bottom: 0.4rem;'>{accept_lang}</div>", unsafe_allow_html=True)
-            st.markdown(f"**Referrer Origin**  \n<div style='font-size: 1.0rem; color: #E8E2D4; font-family: var(--np-mono);'>{referrer}</div>", unsafe_allow_html=True)
+            st.markdown(f"**Privacy Signal (DNT/GPC)**  \n<div style='font-size: 1.2rem; font-weight: 600; font-family: var(--np-mono); margin-bottom: 0.4rem;'>{tele['dnt_status']}</div>", unsafe_allow_html=True)
+            st.markdown(f"**Accepted Languages**  \n<div style='font-size: 1.0rem; color: #E8E2D4; font-family: var(--np-mono); margin-bottom: 0.4rem;'>{tele['accept_lang']}</div>", unsafe_allow_html=True)
+            st.markdown(f"**Referrer Origin**  \n<div style='font-size: 1.0rem; color: #E8E2D4; font-family: var(--np-mono);'>{tele['referrer']}</div>", unsafe_allow_html=True)
 
         with st.expander("How this is collected", icon=":material/info:"):
             vec_net, vec_hw, vec_session = st.columns(3)
@@ -611,13 +724,33 @@ def render(brokers_df):
     _section_header("🔐", "Data exposures & breaches")
     with st.container(border=True):
         # Email exposure section with detailed diagnostics
-        email_target = profile.get("email") or (findings.get("profile") or {}).get("email") or ""
+        email_target = (
+            profile.get("email")
+            or (findings.get("profile") or {}).get("email")
+            or DEMO_TARGET_EMAIL
+        )
+        target_is_sample = email_target == DEMO_TARGET_EMAIL and not profile.get("email")
+        if target_is_sample:
+            # Labelled, always. An unlabelled fallback persona means a real
+            # visitor who entered nothing sees a populated breach panel and
+            # has no way to tell it is not about them.
+            st.caption(
+                f"🎭 Sample target — **{DEMO_TARGET_NAME}** (`{DEMO_TARGET_EMAIL}`). "
+                "Enter your own address on the 👤 Identity Profile page to scan for real."
+            )
 
         if email_count > 0 or email_records:
-            _render_osint_vector(
-                email_vector, f"📧 Email & Identity Exposure ({email_count} findings)",
-                key_prefix="email", identifier_hint=email_target,
-            )
+            # Fixed-height scroller: the sweep can return dozens of rows,
+            # and the section below it (the statutory action plan) is the
+            # one the demo actually walks to. BREACH_PREVIEW_LIMIT rows
+            # render immediately, the rest sit in the expander inside the
+            # same scroll box.
+            with st.container(height=BREACH_SCROLLER_HEIGHT):
+                _render_osint_vector(
+                    email_vector, f"📧 Email & Identity Exposure ({email_count} findings)",
+                    key_prefix="email", identifier_hint=email_target,
+                    limit=BREACH_PREVIEW_LIMIT,
+                )
             em_checks = email_vector.get("checks", [])
             if em_checks and len(em_checks) > email_count:
                 with st.expander(f"🔍 Probed services log ({email_count} hits of {len(em_checks)} services checked)"):
@@ -628,9 +761,16 @@ def render(brokers_df):
                             chk_conf = chk.get("confidence", "UNKNOWN")
                             chk_icon = "🟢" if chk_conf in ("CONFIRMED", "POSSIBLE") else "⚪"
                             st.caption(f"{chk_icon} **{chk_plat}**: `{chk_conf}`")
-        elif not email_target:
-            st.markdown("##### 📧 Email & Identity Exposure  ·  `⚪ Not Available`")
-            st.warning("No email address provided. Enter your email on the 👤 Identity Profile page to scan for email exposures (Gravatar, PGP, breaches, etc.)")
+        elif target_is_sample:
+            # Reached before any sweep has run against the sample persona:
+            # say what the panel is waiting for rather than reporting the
+            # demo identity as clean.
+            st.markdown("##### 📧 Email & Identity Exposure  ·  `⚪ Not Scanned`")
+            st.caption(
+                f"No sweep has run for {DEMO_TARGET_EMAIL} yet — press "
+                "**⚡ Execute Master Recon** above, or enter your own address "
+                "on the 👤 Identity Profile page."
+            )
         elif email_vector.get("status") == "unavailable":
             st.markdown("##### 📧 Email & Identity Exposure  ·  `⚪ Scan Failed`")
             st.caption(f"Email scan failed for: {email_target}")

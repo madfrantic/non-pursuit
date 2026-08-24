@@ -14,9 +14,9 @@
     "hash_bytes_used": 8
   },
   "seeded_identifiers": {
-    "cuentas@gmail.com": {
+    "jane.doe@example.com": {
       "found": ["github", "x", "medium", "substack", "spotify", "discord", "pinterest"],
-      "note": "Primary showcase identifier."
+      "note": "Primary showcase identifier -- the demo persona, matching presentation_mode.MOCK_PROFILE. Never seed a real person here: this file ships in the repo."
     },
     "nonpursuit": {
       "found": ["github", "x", "reddit", "mastodon"],

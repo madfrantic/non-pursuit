@@ -10,7 +10,7 @@ APP_TITLE = "Non-Pursuit"
 # pitch deck and "They chase. You enforce." in the app footer -- which put
 # the product under two different names in the two places a visitor was
 # most likely to read it.
-APP_HEADLINE = "non-pursuit. the sovereign engine"
+APP_HEADLINE = "non-pursuit. the sovereign agent"
 APP_TAGLINE = APP_HEADLINE
 APP_ICON = "🛡️"  # fallback emoji, kept for any spot the real logo doesn't fit
 APP_LOGO_PATH = "assets/logo_shield.png"

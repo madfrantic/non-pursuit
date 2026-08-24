@@ -83,7 +83,7 @@ palettes and two different product names. They are now one document.
   age-related contrast sensitivity. Tests in `tests/test_branding_theme.py`
   enforce all five limits — the serif/brass character lives in the headings and
   palette, not in shrinking the labels.
-- `config.APP_HEADLINE` — "non-pursuit. the sovereign engine", lowercase, the
+- `config.APP_HEADLINE` — "non-pursuit. the sovereign agent", lowercase, the
   single headline. It replaced the deck's "Take yourself off the market." and the
   footer's "They chase. You enforce."; `st.logo` now draws the shield
   (`APP_TOPMARK_PATH`) rather than the wordmark, which repeated in a picture what
@@ -100,6 +100,24 @@ palettes and two different product names. They are now one document.
   `section_label()`. The engine section is "Sovereign Engine" online and
   "Broker agent console" on the desktop runtime, which is the only build that
   ships that console.
+- `utils/client_context.py` — the visitor's network identity, shared by the
+  dossier's "What Your Connection Reveals Online" panel and the Results card.
+  Both had their own wrong version: the dossier read `X-Client-Hostname` and
+  `X-Timezone`, headers nothing sets, so it printed fallback constants as
+  measurements; Results called `ipinfo.io/json` with no address, which
+  geolocates *this server* — right by accident on desktop, the datacenter on
+  the hosted build. Now: leftmost `X-Forwarded-For` hop, geolocated through
+  `ipinfo.io/{ip}/json`, with `private` / `rate_limited` / `unreachable` /
+  `malformed` / `no_proxy_header` as distinct on-screen statuses. **Callers
+  must cache** — `master._cached_ip_lookup` holds a 15-minute TTL, because
+  Streamlit reruns the script on every interaction and the free tier is ~1k
+  lookups/day.
+- The dossier greets a **role, not a person** (`master.OPERATOR_GREETING`), and
+  the breach panel's fallback target is the demo persona from
+  `presentation_mode.MOCK_PROFILE`, always drawn with a "🎭 Sample target"
+  caption. No real identity belongs on a screen that gets projected — the same
+  reason `data/footprint_map.json`'s showcase identifier is now
+  `jane.doe@example.com`.
 - `utils/admin_auth.py` + `components/admin_dashboard.py` + `pages/11_Admin.py` —
   the owner console: every stored record in one view. Gated on
   `NON_PURSUIT_ADMIN_KEY` (env or `st.secrets`), compared with

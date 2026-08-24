@@ -38,7 +38,7 @@ def clean_runtime(monkeypatch):
 # --- the headline -----------------------------------------------------
 
 def test_there_is_one_headline_and_it_is_lowercase():
-    assert config.APP_HEADLINE == "non-pursuit. the sovereign engine"
+    assert config.APP_HEADLINE == "non-pursuit. the sovereign agent"
     assert config.APP_HEADLINE == config.APP_HEADLINE.lower()
 
 
