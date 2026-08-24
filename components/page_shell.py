@@ -24,6 +24,7 @@ for _path in (ROOT_DIR, UTILS_DIR):
 import config  # noqa: E402
 import debug_view  # noqa: E402
 import runtime_mode  # noqa: E402
+from components import nav  # noqa: E402
 from components import vault_gate  # noqa: E402
 
 
@@ -42,6 +43,12 @@ def setup(title: str, icon: str = "🛡️") -> str:
     debug_view.inject()
     if not vault_gate.require_unlock():
         st.stop()
+    # After the gate, matching app.py: a locked session gets the password
+    # form and nothing else. include_home is what keeps a page from being a
+    # dead end -- app.py's sidebar isn't running here, so without this link
+    # there is no route back to the main app and a refresh just reloads the
+    # page you are stuck on.
+    nav.render_page_links(include_home=True)
     vault_gate.render_lock_control()
     return runtime_mode.db_path()
 

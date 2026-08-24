@@ -35,6 +35,7 @@ from components import dashboard as dashboard_component
 from components import master as master_component
 from components import campaign_timeline as campaign_timeline_component
 from components import footprint as footprint_component
+from components import nav
 
 st.session_state.setdefault('nav_mode', 'Vault')
 database.init_db(runtime_mode.db_path())
@@ -227,6 +228,11 @@ mode = st.sidebar.radio(
     key="nav_mode",
     label_visibility="visible",
 )
+
+# The pages/ multi-page app. Defined in components/nav.py because a page
+# has to draw these too -- app.py's sidebar doesn't exist while a pages/
+# script is running.
+nav.render_page_links()
 
 # Presentation mode toggle for safe live demos
 st.sidebar.markdown("---")

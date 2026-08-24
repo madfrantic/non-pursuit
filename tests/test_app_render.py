@@ -254,6 +254,62 @@ def test_nav_options_stay_grouped_by_section(monkeypatch, tmp_path):
     ]
 
 
+def test_every_page_in_the_mpa_is_reachable_from_the_sidebar(monkeypatch, tmp_path):
+    """Turning off Streamlit's automatic page list stranded all of pages/.
+
+    That list was the only route to them -- nothing calls st.page_link or
+    st.switch_page otherwise -- so every file in pages/ silently became
+    unreachable, including the OSINT Toolkit and the full-registry
+    footprint sweep. Any page added later has to be linked too.
+    """
+    import pathlib
+
+    from components import nav
+
+    linked = {path for _, links in nav.MPA_SECTIONS for path, _, _ in links}
+    on_disk = {
+        f"pages/{p.name}"
+        for p in pathlib.Path(ROOT, "pages").glob("*.py")
+        if not p.name.startswith("_")
+    }
+
+    assert on_disk, "expected pages/ to contain page scripts"
+    assert not (on_disk - linked), f"pages with no sidebar link: {sorted(on_disk - linked)}"
+    assert not (linked - on_disk), f"sidebar links to missing pages: {sorted(linked - on_disk)}"
+
+
+def test_every_page_renders_a_way_back_to_the_main_app(monkeypatch, tmp_path):
+    """A pages/ script runs on its own -- app.py's sidebar is not there.
+
+    With Streamlit's automatic page list off, a page that draws no links of
+    its own is a dead end: no route back, and a refresh reloads the page
+    you are stuck on. page_shell.setup() is the single chokepoint every
+    page goes through, so the exit has to be rendered from there.
+    """
+    import inspect
+    import pathlib
+
+    from components import nav, page_shell
+
+    source = inspect.getsource(page_shell.setup)
+    assert "include_home=True" in source, "pages must render the home link"
+    assert nav.HOME_PAGE == "app.py"
+    assert pathlib.Path(ROOT, nav.HOME_PAGE).exists()
+
+    # Every page must actually route through that chokepoint.
+    for page in pathlib.Path(ROOT, "pages").glob("*.py"):
+        text = page.read_text(encoding="utf-8")
+        assert "setup(" in text, f"{page.name} never calls page_shell.setup()"
+
+
+def test_sidebar_navigation_is_disabled_so_the_links_are_the_only_nav(monkeypatch, tmp_path):
+    """The links above only replace the raw file list if it stays off."""
+    import pathlib
+
+    toml = pathlib.Path(ROOT, ".streamlit", "config.toml").read_text(encoding="utf-8")
+    assert "showSidebarNavigation = false" in toml
+
+
 @pytest.mark.parametrize("demo", [False, True], ids=["local", "demo"])
 def test_deep_handle_footprint_renders_without_exception(monkeypatch, tmp_path, demo):
     """components/footprint.py had no caller before it was added to the
