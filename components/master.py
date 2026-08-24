@@ -303,18 +303,19 @@ def render(brokers_df):
     # Always read fresh profile state (not stale from input widget cache)
     profile = profile_state.get_profile(st.session_state)
 
-    subject_name = (profile.get("full_name") or "").strip()
-    if subject_name:
-        st.markdown(f"## Hello, {subject_name}")
+    full_or_first = (profile.get("first_name") or profile.get("full_name") or "").strip()
+    if full_or_first:
+        first_name = full_or_first.split()[0].lower()
+        st.markdown(f"## hello, {first_name}")
 
     # --- Combined Telemetry & Harvest Vector Card ---
     with st.container(border=True):
-        st.markdown("##### 🌐 What your connection reveals")
-        st.caption("A live look at what any site can passively see about you, just from this request.")
+        st.markdown("### 🌐 What Your Connection Reveals Online")
+        st.caption("A live look at what any website or tracker passively harvests about your identity and environment from this request alone.")
 
         # Collect telemetry safely
         if st.session_state.get("presentation_mode"):
-            client_ip = "198.51.100.42 [Mock Gateway]"
+            client_ip = "198.51.100.42"
             reverse_dns = "pool-198-51-100-42.nycmny.fios.verizon.net"
             geo_info = "New York, NY [US-EAST]"
             user_agent = "Chrome 128 / macOS Sequoia 15.1"
@@ -359,7 +360,7 @@ def render(brokers_df):
                 elif dnt_val == "1":
                     dnt_status = "DNT: ✅ Active"
                 else:
-                    dnt_status = "DNT/GPC: ❌ Not Set"
+                    dnt_status = "DNT/GPC: ❌ Inactive"
             except Exception:
                 client_ip = "127.0.0.1 / Localhost"
                 reverse_dns = "Localhost / Loopback"
@@ -373,20 +374,20 @@ def render(brokers_df):
 
         net_col, device_col, session_col = st.columns(3)
         with net_col:
-            st.markdown("**Network**")
-            st.caption(f"IP address  \n`{client_ip}`")
-            st.caption(f"Reverse DNS  \n`{reverse_dns}`")
-            st.caption(f"Inferred region  \n`{geo_info}`")
+            st.markdown("#### 📡 Network")
+            st.markdown(f"**Public IP Address**  \n<div style='font-size: 1.25rem; font-weight: 600; color: #D4AF37; font-family: var(--np-mono); margin-bottom: 0.4rem;'>{client_ip}</div>", unsafe_allow_html=True)
+            st.markdown(f"**Reverse DNS Host**  \n<div style='font-size: 1.0rem; color: #E8E2D4; font-family: var(--np-mono); margin-bottom: 0.4rem;'>{reverse_dns}</div>", unsafe_allow_html=True)
+            st.markdown(f"**Inferred Location**  \n<div style='font-size: 1.0rem; color: #E8E2D4; font-family: var(--np-mono);'>{geo_info}</div>", unsafe_allow_html=True)
         with device_col:
-            st.markdown("**Device**")
-            st.caption(f"Platform  \n`{os_family}`")
-            st.caption(f"Browser engine  \n`{browser_engine}`")
-            st.caption(f"User agent  \n`{user_agent}`")
+            st.markdown("#### 💻 Device")
+            st.markdown(f"**Operating System**  \n<div style='font-size: 1.25rem; font-weight: 600; color: #D4AF37; font-family: var(--np-mono); margin-bottom: 0.4rem;'>{os_family}</div>", unsafe_allow_html=True)
+            st.markdown(f"**Browser Engine**  \n<div style='font-size: 1.0rem; color: #E8E2D4; font-family: var(--np-mono); margin-bottom: 0.4rem;'>{browser_engine}</div>", unsafe_allow_html=True)
+            st.markdown(f"**User Agent String**  \n<div style='font-size: 0.9rem; color: #9AA3B2; font-family: var(--np-mono); word-break: break-all;'>{user_agent}</div>", unsafe_allow_html=True)
         with session_col:
-            st.markdown("**Session**")
-            st.caption(f"Privacy signal  \n{dnt_status}")
-            st.caption(f"Accepted languages  \n`{accept_lang}`")
-            st.caption(f"Referrer  \n`{referrer}`")
+            st.markdown("#### 🛡️ Session")
+            st.markdown(f"**Privacy Signal (DNT/GPC)**  \n<div style='font-size: 1.2rem; font-weight: 600; font-family: var(--np-mono); margin-bottom: 0.4rem;'>{dnt_status}</div>", unsafe_allow_html=True)
+            st.markdown(f"**Accepted Languages**  \n<div style='font-size: 1.0rem; color: #E8E2D4; font-family: var(--np-mono); margin-bottom: 0.4rem;'>{accept_lang}</div>", unsafe_allow_html=True)
+            st.markdown(f"**Referrer Origin**  \n<div style='font-size: 1.0rem; color: #E8E2D4; font-family: var(--np-mono);'>{referrer}</div>", unsafe_allow_html=True)
 
         with st.expander("How this is collected", icon=":material/info:"):
             vec_net, vec_hw, vec_session = st.columns(3)

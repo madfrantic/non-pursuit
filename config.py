@@ -4,23 +4,45 @@ Configuration for Non-Pursuit.
 
 # Application settings
 APP_TITLE = "Non-Pursuit"
-APP_TAGLINE = "They chase. You enforce."
+
+# The one headline, lowercase on purpose, and the only place it is written.
+# It replaced two competing lines -- "Take yourself off the market." in the
+# pitch deck and "They chase. You enforce." in the app footer -- which put
+# the product under two different names in the two places a visitor was
+# most likely to read it.
+APP_HEADLINE = "non-pursuit. the sovereign engine"
+APP_TAGLINE = APP_HEADLINE
 APP_ICON = "🛡️"  # fallback emoji, kept for any spot the real logo doesn't fit
 APP_LOGO_PATH = "assets/logo_shield.png"
 APP_WORDMARK_PATH = "assets/logo_wordmark.png"
+
+# What st.logo draws at the top of the sidebar. The wordmark is a text
+# image, and it fought with the headline directly beneath it -- the mark
+# says the name once and lets the headline carry the words.
+APP_TOPMARK_PATH = APP_LOGO_PATH
 APP_LAYOUT = "wide"
+
+# The agent console's own name. The section is "Sovereign Engine"
+# everywhere the app can actually be reached over the web; the older
+# "Broker agent console" label names the console that only the separately
+# installed desktop build ships, so it appears only on that runtime.
+SOVEREIGN_ENGINE_LABEL = "Sovereign Engine"
+DESKTOP_CONSOLE_LABEL = "Broker agent console"
 
 # Theme settings — also mirrored in .streamlit/config.toml, which is what
 # actually themes the built-in Streamlit widgets. Read by data_export.py
 # and pdf_generator.py to keep exported PDFs on the same palette as the
 # app itself.
+# Palette source: demo_pitch.html's :root block, by way of
+# components/theme.py -- the app, the deck and the exported PDFs are all
+# the same document and had drifted onto three different blues.
 THEME_BASE = "dark"
-PRIMARY_COLOR = "#2563eb"
-BACKGROUND_COLOR = "#0b1120"
-SECONDARY_BACKGROUND_COLOR = "#16213a"
-TEXT_COLOR = "#e2e8f0"
+PRIMARY_COLOR = "#D4AF37"          # detective brass
+BACKGROUND_COLOR = "#0B1325"       # midnight cruiser navy
+SECONDARY_BACKGROUND_COLOR = "#152238"  # precinct slate
+TEXT_COLOR = "#E8E2D4"             # bone
 SUCCESS_COLOR = "#22c55e"
-ERROR_COLOR = "#ef4444"
+ERROR_COLOR = "#FF3B30"            # stamp red
 
 # File paths
 BROKERS_CSV_PATH = "data/brokers.csv"

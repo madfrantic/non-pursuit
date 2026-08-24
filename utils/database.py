@@ -400,6 +400,38 @@ def get_latest_target_profile(db_path: str) -> dict | None:
         return profile
 
 
+def get_all_target_profiles(db_path: str) -> list[dict]:
+    """Every saved profile, newest first, decrypted on read.
+
+    insert_target_profile appends a row per save rather than updating one,
+    so this is the edit history of the profile form -- which is why only
+    the owner-gated admin dashboard reads it. Everything else in the app
+    wants the current answer and calls get_latest_target_profile().
+
+    Shares the decrypt path with that function deliberately: a row written
+    before the vault existed decrypts through the same legacy fallback
+    here as it does anywhere else, so the history does not become a set of
+    unreadable ciphertexts the moment it is displayed.
+    """
+    with _connect(db_path) as conn:
+        rows = conn.execute(
+            "SELECT * FROM target_profile ORDER BY id DESC"
+        ).fetchall()
+    profiles = []
+    for row in rows:
+        profile = dict(row)
+        for col in PII_COLUMNS:
+            if col in profile:
+                profile[col] = _decrypt(profile[col])
+        try:
+            profile["relational_entities"] = json.loads(
+                profile.get("relational_entities") or "[]")
+        except (TypeError, json.JSONDecodeError):
+            profile["relational_entities"] = []
+        profiles.append(profile)
+    return profiles
+
+
 def insert_target_profile(db_path: str, data: dict) -> int:
     """Insert a new profile record. Only PROFILE_COLUMNS are read from
     `data` and every value is bound as a parameter, so nothing from the

@@ -19,9 +19,11 @@ def clean_env(monkeypatch):
     monkeypatch.delenv("STREAMLIT_SHARING_MODE", raising=False)
     runtime_mode.reset_fallback_db_path()
     runtime_mode.reset_runtime_override()
+    runtime_mode.reset_startup_default()
     yield
     runtime_mode.reset_fallback_db_path()
     runtime_mode.reset_runtime_override()
+    runtime_mode.reset_startup_default()
 
 
 def set_demo(monkeypatch, value):
@@ -251,3 +253,74 @@ def test_demo_mode_from_secrets_routes_to_session_db(monkeypatch):
     monkeypatch.setattr(runtime_mode, "_secret", lambda name: "true")
     assert runtime_mode.db_path() != config.TRACKER_DB_PATH
     assert runtime_mode.SESSION_DB_PREFIX in runtime_mode.db_path()
+
+
+# --- the shape a session opens on -------------------------------------
+# The desktop build is a separate install -- a local Python, a local
+# Chrome for Playwright, a writable data/. A browser arriving at the app
+# has none of that guaranteed, so a session that has chosen nothing starts
+# online. What must not follow from that: the storage decisions moving,
+# the badge claiming somebody forced the switch, or a later choice being
+# overwritten on the next rerun.
+
+def test_a_fresh_session_opens_on_the_online_build():
+    assert runtime_mode.apply_startup_default() == runtime_mode.OVERRIDE_CLOUD
+    assert runtime_mode.is_cloud_deployment() is True
+
+
+def test_the_startup_default_is_not_described_as_manually_forced():
+    """Nobody forced anything -- the session simply has not been switched
+    off the shape it opened in, and saying otherwise in the badge is a
+    claim about the user that is not true."""
+    runtime_mode.apply_startup_default()
+    label, help_text = runtime_mode.mode_badge()
+    assert "CLOUD" in label
+    assert "forced" not in help_text
+
+
+def test_choosing_a_runtime_by_hand_is_still_reported_as_forced():
+    runtime_mode.apply_startup_default()
+    runtime_mode.set_runtime_override(runtime_mode.OVERRIDE_DESKTOP)
+    _, help_text = runtime_mode.mode_badge()
+    assert "forced" in help_text
+
+
+def test_the_startup_default_does_not_fight_a_later_choice():
+    """It seeds the opening position once. Re-applying on every rerun
+    would drag a user who picked Desktop back to online on their next
+    click."""
+    runtime_mode.apply_startup_default()
+    runtime_mode.set_runtime_override(runtime_mode.OVERRIDE_DESKTOP)
+    runtime_mode.apply_startup_default()
+    assert runtime_mode.get_runtime_override() == runtime_mode.OVERRIDE_DESKTOP
+    assert runtime_mode.is_cloud_deployment() is False
+
+
+def test_a_deliberate_return_to_auto_stays_auto():
+    """The awkward case: "Auto-detect" is also what an untouched session
+    reports, so a startup default that re-fired would be indistinguishable
+    from the user never having chosen -- and would silently override the
+    one option that means "stop overriding"."""
+    runtime_mode.apply_startup_default()
+    runtime_mode.set_runtime_override(runtime_mode.OVERRIDE_AUTO)
+    runtime_mode.apply_startup_default()
+    assert runtime_mode.get_runtime_override() == runtime_mode.OVERRIDE_AUTO
+    assert runtime_mode.is_cloud_deployment() is False
+
+
+def test_the_startup_default_cannot_reach_demo_mode_or_the_gates(monkeypatch):
+    """Same boundary every other override respects: it steers the
+    deployment shape the UI describes, never where PII is written."""
+    runtime_mode.apply_startup_default()
+    assert runtime_mode.is_demo_mode() is False
+    assert runtime_mode.db_path() == config.TRACKER_DB_PATH
+    assert runtime_mode.live_scanning_enabled() is True
+    assert runtime_mode.persistent_storage_enabled() is True
+
+
+def test_auto_detection_itself_is_unchanged():
+    """The default only decides which option a session opens on. Anyone
+    who picks Auto-detect must get the same answer as before it existed."""
+    runtime_mode.apply_startup_default()
+    runtime_mode.set_runtime_override(runtime_mode.OVERRIDE_AUTO)
+    assert runtime_mode.is_cloud_deployment() is False

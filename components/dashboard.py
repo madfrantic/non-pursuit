@@ -272,41 +272,43 @@ def render():
         item_word = "item" if stale_count == 1 else "items"
         st.warning(f"⏰ {stale_count} {item_word} on your Intelligence Dossier haven't been rechecked in {config.RECHECK_STALE_DAYS}+ days.")
 
-    requests = get_all_requests(runtime_mode.db_path())
-    total = len(requests)
-    overdue = sum(1 for r in requests if r["is_overdue"])
-    complete = sum(1 for r in requests if r["status"] == "Complete")
-    active = total - complete
+    # Feature Opt-Out Campaign in the desktop version of the dashboard only
+    if not runtime_mode.is_cloud_deployment():
+        requests = get_all_requests(runtime_mode.db_path())
+        total = len(requests)
+        overdue = sum(1 for r in requests if r["is_overdue"])
+        complete = sum(1 for r in requests if r["status"] == "Complete")
+        active = total - complete
 
-    with st.container(border=True):
-        st.markdown("##### 📬 Your Opt-Out Campaign")
+        with st.container(border=True):
+            st.markdown("##### 📬 Your Opt-Out Campaign")
 
-        col1, col2, col3, col4 = st.columns(4)
-        col1.metric("🔴 Overdue", overdue)
-        col2.metric("🟡 Active", active)
-        col3.metric("🟢 Complete", complete)
-        col4.metric("📊 Total tracked", total)
+            col1, col2, col3, col4 = st.columns(4)
+            col1.metric("🔴 Overdue", overdue)
+            col2.metric("🟡 Active", active)
+            col3.metric("🟢 Complete", complete)
+            col4.metric("📊 Total tracked", total)
 
-        if overdue:
-            st.error(f"🚨 {overdue} request(s) are past their statutory deadline -- check the Campaign Tracker to follow up.")
+            if overdue:
+                st.error(f"🚨 {overdue} request(s) are past their statutory deadline -- check the Campaign Tracker to follow up.")
 
-        active_requests = [r for r in requests if r["status"] != "Complete"]
-        if not active_requests:
-            st.caption("Nothing active yet -- generate a letter below to start your first request.")
-        else:
-            for r in sorted(active_requests, key=lambda r: r["deadline"]):
-                window = max(r["response_window_days"], 1)
-                elapsed = window - r["days_remaining"]
-                progress = min(max(elapsed / window, 0.0), 1.0)
-                label = f"{r['broker_name']} — due {r['deadline']}"
-                if r["is_overdue"]:
-                    label += f" (overdue by {abs(r['days_remaining'])}d)"
-                else:
-                    label += f" ({r['days_remaining']}d left)"
-                st.progress(progress, text=label)
+            active_requests = [r for r in requests if r["status"] != "Complete"]
+            if not active_requests:
+                st.caption("Nothing active yet -- generate a letter below to start your first request.")
+            else:
+                for r in sorted(active_requests, key=lambda r: r["deadline"]):
+                    window = max(r["response_window_days"], 1)
+                    elapsed = window - r["days_remaining"]
+                    progress = min(max(elapsed / window, 0.0), 1.0)
+                    label = f"{r['broker_name']} — due {r['deadline']}"
+                    if r["is_overdue"]:
+                        label += f" (overdue by {abs(r['days_remaining'])}d)"
+                    else:
+                        label += f" ({r['days_remaining']}d left)"
+                    st.progress(progress, text=label)
 
-        action_cols = st.columns(2)
-        if action_cols[0].button("✉️ Generate a letter", width="stretch"):
-            _switch_to(_MODE_LETTERS)
-        if action_cols[1].button("📈 Open full tracker", width="stretch"):
-            _switch_to(_MODE_TRACKER)
+            action_cols = st.columns(2)
+            if action_cols[0].button("✉️ Generate a letter", width="stretch"):
+                _switch_to(_MODE_LETTERS)
+            if action_cols[1].button("📈 Open full tracker", width="stretch"):
+                _switch_to(_MODE_TRACKER)

@@ -257,3 +257,41 @@ def test_removals_page_does_not_offer_google_for_a_live_campaign(unlocked):
     assert not app.exception
     assert "Refresh Outdated Content" not in [
         b.label for b in app.get("link_button")]
+
+
+# --- import order -----------------------------------------------------
+# tests/conftest.py puts utils/ on sys.path for the whole suite, which is
+# exactly the condition that hides this bug: a page that imports a flat
+# utils/ module before page_shell.setup() has run passes every test here
+# and then raises ModuleNotFoundError in the browser for anyone who opens
+# its URL directly instead of clicking through from app.py. So this one
+# runs the page in a subprocess that has neither conftest nor app.py.
+
+
+def test_every_page_imports_cleanly_without_the_app_having_run_first():
+    """Streamlit execs a pages/ script on its own. utils/ is only on
+    sys.path because page_shell.setup() put it there, so anything a page
+    imports from utils/ has to come after that call."""
+    import subprocess
+    import textwrap
+
+    for name in PAGES:
+        path = os.path.join(PAGES_DIR, name)
+        # Import-time only: st.set_page_config outside a Streamlit runtime
+        # raises, and that is fine -- a NameError or ModuleNotFoundError is
+        # what this is looking for and it happens strictly earlier.
+        script = textwrap.dedent(f"""
+            import sys, traceback
+            sys.path.insert(0, {ROOT!r})
+            try:
+                exec(compile(open({path!r}).read(), {path!r}, "exec"), {{"__name__": "__main__"}})
+            except ModuleNotFoundError as exc:
+                print("MISSING:" + str(exc))
+            except Exception:
+                pass
+        """)
+        result = subprocess.run(
+            [sys.executable, "-c", script],
+            capture_output=True, text=True, cwd=ROOT, timeout=120,
+        )
+        assert "MISSING:" not in result.stdout, f"{name}: {result.stdout.strip()}"

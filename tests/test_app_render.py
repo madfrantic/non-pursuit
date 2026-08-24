@@ -245,7 +245,6 @@ def test_nav_options_stay_grouped_by_section(monkeypatch, tmp_path):
     assert nav.options == [
         "👤 Identity Profile",
         "🔍 Intelligence Dossier",
-        "🕸️ Deep Handle Footprint",
         "✉️ Data Broker Deletion",
         "🚫 Google De-Indexing",
         "⚖️ NY Expungement",
@@ -315,12 +314,19 @@ def test_deep_handle_footprint_renders_without_exception(monkeypatch, tmp_path, 
     """components/footprint.py had no caller before it was added to the
     nav, so this is the first path that actually executes its render()."""
     app = _run(monkeypatch, tmp_path, demo)
+    app.radio[1].set_value("🖥️ Desktop (full power)").run()
     app.radio(key="nav_mode").set_value("🕸️ Deep Handle Footprint").run()
     assert not app.exception
 
 
 def test_deep_handle_footprint_is_in_the_nav(monkeypatch, tmp_path):
-    assert "🕸️ Deep Handle Footprint" in _run(monkeypatch, tmp_path).radio(key="nav_mode").options
+    # Hidden by default in online mode
+    at = _run(monkeypatch, tmp_path)
+    assert "🕸️ Deep Handle Footprint" not in at.radio(key="nav_mode").options
+    
+    # Shown when desktop mode is selected
+    at.radio[1].set_value("🖥️ Desktop (full power)").run()
+    assert "🕸️ Deep Handle Footprint" in at.radio(key="nav_mode").options
 
 
 def test_no_nav_target_points_at_a_label_that_does_not_exist(monkeypatch, tmp_path):
@@ -513,3 +519,134 @@ def test_intelligence_dossier_handles_empty_fields_and_clean_diagnostics(monkeyp
     app.radio(key="nav_mode").set_value(MASTER).run()
     assert not app.exception
 
+
+
+# --- sidebar layout ---------------------------------------------------
+# Presentation mode swaps the data the tools read for mock findings, so it
+# belongs to the tool picker. It used to sit under the pages/ links, which
+# put it between two things it has nothing to do with and read as a
+# property of the agent console rather than of the tools above it.
+
+
+def test_presentation_mode_sits_directly_under_the_tools_radio(monkeypatch, tmp_path):
+    """Asserted against the source rather than the rendered tree: the
+    sidebar is one flat container, so a rendered test can tell you the
+    toggle exists but not what it is next to."""
+    import pathlib as _pathlib
+
+    source = _pathlib.Path(ROOT, "app.py").read_text(encoding="utf-8")
+    radio = source.index('st.sidebar.radio(')
+    toggle = source.index('"🎭 Presentation mode"')
+    page_links = source.index('nav.render_page_links()')
+    assert radio < toggle < page_links, (
+        "presentation mode must render between the Tools radio and the "
+        "pages/ links"
+    )
+
+
+def test_the_app_opens_on_the_online_runtime(monkeypatch, tmp_path):
+    """The desktop build is a separate install; a browser session that has
+    chosen nothing starts on the shape it can actually run."""
+    import runtime_mode
+
+    app = _run(monkeypatch, tmp_path)
+    assert not app.exception
+    assert app.session_state["runtime_override"] == runtime_mode.OVERRIDE_CLOUD
+
+
+def test_the_owner_console_is_not_linked_for_an_ordinary_session(monkeypatch, tmp_path):
+    """The gate on pages/11_Admin.py is the real check, but the console
+    should not advertise itself in every visitor's sidebar either."""
+    import admin_auth
+
+    monkeypatch.delenv(admin_auth.ADMIN_KEY_ENV, raising=False)
+    app = _run(monkeypatch, tmp_path)
+    assert not app.exception
+    captions = [c.value for c in app.sidebar.caption]
+    assert "Owner" not in captions
+
+
+# --- runtime selector -------------------------------------------------
+# Auto-detect came off the selector once the app started defaulting to
+# online: an "Auto-detect" option and a default are two answers to the
+# same question, and the one the user could see was not the one in force.
+
+
+def _runtime_radio(app):
+    return next(r for r in app.sidebar.radio
+                if r.label == "Select operating environment")
+
+
+def test_the_runtime_selector_offers_only_explicit_choices(monkeypatch, tmp_path):
+    radio = _runtime_radio(_run(monkeypatch, tmp_path))
+    assert radio.options == [
+        "☁️ Online / cloud (passive)",
+        "🖥️ Desktop (full power)",
+    ]
+    assert not any("auto" in o.lower() for o in radio.options)
+
+
+def test_the_selector_opens_on_online(monkeypatch, tmp_path):
+    """The default and the selection have to agree -- a radio showing
+    Desktop while the session runs online is the confusion removing
+    Auto-detect was meant to end."""
+    import runtime_mode
+
+    app = _run(monkeypatch, tmp_path)
+    assert _runtime_radio(app).value == "☁️ Online / cloud (passive)"
+    assert app.session_state["runtime_override"] == runtime_mode.OVERRIDE_CLOUD
+
+
+def test_a_session_still_carrying_auto_lands_on_online(monkeypatch, tmp_path):
+    """Auto is still a valid module-level value (reset_runtime_override
+    returns it, and the tests below rely on it), so the selector has to
+    resolve it rather than raise on an index it cannot find."""
+    app = AppTest.from_file(APP_PATH, default_timeout=60)
+    monkeypatch.setattr(config, "TRACKER_DB_PATH", str(tmp_path / "tracker.db"))
+    monkeypatch.setenv("NON_PURSUIT_DEMO_MODE", "1")
+    app.session_state["runtime_override"] = "auto"
+    app.session_state["_runtime_startup_default_applied"] = True
+    app.run()
+    assert not app.exception
+    assert _runtime_radio(app).value == "☁️ Online / cloud (passive)"
+
+
+def test_switching_to_desktop_still_works(monkeypatch, tmp_path):
+    import runtime_mode
+
+    app = _run(monkeypatch, tmp_path)
+    _runtime_radio(app).set_value("🖥️ Desktop (full power)").run()
+    assert not app.exception
+    assert app.session_state["runtime_override"] == runtime_mode.OVERRIDE_DESKTOP
+
+
+# --- the campaign panel is desktop-only -------------------------------
+# It tracks statutory deadlines against records that only persist on a
+# local install, so on the online build it is a panel of zeroes with two
+# buttons behind it.
+
+CAMPAIGN_HEADING = "Your Opt-Out Campaign"
+
+
+def _dashboard_text(app):
+    """Rendered markdown, minus the injected stylesheet -- theme.py's own
+    comments name the panel, so searching the raw markdown would match
+    the CSS that hides it."""
+    return " ".join(
+        str(m.value) for m in app.markdown if not str(m.value).startswith("<style>")
+    )
+
+
+def test_the_campaign_panel_is_hidden_on_the_online_build(monkeypatch, tmp_path):
+    app = _run(monkeypatch, tmp_path)
+    assert not app.exception
+    assert CAMPAIGN_HEADING not in _dashboard_text(app)
+
+
+def test_the_campaign_panel_is_there_on_the_desktop_build(monkeypatch, tmp_path):
+    """The other half of the assertion -- without it, a change that hid
+    the panel everywhere would pass the test above."""
+    app = _run(monkeypatch, tmp_path)
+    _runtime_radio(app).set_value("🖥️ Desktop (full power)").run()
+    assert not app.exception
+    assert CAMPAIGN_HEADING in _dashboard_text(app)

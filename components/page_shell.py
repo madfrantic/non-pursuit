@@ -25,6 +25,7 @@ import config  # noqa: E402
 import debug_view  # noqa: E402
 import runtime_mode  # noqa: E402
 from components import nav  # noqa: E402
+from components import theme  # noqa: E402
 from components import vault_gate  # noqa: E402
 
 
@@ -41,6 +42,16 @@ def setup(title: str, icon: str = "🛡️") -> str:
         initial_sidebar_state="auto",
     )
     debug_view.inject()
+    # Before the gate, so the password form is styled like the rest of the
+    # app rather than being the one unbranded screen a visitor sees first.
+    theme.inject()
+    # Every pages/ script is its own top-level run, so app.py's startup
+    # default has not necessarily happened: opening a page directly by URL
+    # (or refreshing on one) reaches this file without app.py ever having
+    # run. Without this, such a session sat on auto-detection and the
+    # sidebar named the engine section after the desktop console while the
+    # main app called it Sovereign Engine -- the same session, two names.
+    runtime_mode.apply_startup_default()
     if not vault_gate.require_unlock():
         st.stop()
     # After the gate, matching app.py: a locked session gets the password

@@ -21,3 +21,18 @@ toolbarMode = "viewer"
 developmentMode = false
 suppressDeprecationWarnings = true
 suppressCachedStAppWarnings = true
+
+# Without this section Streamlit resolves the theme from whatever the
+# browser reports, so the app changed palette when the OS switched to dark
+# at sunset -- and disagreed with components/theme.py, which paints the
+# dossier palette unconditionally. Pinning the base here is what makes the
+# two agree: the widgets Streamlit renders itself and the CSS layered over
+# them now start from the same colours, and neither can shift mid-session.
+# These values mirror config.py (THEME_BASE, PRIMARY_COLOR, ...) and the
+# tokens in components/theme.py; change them in all three or not at all.
+[theme]
+base = "dark"
+primaryColor = "#D4AF37"
+backgroundColor = "#0B1325"
+secondaryBackgroundColor = "#152238"
+textColor = "#E8E2D4"

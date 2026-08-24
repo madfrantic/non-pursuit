@@ -59,7 +59,22 @@ OVERRIDE_CLOUD = "cloud"
 
 _VALID_OVERRIDES = {OVERRIDE_AUTO, OVERRIDE_DESKTOP, OVERRIDE_CLOUD}
 _OVERRIDE_STATE_KEY = "runtime_override"
+_EXPLICIT_STATE_KEY = "runtime_override_explicit"
 _fallback_override = OVERRIDE_AUTO
+_fallback_explicit = False
+
+# --- the shape a fresh session opens in -------------------------------
+# The desktop build is a separate install: it needs a local Python, a
+# local Chrome for Playwright to drive, and a writable data/ directory.
+# A browser arriving at this app has none of that guaranteed, so the
+# honest opening position is the online build -- passive recon that works
+# everywhere -- with desktop offered as a deliberate switch rather than an
+# assumption. Auto-detection stays exactly as it was and is what the
+# "Auto-detect" option hands control back to; this only decides which
+# option a session that has chosen nothing yet starts on.
+STARTUP_DEFAULT_OVERRIDE = OVERRIDE_CLOUD
+_STARTUP_APPLIED_KEY = "_runtime_startup_default_applied"
+
 
 def get_runtime_override() -> str:
     """Retrieve runtime override from session state, defaulting to auto."""
@@ -68,25 +83,89 @@ def get_runtime_override() -> str:
         return st.session_state[_OVERRIDE_STATE_KEY]
     return _fallback_override
 
-def set_runtime_override(mode: str) -> None:
-    """Set manual runtime override."""
-    global _fallback_override
+
+def override_is_explicit() -> bool:
+    """True when the current override came from someone picking it.
+
+    The startup default (see apply_startup_default) also writes an
+    override, and the badge must not describe that as "manually forced" --
+    nobody forced anything, the session simply has not been switched off
+    the shape it opened in.
+    """
+    import streamlit as st
+    if hasattr(st, "session_state") and _EXPLICIT_STATE_KEY in st.session_state:
+        return bool(st.session_state[_EXPLICIT_STATE_KEY])
+    return _fallback_explicit
+
+
+def set_runtime_override(mode: str, explicit: bool = True) -> None:
+    """Set manual runtime override.
+
+    `explicit=False` is for the startup default only -- it steers the same
+    switch without claiming a human threw it.
+    """
+    global _fallback_override, _fallback_explicit
     import streamlit as st
     normalized = (mode or OVERRIDE_AUTO).strip().lower()
     if normalized not in _VALID_OVERRIDES:
         normalized = OVERRIDE_AUTO
+    marked = bool(explicit) and normalized != OVERRIDE_AUTO
     if hasattr(st, "session_state"):
         st.session_state[_OVERRIDE_STATE_KEY] = normalized
+        st.session_state[_EXPLICIT_STATE_KEY] = marked
     else:
         _fallback_override = normalized
+        _fallback_explicit = marked
+
+
+def apply_startup_default() -> str:
+    """Open a new session on the online build. Returns the active override.
+
+    Runs once per Streamlit session (and once per process without a
+    runtime), so it seeds the opening position and then never fights the
+    user's own choice on later reruns -- including a deliberate return to
+    "Auto-detect", which must stay auto rather than being reset to cloud
+    on the next widget interaction.
+
+    Deliberately does not touch demo mode or any feature gate; like every
+    other override it steers only the deployment shape the UI describes.
+    """
+    state = _session_state()
+    if state is not None:
+        if state.get(_STARTUP_APPLIED_KEY):
+            return get_runtime_override()
+        state[_STARTUP_APPLIED_KEY] = True
+    else:
+        global _startup_default_applied
+        if _startup_default_applied:
+            return get_runtime_override()
+        _startup_default_applied = True
+    set_runtime_override(STARTUP_DEFAULT_OVERRIDE, explicit=False)
+    return get_runtime_override()
+
+
+_startup_default_applied = False
+
+
+def reset_startup_default() -> None:
+    """Forget that the startup default ran. Only tests need this."""
+    global _startup_default_applied
+    _startup_default_applied = False
+    state = _session_state()
+    if state is not None:
+        state.pop(_STARTUP_APPLIED_KEY, None)
+
 
 def reset_runtime_override() -> None:
     """Reset override to automatic detection."""
-    global _fallback_override
+    global _fallback_override, _fallback_explicit
     _fallback_override = OVERRIDE_AUTO
+    _fallback_explicit = False
     import streamlit as st
-    if hasattr(st, "session_state") and _OVERRIDE_STATE_KEY in st.session_state:
-        del st.session_state[_OVERRIDE_STATE_KEY]
+    if hasattr(st, "session_state"):
+        for key in (_OVERRIDE_STATE_KEY, _EXPLICIT_STATE_KEY):
+            if key in st.session_state:
+                del st.session_state[key]
 
 def _secret(name: str) -> str | None:
     """Read a key from st.secrets, or None if there are no secrets at all.
@@ -252,8 +331,7 @@ def mode_badge() -> tuple[str, str]:
             "the hosted build.",
         )
 
-    forced = get_runtime_override() != OVERRIDE_AUTO
-    suffix = " (manually forced — not auto-detected)" if forced else ""
+    suffix = " (manually forced — not auto-detected)" if override_is_explicit() else ""
     if is_cloud_deployment():
         return (
             "☁️ WEB / CLOUD RUNTIME",

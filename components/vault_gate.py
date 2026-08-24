@@ -29,6 +29,8 @@ import config
 import database
 import runtime_mode
 
+from components import theme
+
 UNLOCKED_KEY = "_vault_unlocked"
 
 
@@ -51,7 +53,14 @@ def _render_gate() -> None:
     db_path = runtime_mode.db_path()
     first_run = not database.vault_exists(db_path)
 
-    st.title("🔒 Non-Pursuit")
+    # The same masthead the app itself opens with -- the gate is the first
+    # screen a local install shows, and it used to introduce the product
+    # under a different name and a different type scale than everything
+    # behind it.
+    theme.masthead(
+        config.APP_HEADLINE,
+        "Local-first statutory compliance engine",
+    )
     if first_run:
         st.subheader("Set a master password")
         st.info(

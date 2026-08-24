@@ -36,6 +36,7 @@ from components import master as master_component
 from components import campaign_timeline as campaign_timeline_component
 from components import footprint as footprint_component
 from components import nav
+from components import theme
 
 st.session_state.setdefault('nav_mode', 'Vault')
 database.init_db(runtime_mode.db_path())
@@ -66,6 +67,18 @@ st.set_page_config(
 # Diagnostic view. No-op unless NON_PURSUIT_DEBUG_UNSTYLE is set; injected
 # before the gate so the gate itself is inspectable too.
 debug_view.inject()
+
+# The dossier stylesheet (components/theme.py). Before the vault gate so
+# the password form is styled too -- it is the first screen a local
+# install shows, and it used to be the one unbranded page in the app.
+theme.inject()
+
+# Which build a fresh session opens on. The desktop build is a separate
+# install, so a session that has chosen nothing starts online; the sidebar
+# radio below is what switches it, and a choice made there sticks for the
+# rest of the session. Runs before anything reads the runtime, so no
+# widget renders against one shape and then re-renders against the other.
+runtime_mode.apply_startup_default()
 
 
 # ---------------------------------------------------------------------------
@@ -191,7 +204,9 @@ brokers_df = load_brokers()
 if st.session_state.get("pending_nav") is not None:
     st.session_state.nav_mode = st.session_state.pop("pending_nav")
 
-st.logo(config.APP_WORDMARK_PATH, icon_image=config.APP_LOGO_PATH, size="large")
+# The shield, not the wordmark. The wordmark is a text image and it
+# repeated the name the headline says two lines below it in words.
+st.logo(config.APP_TOPMARK_PATH, icon_image=config.APP_LOGO_PATH, size="large")
 st.sidebar.markdown("---")
 
 # One radio, not three. Grouping the tools into separate per-category
@@ -201,12 +216,12 @@ st.sidebar.markdown("---")
 # options stay in one list, ordered by category, and the category rides
 # along as each option's caption (Streamlit draws captions under the
 # option, so a true group header above each block isn't available here).
+is_cloud_nav = runtime_mode.is_cloud_deployment()
 NAV_SECTIONS = [
     ("Recon & Audit", [
         "👤 Identity Profile",
         "🔍 Intelligence Dossier",
-        "🕸️ Deep Handle Footprint",
-    ]),
+    ] + ([] if is_cloud_nav else ["🕸️ Deep Handle Footprint"])),
     ("Legal & Deletion", [
         "✉️ Data Broker Deletion",
         "🚫 Google De-Indexing",
@@ -229,13 +244,10 @@ mode = st.sidebar.radio(
     label_visibility="visible",
 )
 
-# The pages/ multi-page app. Defined in components/nav.py because a page
-# has to draw these too -- app.py's sidebar doesn't exist while a pages/
-# script is running.
-nav.render_page_links()
-
-# Presentation mode toggle for safe live demos
-st.sidebar.markdown("---")
+# Presentation mode belongs to the tools above, not to the runtime
+# controls below: it swaps the data those tools read for mock findings.
+# It sat under the pages/ links, which put it between two things it has
+# nothing to do with and read as a property of the agent console.
 pres_enabled = st.sidebar.toggle(
     "🎭 Presentation mode",
     value=st.session_state.presentation_mode,
@@ -252,6 +264,11 @@ elif not pres_enabled and st.session_state.presentation_mode:
 else:
     st.session_state.presentation_mode = pres_enabled
 
+# The pages/ multi-page app. Defined in components/nav.py because a page
+# has to draw these too -- app.py's sidebar doesn't exist while a pages/
+# script is running.
+nav.render_page_links()
+
 # ---------------------------------------------------------------------------
 # Sidebar: runtime mode, demo seeding, audit package
 # ---------------------------------------------------------------------------
@@ -262,14 +279,14 @@ with st.sidebar:
 
     # Map friendly names to internal modes
     mode_options = {
-        "Auto-detect": "auto",
-        "🖥️ Desktop (full power)": "desktop",
         "☁️ Online / cloud (passive)": "cloud",
+        "🖥️ Desktop (full power)": "desktop",
     }
 
     current_override = runtime_mode.get_runtime_override()
-    # Find active index
-    index = list(mode_options.values()).index(current_override) if current_override in mode_options.values() else 0
+    # Resolve active index
+    active_val = "desktop" if current_override == "desktop" else "cloud"
+    index = list(mode_options.values()).index(active_val)
 
     selected_label = st.radio(
         # Kept as the accessible name for screen readers, hidden visually.
@@ -277,7 +294,7 @@ with st.sidebar:
         options=list(mode_options.keys()),
         index=index,
         label_visibility="collapsed",
-        help="Manually switch between unrestricted desktop execution (700+ sites) and passive online scanning to demonstrate environment handling."
+        help="Switch between passive online scanning and unrestricted desktop execution."
     )
 
     # Update override on selection change
@@ -371,6 +388,20 @@ with st.sidebar.expander("📈 Usage", expanded=False):
     for _label, _count in usage_metrics.summary(config.USAGE_METRICS_DB_PATH):
         st.markdown(f"{_label} &nbsp;**{_count}**", unsafe_allow_html=True)
     st.caption("Feature counts only — no entered values are recorded.")
+
+
+# ---------------------------------------------------------------------------
+# Masthead
+# ---------------------------------------------------------------------------
+# One headline, drawn once, above whichever tool is selected. It replaced
+# two competing lines that named the product differently in the two places
+# it was read -- the deck's "Take yourself off the market." and the
+# footer's "They chase. You enforce." Lowercase is deliberate; see
+# config.APP_HEADLINE.
+theme.masthead(
+    config.APP_HEADLINE,
+    "Local-first statutory compliance engine",
+)
 
 
 # ---------------------------------------------------------------------------
@@ -821,4 +852,4 @@ elif mode == "🗓️ Deletion Timeline":
 # ---------------------------------------------------------------------------
 # Footer
 # ---------------------------------------------------------------------------
-st.caption(f"{config.APP_TITLE} — {config.APP_TAGLINE} For educational purposes only. Not legal advice.", text_alignment="center")
+st.caption(f"{config.APP_HEADLINE} — for educational purposes only. Not legal advice.", text_alignment="center")
