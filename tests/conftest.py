@@ -8,6 +8,12 @@ import socket
 import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "utils"))
+# The repo root too, for `import config` / `import app`. Without this a
+# single test file run on its own (`pytest tests/test_database.py`) fails at
+# collection: it only ever worked because test_app_render.py inserts the
+# root at import time, so whether your test file could import config
+# depended on whether that file happened to be collected first.
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 @pytest.fixture(autouse=True)
 def override_db_paths(monkeypatch, tmp_path):

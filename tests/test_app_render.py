@@ -160,7 +160,9 @@ def test_existing_nav_pages_all_survive_the_timeline_addition(monkeypatch, tmp_p
     """The timeline is additive -- nothing already in the nav may vanish."""
     labels = _run(monkeypatch, tmp_path).radio(key="nav_mode").options
     for existing in [
-        "🛡️ Profile",
+        # Renamed from "🛡️ Profile" when the nav was regrouped into
+        # Recon / Legal / Tracking sections -- the page is the same one.
+        "👤 Identity Profile",
         MASTER,
         "✉️ Data Broker Deletion",
         "⚖️ NY Expungement",
@@ -226,6 +228,77 @@ def test_demo_mode_is_exempt_from_the_gate(monkeypatch, tmp_path):
     app = _run(monkeypatch, tmp_path, demo=True, unlock=False)
     assert not app.exception
     assert app.radio(key="nav_mode") is not None
+
+
+# --- Navigation regrouping -------------------------------------------
+# The sidebar was regrouped into Recon / Legal / Tracking sections and the
+# previously orphaned components/footprint.py was wired into the nav. Both
+# failure modes are render-time: a caption list that doesn't line up with
+# the options, or a component that no code path had ever executed.
+
+
+def test_nav_options_stay_grouped_by_section(monkeypatch, tmp_path):
+    """st.radio pairs captions to options positionally, so the options have
+    to stay contiguous per section -- interleaving them would caption a tool
+    with the wrong section name rather than raise."""
+    nav = _run(monkeypatch, tmp_path).radio(key="nav_mode")
+    assert nav.options == [
+        "👤 Identity Profile",
+        "🔍 Intelligence Dossier",
+        "🕸️ Deep Handle Footprint",
+        "✉️ Data Broker Deletion",
+        "🚫 Google De-Indexing",
+        "⚖️ NY Expungement",
+        "📬 Opt-Out Tracker",
+        "🗓️ Deletion Timeline",
+    ]
+
+
+@pytest.mark.parametrize("demo", [False, True], ids=["local", "demo"])
+def test_deep_handle_footprint_renders_without_exception(monkeypatch, tmp_path, demo):
+    """components/footprint.py had no caller before it was added to the
+    nav, so this is the first path that actually executes its render()."""
+    app = _run(monkeypatch, tmp_path, demo)
+    app.radio(key="nav_mode").set_value("🕸️ Deep Handle Footprint").run()
+    assert not app.exception
+
+
+def test_deep_handle_footprint_is_in_the_nav(monkeypatch, tmp_path):
+    assert "🕸️ Deep Handle Footprint" in _run(monkeypatch, tmp_path).radio(key="nav_mode").options
+
+
+def test_no_nav_target_points_at_a_label_that_does_not_exist(monkeypatch, tmp_path):
+    """Quick-action buttons set pending_nav to a nav label. Before the
+    regrouping, letters.py and results.py both pointed at "📊 Dashboard",
+    which had never been one of the options -- so those buttons silently
+    navigated nowhere. Every literal assigned to pending_nav must be a real
+    option.
+    """
+    import ast
+    import pathlib
+
+    labels = set(_run(monkeypatch, tmp_path).radio(key="nav_mode").options)
+
+    targets = []
+    for path in [pathlib.Path(ROOT, "app.py"), *pathlib.Path(ROOT, "components").glob("*.py")]:
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            # st.session_state.pending_nav = "..."
+            if isinstance(node, ast.Assign) and isinstance(node.value, ast.Constant) \
+                    and isinstance(node.value.value, str):
+                for target in node.targets:
+                    if isinstance(target, ast.Attribute) and target.attr == "pending_nav":
+                        targets.append((path.name, node.value.value))
+            # _switch_to("...")
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) \
+                    and node.func.id == "_switch_to" and node.args \
+                    and isinstance(node.args[0], ast.Constant) \
+                    and isinstance(node.args[0].value, str):
+                targets.append((path.name, node.args[0].value))
+
+    assert targets, "expected to find at least one navigation target"
+    bad = [(name, value) for name, value in targets if value not in labels]
+    assert not bad, f"navigation targets that match no nav option: {bad}"
 
 
 @pytest.mark.parametrize("demo", [False, True], ids=["local", "demo"])
@@ -300,6 +373,73 @@ def test_intelligence_dossier_renders_social_and_email_findings(monkeypatch, tmp
     # Check that metric values include the score of 4 and vector counts
     metric_values = [m.value for m in app.metric]
     assert 4 in metric_values or "4" in [str(v) for v in metric_values]
+
+
+# --- Actionable dossier cards -----------------------------------------
+# The dossier used to be read-only: a finding was rendered and then
+# evaporated on the next rerun. Each card now carries an "Add to Closure
+# Worklist" action. Asserting only `not app.exception` would not cover it
+# -- the render loop catches per-record exceptions and continues, so a
+# card that silently failed to draw its button still looks like a clean
+# render. These two tests assert the button exists and that pressing it
+# actually reaches SQLite.
+
+
+def _dossier_with_findings(monkeypatch, tmp_path):
+    """A dossier run with a populated profile and two confirmed findings.
+
+    The profile has to be written as the canonical `profile` dict rather
+    than the pf_* widget keys: profile_state.get_profile() reads the
+    former, and the pf_* keys only seed it on the very first run.
+    """
+    app = _run(monkeypatch, tmp_path)
+    app.session_state["profile"] = {
+        "full_name": "Jane Doe", "email": "jane@example.com", "handle": "janedoe",
+        "city": "New York", "state": "NY", "zip_code": "", "phone": "",
+        "domain": "", "country": "US",
+    }
+    app.session_state["osint_findings"] = {
+        "summary": {"total_exposures": 2},
+        "vectors": {
+            "footprint": {"status": "success", "count": 1, "records": [
+                {"platform": "GitHub", "category": "Development",
+                 "confidence": "CONFIRMED", "profile_url": "https://github.com/janedoe"}]},
+            "email": {"status": "success", "count": 1, "records": [
+                {"platform": "Gravatar", "service": "Gravatar",
+                 "confidence": "CONFIRMED", "reason": "profile found"}]},
+        },
+    }
+    app.radio(key="nav_mode").set_value(MASTER).run()
+    return app
+
+
+def test_dossier_findings_offer_a_worklist_action(monkeypatch, tmp_path):
+    app = _dossier_with_findings(monkeypatch, tmp_path)
+    assert not app.exception
+    worklist_buttons = [b for b in app.button if "Closure Worklist" in b.label]
+    # One per confirmed finding: the GitHub footprint hit and the Gravatar
+    # email hit. The card renders inside the dossier's own two-column
+    # layout, so this also pins that the nested columns it adds are legal.
+    assert len(worklist_buttons) == 2
+
+
+def test_worklist_action_writes_the_finding_to_the_database(monkeypatch, tmp_path):
+    """The button is only worth having if the row survives the rerun."""
+    import discovered_accounts
+
+    app = _dossier_with_findings(monkeypatch, tmp_path)
+    next(b for b in app.button if "Closure Worklist" in b.label).set_value(True).run()
+    assert not app.exception
+
+    rows = discovered_accounts.get_all(str(tmp_path / "tracker.db"))
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["platform"] == "GitHub"
+    # The identifier falls back to the profile handle -- without it the
+    # upsert key would be empty and every finding would collide on one row.
+    assert row["target_identifier"] == "janedoe"
+    assert row["profile_url"] == "https://github.com/janedoe"
+    assert row["status"] == discovered_accounts.STATUS_NEW
 
 
 def test_intelligence_dossier_handles_empty_fields_and_clean_diagnostics(monkeypatch, tmp_path):

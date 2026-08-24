@@ -226,9 +226,11 @@ def render(brokers_df, show_title=True):
     phone = profile["phone"]
 
     if not name:
-        st.warning("Enter your name on the **Dashboard** first, then come back here to see your results.")
-        if st.button("👤 Go to Dashboard", type="primary"):
-            _switch_to("📊 Dashboard")
+        with st.container(border=True):
+            st.markdown("#### 📝 Enter your profile details to start")
+            st.caption("Results are built from the identity details you enter once on the profile page.")
+            if st.button("👤 Go to Identity Profile", type="primary"):
+                _switch_to("👤 Identity Profile")
         return
 
     if brokers_df.empty:

@@ -285,12 +285,64 @@ def _decrypt(value) -> str | None:
         return s
 
 
+# WAL is the right journal mode for this app -- the agent scheduler writes
+# on its own thread while the Streamlit script thread reads, and WAL is
+# what keeps those from blocking each other. It is not universally
+# available, though: WAL has to create <db>-wal and <db>-shm beside the
+# database file and mmap the -shm segment, which NFS/SMB mounts and some
+# container volume drivers refuse. SQLite surfaces that as an
+# OperationalError from the PRAGMA itself, which took the whole app down
+# at import time because init_db() runs before anything renders.
+#
+# DELETE journalling needs no sidecar files, so it is the honest fallback:
+# more lock contention under concurrency, but it opens.
+_JOURNAL_FALLBACK_WARNED: set[str] = set()
+
+
+def apply_journal_mode(conn: sqlite3.Connection, db_path: str) -> str:
+    """Enable WAL, degrading to DELETE where WAL is unavailable.
+
+    Returns the journal mode actually in force ("wal" or "delete"). If
+    DELETE fails too the error propagates -- that means the database is
+    genuinely not writable, and every statement after this one would fail
+    anyway, so masking it here would only move the crash somewhere less
+    obvious.
+    """
+    try:
+        conn.execute("PRAGMA journal_mode=WAL;")
+        return "wal"
+    except sqlite3.OperationalError as exc:
+        # Connections are opened per call, so warning unconditionally would
+        # log once per read for the life of the process. Once per path
+        # explains the degraded mode without flooding the log.
+        if db_path not in _JOURNAL_FALLBACK_WARNED:
+            _JOURNAL_FALLBACK_WARNED.add(db_path)
+            _log.warning(
+                "WAL journalling unavailable for %s (%s); falling back to DELETE. "
+                "Expect more lock contention while the scheduler writes.",
+                db_path, exc,
+            )
+        conn.execute("PRAGMA journal_mode=DELETE;")
+        return "delete"
+
+
 @contextmanager
 def _connect(db_path: str):
+    # Path(...).parent rather than os.path.dirname(...): dirname("t.db") is
+    # "" and os.makedirs("") raises FileNotFoundError, which would break
+    # every caller that passes a bare relative filename (the test suite
+    # does). Path(".").mkdir(exist_ok=True) is a no-op.
     Path(db_path).parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(db_path, timeout=20.0)
-    conn.execute("PRAGMA journal_mode=WAL;")
-    conn.execute("PRAGMA synchronous=NORMAL;")
+    journal_mode = apply_journal_mode(conn, db_path)
+    # synchronous=NORMAL is only durable under WAL. With DELETE journalling
+    # it can lose a committed transaction on power loss, so the fallback
+    # path pays for FULL rather than silently weakening durability on the
+    # one file holding the user's case record.
+    conn.execute(
+        "PRAGMA synchronous=NORMAL;" if journal_mode == "wal"
+        else "PRAGMA synchronous=FULL;"
+    )
     conn.row_factory = sqlite3.Row
     conn.execute(
         """

@@ -11,7 +11,10 @@ level = "error"
 
 [client]
 showErrorDetails = false
-showSidebarNavigation = true
+# The app owns its own categorised sidebar nav (see app.py). Leaving
+# Streamlit's automatic page list on rendered a second, competing nav —
+# raw filenames like "1_Vault", "2_Scanner" — directly above it.
+showSidebarNavigation = false
 toolbarMode = "viewer"
 
 [global]

@@ -151,40 +151,59 @@ def _save_profile():
 
 
 def render():
-    st.subheader("👤 Profile & Setup")
+    st.subheader("👤 Identity Profile")
     st.caption("Enter your personal and contact details. All data is encrypted at rest (Fernet) and stored locally.")
     _seed_profile_fields()
     _normalize_state()
 
     with st.container(border=True):
         with st.form("profile_form"):
+            # Core identity: the five fields every downstream tool actually
+            # needs to do anything. A demand letter needs the name, email and
+            # location; the footprint sweep needs the handle. Everything else
+            # only sharpens a match, so it lives behind the expander below --
+            # the form used to open with eleven visible fields and no signal
+            # about which of them were required.
+            st.markdown("##### Core identity")
+            st.caption("The minimum needed to generate letters and run recon.")
+
             name_cols = st.columns(2)
             name_cols[0].text_input("👤 First", key="pf_first_name", placeholder="Jane")
             name_cols[1].text_input("👤 Last", key="pf_last_name", placeholder="Doe")
 
             contact_cols = st.columns(2)
             contact_cols[0].text_input("✉️ Email", key="pf_email", placeholder="you@example.com")
-            contact_cols[1].text_input("📱 Phone", key="pf_phone", placeholder="555-010-9999")
-
-            target_cols = st.columns(2)
-            target_cols[0].text_input("👤 Username / handle", key="pf_handle", placeholder="Optional")
-            target_cols[1].number_input(
-                "🎂 Born", min_value=1900, max_value=2026, step=1, format="%d", key="pf_birth_year", placeholder="YYYY"
-            )
+            contact_cols[1].text_input("👤 Username / handle", key="pf_handle", placeholder="Optional")
 
             location_cols = st.columns(2)
             location_cols[0].text_input("🏙️ City", key="pf_city", placeholder="New York")
             location_cols[1].selectbox("📍 State", options=_US_STATES, key="pf_state")
 
-            with st.expander("🕰️ Previous names & addresses"):
-                extra_cols = st.columns(2)
-                extra_cols[0].text_input("👤 Middle", key="pf_middle_name", placeholder="Optional")
-                extra_cols[1].text_input("🌐 Domain", key="pf_domain", placeholder="Optional, e.g. example.com")
-                st.text_input("📮 ZIP", key="pf_zip", placeholder="Optional")
-                st.text_area("📮 Prior ZIPs", key="pf_historical_zips", placeholder="94105, 10001", height=80)
+            with st.expander("➕ Advanced Relational & Historical Vectors (Optional)", expanded=False):
+                st.caption(
+                    "Extra correlation vectors. Each one gives brokers another way to be matched "
+                    "against you — and gives this app another way to find those listings. All "
+                    "optional, all stored locally."
+                )
 
-            with st.expander("🔗 Household & Relational Entities (Ex-Spouses, Co-habitants, Shared Addresses)"):
-                st.caption("Optional local-only mapping for former household and shared-account relationships.")
+                st.markdown("**Additional identifiers**")
+                ident_cols = st.columns(2)
+                ident_cols[0].text_input("👤 Middle", key="pf_middle_name", placeholder="Optional")
+                ident_cols[1].text_input("📱 Phone", key="pf_phone", placeholder="555-010-9999")
+                ident2_cols = st.columns(2)
+                ident2_cols[0].number_input(
+                    "🎂 Born", min_value=1900, max_value=2026, step=1,
+                    format="%d", key="pf_birth_year", placeholder="YYYY",
+                )
+                ident2_cols[1].text_input("🌐 Domain", key="pf_domain", placeholder="Optional, e.g. example.com")
+
+                st.markdown("**Address history**")
+                addr_cols = st.columns(2)
+                addr_cols[0].text_input("📮 ZIP", key="pf_zip", placeholder="Optional")
+                addr_cols[1].text_area("📮 Prior ZIPs", key="pf_historical_zips", placeholder="94105, 10001", height=80)
+
+                st.markdown("**Household & relational entities**")
+                st.caption("Former household and shared-account relationships — ex-spouses, co-habitants.")
                 st.text_input("👤 Associated Individual Full Name", key="pf_associated_name", placeholder="Ex-spouse or former co-habitant")
                 st.text_area("🏠 Historical Shared Addresses (Street, City, State, ZIP)", key="pf_shared_addresses", placeholder="One address per line", height=90)
                 st.text_area("📞 Shared Landlines / Phone Numbers", key="pf_shared_phones", placeholder="One per line", height=90)
@@ -251,7 +270,7 @@ def render():
     )
     if stale_count:
         item_word = "item" if stale_count == 1 else "items"
-        st.warning(f"⏰ {stale_count} {item_word} on your Master Dashboard haven't been rechecked in {config.RECHECK_STALE_DAYS}+ days.")
+        st.warning(f"⏰ {stale_count} {item_word} on your Intelligence Dossier haven't been rechecked in {config.RECHECK_STALE_DAYS}+ days.")
 
     requests = get_all_requests(runtime_mode.db_path())
     total = len(requests)

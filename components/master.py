@@ -44,6 +44,20 @@ _OSINT_CONFIDENCE_BADGES = {
 }
 
 
+def _severity(count, high_threshold):
+    """(icon, label) for an exposure count.
+
+    One shared scale so the dossier's tiles can't disagree with each other
+    about what "high" means: anything above the tile's threshold is high,
+    anything at all is medium, nothing is clean.
+    """
+    if count > high_threshold:
+        return ("🔴", "High Risk")
+    if count:
+        return ("🟡", "Medium Risk")
+    return ("🟢", "Low / Clean")
+
+
 def _osint_profile():
     profile = profile_state.get_profile(st.session_state)
     return {
@@ -70,7 +84,31 @@ def _osint_status(result):
     return "low"
 
 
-def _render_osint_records(result):
+def _add_to_worklist(record, label, identifier):
+    """Persist one dossier finding into the discovered-accounts worklist.
+
+    The dossier is otherwise read-only: it shows what a sweep turned up and
+    then the finding evaporates on the next rerun. Writing it here is what
+    turns a card into tracked work -- save_discoveries() upserts on
+    (platform, target_identifier), so re-adding the same finding refreshes
+    it rather than duplicating it, and never resets triage the user has
+    already done on that row.
+    """
+    saved = discovered_accounts.save_discoveries(runtime_mode.db_path(), [{
+        "platform": label,
+        "category": record.get("category") or record.get("vector") or "OSINT finding",
+        "target_identifier": identifier,
+        "profile_url": record.get("profile_url") or record.get("url") or "",
+        "avatar_url": record.get("avatar_url") or "",
+        "confidence": record.get("confidence") or "POSSIBLE",
+    }])
+    # The audit ZIP embeds the worklist, so a stale cached copy would omit
+    # whatever was just added.
+    st.session_state.pop("audit_zip", None)
+    return saved
+
+
+def _render_osint_records(result, key_prefix="", identifier_hint=""):
     if not result or not isinstance(result, dict):
         st.caption("⚠️ No data available.")
         return
@@ -86,7 +124,7 @@ def _render_osint_records(result):
         st.caption("No records returned.")
         return
 
-    for record in records:
+    for index, record in enumerate(records):
         if not isinstance(record, dict):
             st.write(str(record))
             continue
@@ -102,14 +140,38 @@ def _render_osint_records(result):
                     "vector", "category", "filing_type", "filing_date", "date", "court", "docket_number", "repository", "recipient", "amount", "issuer", "registrar", "target_identifier", "reason", "breach", "description"
                 ) if record.get(key)
             )
-            badge = _OSINT_CONFIDENCE_BADGES.get(record.get("confidence"))
+            confidence = record.get("confidence")
+            badge = _OSINT_CONFIDENCE_BADGES.get(confidence)
             with st.container(border=True):
                 st.markdown(f"**{label}**" + (f" · {badge}" if badge else ""))
                 if detail:
                     st.caption(detail)
+
                 url = record.get("profile_url") or record.get("court_url") or record.get("url")
+                identifier = record.get("target_identifier") or identifier_hint
+
+                # Only a finding that actually points at an account is
+                # worth tracking for closure. A NOT_FOUND row is the
+                # absence of one, and a row with no identifier has no
+                # stable key to upsert against.
+                actionable = confidence in ("CONFIRMED", "POSSIBLE") and bool(identifier)
+
+                action_cols = st.columns([1, 1]) if (url and actionable) else None
+                url_slot = action_cols[0] if action_cols else st
+                add_slot = action_cols[1] if action_cols else st
+
                 if url:
-                    st.link_button("Open source", url, width="content")
+                    url_slot.link_button("Open source", url, width="content")
+                if actionable:
+                    add_key = f"worklist_{key_prefix}_{index}"
+                    if add_slot.button(
+                        "➕ Add to Closure Worklist",
+                        key=add_key,
+                        width="content",
+                        help=f"Track {label} as an account to close, and include it in the audit export.",
+                    ):
+                        _add_to_worklist(record, label, identifier)
+                        st.toast(f"Added {label} to the closure worklist.", icon="➕")
         except Exception as e:
             _log.warning("Error rendering record: %s", e)
             continue
@@ -156,7 +218,7 @@ def _render_verification_vectors(brokers_df):
 
     if not name:
         st.warning(
-            "Enter your full name on the 👤 Profile tab -- a dork without a name "
+            "Enter your full name on the 👤 Identity Profile page -- a dork without a name "
             "returns the whole broker site, not your listing."
         )
         return
@@ -212,7 +274,7 @@ def _section_header(icon, name):
     st.subheader(f"{icon} {name}")
 
 
-def _render_osint_vector(result, title):
+def _render_osint_vector(result, title, key_prefix="", identifier_hint=""):
     if not result:
         st.markdown(f"##### {title}  ·  `⚪ Unavailable`")
         st.caption("No data retrieved.")
@@ -220,7 +282,7 @@ def _render_osint_vector(result, title):
     status_key = _osint_status(result)
     badge = _OSINT_STATUS_LABELS.get(status_key, "⚪ Unavailable")
     st.markdown(f"##### {title}  ·  `{badge}`")
-    _render_osint_records(result)
+    _render_osint_records(result, key_prefix=key_prefix, identifier_hint=identifier_hint)
 
 
 def render(brokers_df):
@@ -409,10 +471,23 @@ def render(brokers_df):
             missing.append("Full name")
         if not email_valid:
             missing.append("Valid email address")
-        if missing:
-            st.info(f"📋 Missing required fields: {', '.join(missing)}. Enter your details in the **👤 Profile** tab.")
-        else:
-            st.info("Click the button above to run the full spectrum recon.")
+        with st.container(border=True):
+            if missing:
+                st.markdown("#### 📋 Enter your profile details to start")
+                st.caption(
+                    "Recon needs " + " and ".join(f"**{field}**" for field in missing).lower()
+                    + " before it can sweep anything. Nothing leaves this machine until you run the sweep."
+                )
+                if st.button("👤 Go to Identity Profile", type="primary", key="dossier_empty_profile"):
+                    st.session_state.pending_nav = "👤 Identity Profile"
+                    st.rerun()
+            else:
+                st.markdown("#### ⚡ Ready to sweep")
+                st.caption(
+                    "Your profile is complete. Run the recon sweep to build the dossier — "
+                    "email exposures, platform footprint, and public records in one pass."
+                )
+                st.caption("Use **⚡ Execute Master Recon** above to begin.")
         return
 
     summary = findings.get("summary", {})
@@ -445,12 +520,25 @@ def render(brokers_df):
     if "summary" in findings and isinstance(findings["summary"], dict):
         findings["summary"]["total_exposures"] = total_exposure
     
-    exposure_icon = "🔴" if total_exposure > 2 else "🟡" if total_exposure > 0 else "🟢"
+    # One severity vocabulary across all four tiles. Severity rides in the
+    # delta slot with delta_color="off" so it reads as a neutral label --
+    # Streamlit's default green/red arrows would say "improving/worsening",
+    # which is not what a standing exposure count means.
     c1, c2, c3, c4 = st.columns(4)
-    c1.metric(f"{exposure_icon} Exposure score", total_exposure)
-    c2.metric("📧 Email exposures", email_count)
-    c3.metric("👤 Exposed handles", fp_count)
-    c4.metric("📬 Deletion targets", len(brokers_df))
+    for column, label, value, tier in (
+        (c1, "Exposure score", total_exposure, _severity(total_exposure, 2)),
+        (c2, "Email exposures", email_count, _severity(email_count, 1)),
+        (c3, "Exposed handles", fp_count, _severity(fp_count, 2)),
+        # Deletion targets is a workload, not a risk -- how many brokers are
+        # on file to demand against. It gets a count and no severity colour.
+        (c4, "Deletion targets", len(brokers_df), None),
+    ):
+        column.metric(
+            f"{tier[0] if tier else '📬'} {label}",
+            value,
+            delta=tier[1] if tier else None,
+            delta_color="off",
+        )
 
     # Build or retrieve the intelligence dossier PDF bytes
     try:
@@ -485,7 +573,10 @@ def render(brokers_df):
             handle_target = profile.get("handle") or (findings.get("profile") or {}).get("handle") or ""
 
             if fp_count > 0 or fp_records:
-                _render_osint_vector(fp_vector, f"👤 Social & Platform Footprint ({fp_count} findings)")
+                _render_osint_vector(
+                    fp_vector, f"👤 Social & Platform Footprint ({fp_count} findings)",
+                    key_prefix="footprint", identifier_hint=handle_target,
+                )
                 fp_checks = fp_vector.get("checks", [])
                 if fp_checks and len(fp_checks) > fp_count:
                     with st.expander(f"🔍 Probed platforms log ({fp_count} hits of {len(fp_checks)} platforms checked)"):
@@ -498,7 +589,7 @@ def render(brokers_df):
                                 st.caption(f"{chk_icon} **{chk_plat}**: `{chk_conf}`")
             elif not handle_target:
                 st.markdown("##### 👤 Social & Platform Footprint  ·  `⚪ Not Available`")
-                st.warning("No username / handle provided. Enter your handle in the 👤 Profile tab to scan for social platform footprints.")
+                st.warning("No username / handle provided. Enter your handle on the 👤 Identity Profile page to scan for social platform footprints.")
             elif fp_vector.get("status") == "unavailable":
                 st.markdown("##### 👤 Social & Platform Footprint  ·  `⚪ Scan Failed`")
                 st.caption(f"Footprint scan failed for: {handle_target}")
@@ -522,7 +613,10 @@ def render(brokers_df):
         email_target = profile.get("email") or (findings.get("profile") or {}).get("email") or ""
 
         if email_count > 0 or email_records:
-            _render_osint_vector(email_vector, f"📧 Email & Identity Exposure ({email_count} findings)")
+            _render_osint_vector(
+                email_vector, f"📧 Email & Identity Exposure ({email_count} findings)",
+                key_prefix="email", identifier_hint=email_target,
+            )
             em_checks = email_vector.get("checks", [])
             if em_checks and len(em_checks) > email_count:
                 with st.expander(f"🔍 Probed services log ({email_count} hits of {len(em_checks)} services checked)"):
@@ -535,7 +629,7 @@ def render(brokers_df):
                             st.caption(f"{chk_icon} **{chk_plat}**: `{chk_conf}`")
         elif not email_target:
             st.markdown("##### 📧 Email & Identity Exposure  ·  `⚪ Not Available`")
-            st.warning("No email address provided. Enter your email in the 👤 Profile tab to scan for email exposures (Gravatar, PGP, breaches, etc.)")
+            st.warning("No email address provided. Enter your email on the 👤 Identity Profile page to scan for email exposures (Gravatar, PGP, breaches, etc.)")
         elif email_vector.get("status") == "unavailable":
             st.markdown("##### 📧 Email & Identity Exposure  ·  `⚪ Scan Failed`")
             st.caption(f"Email scan failed for: {email_target}")
@@ -551,24 +645,30 @@ def render(brokers_df):
 
         # GitHub exposure section
         gh_vector = findings.get("github") or findings.get("vectors", {}).get("github") or {}
-        _render_osint_vector(gh_vector, "Developer & Code Exposure")
+        _render_osint_vector(
+            gh_vector, "Developer & Code Exposure",
+            key_prefix="github", identifier_hint=profile.get("handle") or "",
+        )
 
     _section_header("🏛️", "Legal, financial & corporate footprint")
     with st.container(border=True):
         sec_col, fec_col, court_col = st.columns(3)
         with sec_col:
             sec_vector = findings.get("sec") or findings.get("vectors", {}).get("sec") or {}
-            _render_osint_vector(sec_vector, "SEC Filings")
+            _render_osint_vector(sec_vector, "SEC Filings", key_prefix="sec")
         with fec_col:
             fec_vector = findings.get("fec") or findings.get("vectors", {}).get("fec") or {}
-            _render_osint_vector(fec_vector, "FEC Contributions")
+            _render_osint_vector(fec_vector, "FEC Contributions", key_prefix="fec")
         with court_col:
             cl_vector = findings.get("courtlistener") or findings.get("vectors", {}).get("courtlistener") or {}
-            _render_osint_vector(cl_vector, "Court Dockets")
-            
+            _render_osint_vector(cl_vector, "Court Dockets", key_prefix="court")
+
     with st.container(border=True):
         infra_vector = findings.get("infrastructure") or findings.get("vectors", {}).get("infrastructure") or {}
-        _render_osint_vector(infra_vector, "Domains & Certificates")
+        _render_osint_vector(
+            infra_vector, "Domains & Certificates",
+            key_prefix="infra", identifier_hint=profile.get("domain") or "",
+        )
 
     _render_verification_vectors(brokers_df)
 

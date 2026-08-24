@@ -222,7 +222,11 @@ def _connect(db_path: str):
     Path(db_path).parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(db_path, timeout=20.0)
     conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
+    # Same WAL-unavailable fallback the profile store uses -- this module
+    # opens the *same* file from the scheduler thread, so if WAL is
+    # unavailable it is unavailable here too, and an unguarded PRAGMA
+    # would take down the background job rather than the page.
+    database.apply_journal_mode(conn, db_path)
     conn.execute("PRAGMA foreign_keys=ON")
     conn.executescript(_TABLES)
     _migrate(conn)

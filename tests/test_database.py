@@ -150,3 +150,74 @@ def test_database_cli_rotation_and_export(monkeypatch, tmp_path):
     )
     assert result.returncode == 0
     assert "ENCRYPTION_KEY=YWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWE=" in env_path.read_text()
+
+
+# ---------------------------------------------------------------------------
+# Journal mode fallback
+# ---------------------------------------------------------------------------
+# WAL has to create <db>-wal and <db>-shm beside the database and mmap the
+# -shm segment. NFS/SMB mounts and some container volume drivers refuse
+# that, and SQLite raises OperationalError straight out of the PRAGMA --
+# which crashed the app at import, because init_db() runs before anything
+# renders. These pin the degraded path.
+
+
+class _WalRefusingConnection:
+    """Stands in for a connection on a filesystem that has no WAL support.
+
+    sqlite3.Connection is an immutable C type, so the refusal can't be
+    monkeypatched onto a real one.
+    """
+
+    def __init__(self):
+        self.statements = []
+
+    def execute(self, sql, *args):
+        self.statements.append(sql)
+        if "journal_mode=WAL" in sql:
+            raise sqlite3.OperationalError("disk I/O error")
+        return self
+
+
+def test_apply_journal_mode_uses_wal_when_available(tmp_path):
+    conn = sqlite3.connect(str(tmp_path / "t.db"))
+    try:
+        assert database.apply_journal_mode(conn, str(tmp_path / "t.db")) == "wal"
+        assert conn.execute("PRAGMA journal_mode;").fetchone()[0] == "wal"
+    finally:
+        conn.close()
+
+
+def test_apply_journal_mode_falls_back_to_delete(tmp_path):
+    conn = _WalRefusingConnection()
+    assert database.apply_journal_mode(conn, str(tmp_path / "nfs.db")) == "delete"
+    assert conn.statements == ["PRAGMA journal_mode=WAL;", "PRAGMA journal_mode=DELETE;"]
+
+
+def test_journal_fallback_warns_once_per_path(tmp_path, caplog):
+    """_connect opens a connection per call, so an unguarded warning would
+    fire on every single read for the life of the process."""
+    path = str(tmp_path / "nfs.db")
+    database._JOURNAL_FALLBACK_WARNED.discard(path)
+
+    with caplog.at_level("WARNING", logger="database"):
+        database.apply_journal_mode(_WalRefusingConnection(), path)
+        database.apply_journal_mode(_WalRefusingConnection(), path)
+
+    warnings = [r for r in caplog.records if "WAL journalling unavailable" in r.getMessage()]
+    assert len(warnings) == 1
+
+
+def test_init_db_creates_a_missing_parent_directory(tmp_path):
+    nested = tmp_path / "does" / "not" / "exist" / "tracker.db"
+    database.init_db(str(nested))
+    assert nested.exists()
+
+
+def test_init_db_accepts_a_bare_relative_filename(tmp_path, monkeypatch):
+    """os.path.dirname("t.db") is "", and os.makedirs("") raises
+    FileNotFoundError -- so the parent-directory guard has to be the
+    Path(...).parent form, which no-ops instead."""
+    monkeypatch.chdir(tmp_path)
+    database.init_db("bare.db")
+    assert (tmp_path / "bare.db").exists()

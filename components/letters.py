@@ -81,17 +81,22 @@ def render(brokers_df):
     relational_entities = (database.get_latest_target_profile(runtime_mode.db_path()) or {}).get("relational_entities", [])
 
     if not (user_name and user_email and user_location):
-        st.warning("Add your name, email, and location on the **Dashboard** first -- these letters are personalized and need a real contact for the broker to respond to.")
-        if st.button("👤 Go to Dashboard", type="primary"):
-            st.session_state.pending_nav = "📊 Dashboard"
-            st.rerun()
+        with st.container(border=True):
+            st.markdown("#### 📝 Enter your profile details to start")
+            st.caption(
+                "These letters are personalised and legally binding -- they need your name, "
+                "email and location so the broker has a real contact to respond to."
+            )
+            if st.button("👤 Go to Identity Profile", type="primary"):
+                st.session_state.pending_nav = "👤 Identity Profile"
+                st.rerun()
         return
 
     with st.container(border=True):
         info_cols = st.columns([3, 1])
         info_cols[0].markdown(f"**{user_name}**  \n{user_location} · {user_email}")
-        if info_cols[1].button("Edit on Dashboard", icon="✏️", width="stretch"):
-            st.session_state.pending_nav = "📊 Dashboard"
+        if info_cols[1].button("Edit profile", icon="✏️", width="stretch"):
+            st.session_state.pending_nav = "👤 Identity Profile"
             st.rerun()
         record_url = st.text_input(
             "Record URL",
@@ -110,10 +115,16 @@ def render(brokers_df):
         st.error("Unable to load broker data. Check data/brokers.csv.")
         return
 
-    with st.container(border=True):
-        template_type = _render_jurisdiction_picker(profile)
-
     batch_mode = st.toggle("Batch mode (select multiple brokers)", value=False)
+
+    # The three step headers follow the order the decisions are actually
+    # made: who the demand goes to (and whether they really list you), then
+    # which statute it goes out under, then dispatch. The jurisdiction
+    # picker moved below target selection as part of that -- it reads the
+    # user's own profile rather than the broker, so it was always free to
+    # render on either side, and template_type isn't consumed until the
+    # letter is compiled in step 3.
+    st.subheader("🎯 Step 1: Target selection")
 
     if not ready:
         st.info("Add a record URL above to generate letters.")
@@ -130,10 +141,10 @@ def render(brokers_df):
             st.info(broker_notes, icon="📝")
 
         search_url = broker_info["search_url"]
-        st.subheader("🔍 Step 1: Confirm you're actually listed")
+        st.markdown("##### 🔍 Confirm you're actually listed")
 
         if st.session_state.listed_confirmed.get(selected_broker, False):
-            st.success(f"✅ Already confirmed on the Master Dashboard that you're listed on {selected_broker}.")
+            st.success(f"✅ Already confirmed on the Intelligence Dossier that you're listed on {selected_broker}.")
             confirmed_listed = True
         else:
             st.caption(
@@ -155,11 +166,17 @@ def render(brokers_df):
         if not confirmed_listed:
             st.info("Check the box above once you've confirmed you're listed to generate the letter.")
         else:
+            st.subheader("⚖️ Step 2: Statutory framework")
+            with st.container(border=True):
+                template_type = _render_jurisdiction_picker(profile)
+
+            st.subheader("📤 Step 3: Dispatch & tracking")
+
             rendered_letter = _render_letter(
                 selected_broker, user_name, user_location, user_email, record_url, template_type,
             )
 
-            st.subheader("📄 Generated demand letter")
+            st.markdown("##### 📄 Generated demand letter")
             if relational_entities:
                 with st.container(border=True):
                     st.subheader("⚖️ Statutory Relational Severance Clause (CCPA §1798.105)")
@@ -184,7 +201,7 @@ def render(brokers_df):
                 broker_jurisdiction[selected_broker] = template_type
                 st.session_state.pop("audit_zip", None)
 
-            st.subheader("🚀 Actions")
+            st.markdown("##### 🚀 Send, download, track")
 
             col_a, col_b, col_c = st.columns(3)
 
@@ -238,7 +255,7 @@ def render(brokers_df):
         selected_brokers = st.multiselect("Select target brokers", broker_options, default=broker_options[:3])
 
         if selected_brokers:
-            st.subheader("🔍 Step 1: Confirm you're actually listed on each broker")
+            st.markdown("##### 🔍 Confirm you're actually listed on each broker")
             st.caption(
                 "Search each broker's site for your own name before including it in the batch — "
                 "don't ask a broker to delete a record you haven't confirmed exists."
@@ -252,7 +269,7 @@ def render(brokers_df):
 
                 if st.session_state.listed_confirmed.get(broker_name, False):
                     row_cols[1].caption("—")
-                    row_cols[2].caption("✅ Confirmed on the Master Dashboard")
+                    row_cols[2].caption("✅ Confirmed on the Intelligence Dossier")
                     confirmed_brokers.append(broker_name)
                     continue
 
@@ -268,6 +285,12 @@ def render(brokers_df):
             if not confirmed_brokers:
                 st.info("Check off at least one broker above once you've confirmed you're listed there.")
             else:
+                st.subheader("⚖️ Step 2: Statutory framework")
+                with st.container(border=True):
+                    template_type = _render_jurisdiction_picker(profile)
+
+                st.subheader("📤 Step 3: Dispatch & tracking")
+
                 letters = {}
                 for broker_name in confirmed_brokers:
                     letters[broker_name] = _render_letter(

@@ -25,7 +25,9 @@ ERROR_COLOR = "#ef4444"
 # File paths
 BROKERS_CSV_PATH = "data/brokers.csv"
 TEMPLATE_PATH = "utils/statutory_letters/ccpa_deletion_demand.j2"
-TRACKER_DB_PATH = "data/tracker.db"
+import os
+_ROOT = os.path.dirname(os.path.abspath(__file__))
+TRACKER_DB_PATH = os.path.join(_ROOT, "data", "tracker.db")
 
 # Statutory response window CCPA gives a business/broker to act on a deletion
 # request. Used by the tracker to flag a request as overdue, and by the
@@ -37,7 +39,7 @@ CCPA_RESPONSE_WINDOW_DAYS = 45
 # tables, not separate databases. Named separately so call sites read
 # clearly, but routed through runtime_mode.db_path() in the app so demo mode
 # still gets its per-session temp file instead of a shared one.
-CAMPAIGNS_DB_PATH = "data/tracker.db"
+CAMPAIGNS_DB_PATH = os.path.join(_ROOT, "data", "tracker.db")
 
 # Demo profile data (fake — safe to load for a walkthrough)
 DEMO_PROFILE = {
@@ -115,11 +117,11 @@ PII_RETENTION_DAYS = 30
 # Once a check is older than this many days, Results/Dashboard flag it as
 # due for a recheck instead of silently trusting a stale answer.
 RECHECK_STALE_DAYS = 30
-EXPOSURE_DB_PATH = "data/tracker.db"
+EXPOSURE_DB_PATH = os.path.join(_ROOT, "data", "tracker.db")
 
 # Baseline identity/location profile (target_profile table) -- same local
 # SQLite file as the tracker and exposure checks.
-PROFILE_DB_PATH = "data/tracker.db"
+PROFILE_DB_PATH = os.path.join(_ROOT, "data", "tracker.db")
 
 # Free, already-built alerting services -- rather than reinventing breach or
 # web-mention monitoring, point users at the real ones.
@@ -144,7 +146,7 @@ WMN_DATASET_PATH = "data/wmn-data.json"
 OSINT_CATALOG_PATH = "data/osint_catalog.json"
 
 # Discovered accounts live in the same local SQLite file as everything else.
-FOOTPRINT_DB_PATH = "data/tracker.db"
+FOOTPRINT_DB_PATH = os.path.join(_ROOT, "data", "tracker.db")
 
 # Bounded concurrency for a scan. The default scan is the full ~700-site
 # sweep, so 50 in flight is what keeps it to roughly a minute instead of
@@ -172,7 +174,7 @@ LOG_PATH = "logs/non_pursuit.log"
 # wholesale -- data/brokers.csv is tracked), but for a different reason than
 # tracker.db: not to keep PII out of history, just to stop one machine's
 # counters shipping as if they were real usage.
-USAGE_METRICS_DB_PATH = "data/usage_metrics.db"
+USAGE_METRICS_DB_PATH = os.path.join(_ROOT, "data", "usage_metrics.db")
 
 # Outstanding human work (utils/review_queue.py) -- the steps automation
 # deliberately stopped short of: a filled-but-unsubmitted opt-out form, a
@@ -181,7 +183,7 @@ USAGE_METRICS_DB_PATH = "data/usage_metrics.db"
 # under CLAUDE.md, and a chore list churns daily while a statutory campaign
 # does not. Gitignored because its `note` column is free text and will
 # eventually hold a name someone pasted in.
-REVIEW_QUEUE_DB_PATH = "data/review_queue.db"
+REVIEW_QUEUE_DB_PATH = os.path.join(_ROOT, "data", "review_queue.db")
 
 # How old a broker's own last_verified date can get before Results flags the
 # row as due for a human to re-confirm its compliance email / opt-out URL /
@@ -201,7 +203,7 @@ EVIDENCE_DIR = "data/evidence"
 # Broker-agent ledger (utils/broker_ledger.py): profiles, brokers, scans,
 # removals, evidence, activity log. Shares data/tracker.db with the Phase 1
 # tables so a removal can be joined to the statutory request it belongs to.
-LEDGER_DB_PATH = "data/tracker.db"
+LEDGER_DB_PATH = os.path.join(_ROOT, "data", "tracker.db")
 
 # Autonomous background engine (utils/agent_scheduler.py). Intervals in days.
 # Scanning and verification only -- never submission; see the module docstring.

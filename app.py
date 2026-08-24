@@ -34,6 +34,7 @@ from components import letters as letters_component
 from components import dashboard as dashboard_component
 from components import master as master_component
 from components import campaign_timeline as campaign_timeline_component
+from components import footprint as footprint_component
 
 st.session_state.setdefault('nav_mode', 'Vault')
 database.init_db(runtime_mode.db_path())
@@ -192,17 +193,37 @@ if st.session_state.get("pending_nav") is not None:
 st.logo(config.APP_WORDMARK_PATH, icon_image=config.APP_LOGO_PATH, size="large")
 st.sidebar.markdown("---")
 
-mode = st.sidebar.radio(
-    "Tools",
-    [
-        "🛡️ Profile",
+# One radio, not three. Grouping the tools into separate per-category
+# radios would read better, but every quick-action button in the app --
+# and every render test -- addresses the nav through this single
+# key="nav_mode" widget, and a value can only live in one radio. So the
+# options stay in one list, ordered by category, and the category rides
+# along as each option's caption (Streamlit draws captions under the
+# option, so a true group header above each block isn't available here).
+NAV_SECTIONS = [
+    ("Recon & Audit", [
+        "👤 Identity Profile",
         "🔍 Intelligence Dossier",
+        "🕸️ Deep Handle Footprint",
+    ]),
+    ("Legal & Deletion", [
         "✉️ Data Broker Deletion",
-        "⚖️ NY Expungement",
         "🚫 Google De-Indexing",
+        "⚖️ NY Expungement",
+    ]),
+    ("Tracking & Proofs", [
         "📬 Opt-Out Tracker",
         "🗓️ Deletion Timeline",
-    ],
+    ]),
+]
+
+NAV_OPTIONS = [label for _, labels in NAV_SECTIONS for label in labels]
+NAV_CAPTIONS = [section for section, labels in NAV_SECTIONS for _ in labels]
+
+mode = st.sidebar.radio(
+    "Tools",
+    NAV_OPTIONS,
+    captions=NAV_CAPTIONS,
     key="nav_mode",
     label_visibility="visible",
 )
@@ -347,13 +368,16 @@ with st.sidebar.expander("📈 Usage", expanded=False):
 
 
 # ---------------------------------------------------------------------------
-# MODE: Dashboard
+# MODE: Identity Profile
 # ---------------------------------------------------------------------------
-if mode == "🛡️ Profile":
+if mode == "👤 Identity Profile":
     dashboard_component.render()
 
 elif mode == "🔍 Intelligence Dossier":
     master_component.render(brokers_df)
+
+elif mode == "🕸️ Deep Handle Footprint":
+    footprint_component.render()
 
 elif mode == "✉️ Data Broker Deletion":
     letters_component.render(brokers_df)
@@ -585,10 +609,15 @@ elif mode == "🚫 Google De-Indexing":
     g_email = st.session_state.user_email
 
     if not g_name or not g_email:
-        st.warning("Enter your name and email on the **Dashboard** first — this request is personalized and needs a real contact for verification.")
-        if st.button("👤 Go to Dashboard", type="primary"):
-            st.session_state.pending_nav = "🛡️ Profile"
-            st.rerun()
+        with st.container(border=True):
+            st.markdown("#### 📝 Start with your identity details")
+            st.caption(
+                "Google's PII removal request is personalised — it needs your real name and a "
+                "contact address they can verify the request against."
+            )
+            if st.button("👤 Enter your profile details", type="primary"):
+                st.session_state.pending_nav = "👤 Identity Profile"
+                st.rerun()
     else:
         st.subheader("URLs to request removal for")
         st.caption("Paste each Google search result URL containing your PII, one per line.")
@@ -687,7 +716,16 @@ elif mode == "📬 Opt-Out Tracker":
     )
 
     if not requests_list:
-        st.info("Nothing logged yet. Generate a letter under **Data Broker Deletion** and click \"Log this request\", or add one manually above.")
+        with st.container(border=True):
+            st.markdown("#### 📭 No deletion requests logged yet")
+            st.caption(
+                "Requests land here automatically once you generate a demand letter and log it — "
+                "each one starts its own statutory response countdown. You can also add one by "
+                "hand with **Log a request manually** above."
+            )
+            if st.button("✉️ Generate your first demand letter", type="primary"):
+                st.session_state.pending_nav = "✉️ Data Broker Deletion"
+                st.rerun()
     else:
         overdue_count = sum(1 for r in requests_list if r["is_overdue"])
         c1, c2, c3 = st.columns(3)

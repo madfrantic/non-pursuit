@@ -148,7 +148,16 @@ def _render_saved_accounts():
 
     saved = discovered_accounts.get_all(runtime_mode.db_path())
     if not saved:
-        st.info("Nothing saved yet. Run a scan above and save what it finds to build a closure worklist.")
+        with st.container(border=True):
+            st.markdown("#### 🗂️ No deletion targets logged yet")
+            st.caption(
+                "Run a sweep above and save what it finds — or add a confirmed finding straight "
+                "from the Intelligence Dossier — and it becomes a tracked closure worklist that "
+                "rides along in the audit export."
+            )
+            if st.button("⚡ Run Recon Sweep", type="primary", key="footprint_empty_recon"):
+                st.session_state.pending_nav = "🔍 Intelligence Dossier"
+                st.rerun()
         return
 
     st.caption(
