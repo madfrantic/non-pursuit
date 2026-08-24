@@ -217,3 +217,104 @@ def describe(headers, lookup_fn=lookup):
     info["client_ip"] = ip
     info["location"] = location_label(info)
     return info
+
+
+# --- device, from client hints then the User-Agent -------------------
+#
+# Chromium sends Sec-CH-UA-Platform by default (it is a low-entropy hint,
+# no Accept-CH negotiation needed) and it is the only field here that is
+# not a guess parsed out of a marketing string. It arrives quoted:
+#   Sec-CH-UA-Platform: "Linux"
+# Firefox and Safari send no hints at all, so the User-Agent stays the
+# fallback rather than the primary.
+_PLATFORM_HINT_HEADERS = ("Sec-CH-UA-Platform", "Sec-Ch-Ua-Platform")
+
+# Hint value -> what we display. The hint's vocabulary is fixed by the
+# spec, so this is a lookup and not a heuristic.
+_PLATFORM_HINTS = {
+    "linux": "Linux",
+    "macos": "macOS",
+    "windows": "Windows",
+    "android": "Android",
+    "ios": "iOS",
+    "chrome os": "Chrome OS",
+    "chromium os": "Chrome OS",
+}
+
+# Substring -> OS, in priority order. Order is the whole point:
+# "X11; Ubuntu; Linux x86_64" contains both Ubuntu and Linux, and
+# "Linux; Android 14" contains both Android and Linux, so the specific
+# name has to win over the kernel it runs on.
+_UA_PLATFORMS = (
+    ("Android", "Android"),
+    ("Ubuntu", "Ubuntu"),
+    ("CrOS", "Chrome OS"),
+    ("iPhone", "iOS"),
+    ("iPad", "iPadOS"),
+    ("Macintosh", "macOS"),
+    ("Mac OS X", "macOS"),
+    ("Windows", "Windows"),
+    ("Linux", "Linux"),
+    ("X11", "Linux"),
+)
+
+# Engine, likewise ordered: every Chrome UA also says "Safari", and
+# Edge's says Chrome and Safari as well as "Edg".
+_UA_ENGINES = (
+    ("Firefox", "Gecko"),
+    ("Edg/", "Blink / V8"),
+    ("OPR/", "Blink / V8"),
+    ("Chromium", "Blink / V8"),
+    ("Chrome", "Blink / V8"),
+    ("Safari", "WebKit"),
+)
+
+
+def platform_hint(headers):
+    """`Sec-CH-UA-Platform` as a display string, or None."""
+    if not headers:
+        return None
+    for name in _PLATFORM_HINT_HEADERS:
+        raw = headers.get(name) or headers.get(name.lower())
+        if raw:
+            return _PLATFORM_HINTS.get(str(raw).strip().strip('"').lower())
+    return None
+
+
+def os_family(headers=None, user_agent=""):
+    """The visitor's OS: client hint first, User-Agent second.
+
+    A Linux desktop reported as macOS is the specific failure this
+    replaces -- the panel used to test `"Mac" in ua`, which matches the
+    "Macintosh" in a UA but also any string containing "Mac", and had no
+    Ubuntu, Android or Chrome OS case at all.
+    """
+    hinted = platform_hint(headers)
+    ua = user_agent or ""
+    if hinted:
+        # Ubuntu is the one thing the hint cannot say -- it reports the
+        # kernel, not the distribution -- so let the UA sharpen it.
+        if hinted == "Linux" and "Ubuntu" in ua:
+            return "Ubuntu"
+        return hinted
+    for needle, label in _UA_PLATFORMS:
+        if needle in ua:
+            return label
+    return "Unknown OS"
+
+
+def browser_engine(user_agent=""):
+    """Rendering engine from the User-Agent, or "Unknown Engine"."""
+    ua = user_agent or ""
+    for needle, label in _UA_ENGINES:
+        if needle in ua:
+            return label
+    return "Unknown Engine"
+
+
+def device_profile(headers=None):
+    """(user-agent display string, OS, engine) for one request."""
+    headers = headers or {}
+    ua = headers.get("User-Agent") or headers.get("user-agent") or ""
+    display = ua[:60] if ua else "Not disclosed"
+    return (display, os_family(headers, ua), browser_engine(ua))

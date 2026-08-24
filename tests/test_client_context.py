@@ -184,3 +184,86 @@ def test_describe_skips_the_lookup_when_there_is_no_proxy_header():
     assert ctx["status"] == "no_proxy_header"
     assert ctx["client_ip"] is None
     assert ctx["location"] == ""
+
+
+# --- device -----------------------------------------------------------
+#
+# The panel reported "macOS 15.1 (Sequoia)" to a presenter running Linux.
+# Two causes: a hardcoded mock (fixed in master.py) and a parser whose
+# only macOS test was `"Mac" in ua`.
+
+UA_UBUNTU_FIREFOX = "Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:130.0) Gecko/20100101 Firefox/130.0"
+UA_LINUX_CHROME = ("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) "
+                   "Chrome/128.0.0.0 Safari/537.36")
+UA_MAC_SAFARI = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 "
+                 "(KHTML, like Gecko) Version/17.6 Safari/605.1.15")
+UA_ANDROID = ("Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) "
+              "Chrome/128.0.0.0 Mobile Safari/537.36")
+UA_WINDOWS_EDGE = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
+                   "Chrome/128.0.0.0 Safari/537.36 Edg/128.0.0.0")
+
+
+@pytest.mark.parametrize("ua,expected", [
+    (UA_UBUNTU_FIREFOX, "Ubuntu"),
+    (UA_LINUX_CHROME, "Linux"),
+    (UA_MAC_SAFARI, "macOS"),
+    (UA_ANDROID, "Android"),          # "Linux; Android" -- Android must win
+    (UA_WINDOWS_EDGE, "Windows"),
+    ("Mozilla/5.0 (X11; CrOS x86_64 14541.0.0)", "Chrome OS"),
+    ("Mozilla/5.0 (iPhone; CPU iPhone OS 17_6 like Mac OS X)", "iOS"),
+    ("", "Unknown OS"),
+])
+def test_os_is_read_from_the_user_agent(ua, expected):
+    assert client_context.os_family({}, ua) == expected
+
+
+def test_a_linux_desktop_is_not_reported_as_macos():
+    """The old test was `"Mac" in ua`, and every WebKit-derived UA on
+    Linux carries "AppleWebKit"."""
+    assert client_context.os_family({}, UA_LINUX_CHROME) != "macOS"
+    assert client_context.device_profile({"User-Agent": UA_LINUX_CHROME})[1] == "Linux"
+
+
+@pytest.mark.parametrize("hint,expected", [
+    ('"Linux"', "Linux"),
+    ('"macOS"', "macOS"),
+    ('"Windows"', "Windows"),
+    ('"Android"', "Android"),
+    ('"Chrome OS"', "Chrome OS"),
+])
+def test_the_client_hint_wins_over_the_user_agent(hint, expected):
+    """Sec-CH-UA-Platform is declared, not parsed out of a marketing
+    string, so it is the more trustworthy of the two."""
+    headers = {"Sec-CH-UA-Platform": hint, "User-Agent": UA_MAC_SAFARI}
+    assert client_context.os_family(headers, UA_MAC_SAFARI) == expected
+
+
+def test_the_hint_is_case_insensitive_and_tolerates_missing_quotes():
+    assert client_context.os_family({"sec-ch-ua-platform": "Linux"}, "") == "Linux"
+    assert client_context.os_family({"Sec-Ch-Ua-Platform": '"LINUX"'}, "") == "Linux"
+
+
+def test_ubuntu_survives_a_linux_hint():
+    """The hint reports the kernel; only the UA names the distribution."""
+    headers = {"Sec-CH-UA-Platform": '"Linux"', "User-Agent": UA_UBUNTU_FIREFOX}
+    assert client_context.os_family(headers, UA_UBUNTU_FIREFOX) == "Ubuntu"
+
+
+def test_an_unrecognised_hint_falls_back_to_the_user_agent():
+    headers = {"Sec-CH-UA-Platform": '"Haiku"', "User-Agent": UA_LINUX_CHROME}
+    assert client_context.os_family(headers, UA_LINUX_CHROME) == "Linux"
+
+
+@pytest.mark.parametrize("ua,expected", [
+    (UA_UBUNTU_FIREFOX, "Gecko"),
+    (UA_LINUX_CHROME, "Blink / V8"),
+    (UA_WINDOWS_EDGE, "Blink / V8"),   # says Chrome AND Safari AND Edg
+    (UA_MAC_SAFARI, "WebKit"),
+    ("", "Unknown Engine"),
+])
+def test_engine_detection_survives_overlapping_tokens(ua, expected):
+    assert client_context.browser_engine(ua) == expected
+
+
+def test_device_profile_without_a_user_agent_says_so():
+    assert client_context.device_profile({}) == ("Not disclosed", "Unknown OS", "Unknown Engine")

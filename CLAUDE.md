@@ -112,12 +112,21 @@ palettes and two different product names. They are now one document.
   must cache** — `master._cached_ip_lookup` holds a 15-minute TTL, because
   Streamlit reruns the script on every interaction and the free tier is ~1k
   lookups/day.
-- The dossier greets a **role, not a person** (`master.OPERATOR_GREETING`), and
-  the breach panel's fallback target is the demo persona from
+- The dossier greets the **active target profile** (`master._greeting_name`),
+  lowercased — the seeded demo persona renders as "hello, jane". Nothing is
+  hardcoded; the breach panel's fallback target comes from the same
   `presentation_mode.MOCK_PROFILE`, always drawn with a "🎭 Sample target"
-  caption. No real identity belongs on a screen that gets projected — the same
-  reason `data/footprint_map.json`'s showcase identifier is now
-  `jane.doe@example.com`.
+  caption. No real identity is baked into the tree — the same reason
+  `data/footprint_map.json`'s showcase identifier is `jane.doe@example.com`
+  and not a real address.
+- **Presentation mode fakes the network block only.** `_PRESENTATION_NETWORK`
+  supplies a sample public IP, PTR record and city, because a localhost
+  address on a projector demonstrates nothing. The device block is always
+  read from the live request: it describes the laptop on stage, the audience
+  can see that laptop, and the old mock told every presenter they were on
+  "macOS 15.1 (Sequoia)". OS detection is `client_context.os_family()` —
+  `Sec-CH-UA-Platform` first (declared by the browser, not parsed), User-Agent
+  second, with Android beating Linux and Ubuntu sharpening a Linux hint.
 - `utils/admin_auth.py` + `components/admin_dashboard.py` + `pages/11_Admin.py` —
   the owner console: every stored record in one view. Gated on
   `NON_PURSUIT_ADMIN_KEY` (env or `st.secrets`), compared with

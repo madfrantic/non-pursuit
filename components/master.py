@@ -38,9 +38,18 @@ _OSINT_STATUS_LABELS = {
     "unavailable": "⚪ Unavailable",
 }
 
-# Who the dossier greets. A role, never a person: see the note at the
-# call site in render().
-OPERATOR_GREETING = "Welcome, System Operator"
+def _greeting_name(profile):
+    """First name of the active target profile, lowercased.
+
+    Falls back through the profile shapes the dossier can be handed:
+    first_name when the form filled it, otherwise the leading token of
+    full_name, otherwise the demo persona so a seeded walkthrough is
+    never greeted by an empty string.
+    """
+    raw = (profile.get("first_name") or profile.get("full_name") or "").strip()
+    if not raw:
+        raw = DEMO_TARGET_NAME
+    return raw.split()[0].lower()
 
 # The persona the breach panel falls back to when no target has been
 # entered, so the section is never blank in a walkthrough. Matches
@@ -337,17 +346,17 @@ _NETWORK_NOTES = {
     "no_proxy_header": "Local request — no forwarded address, so nothing to geolocate.",
 }
 
-_PRESENTATION_TELEMETRY = {
+# Presentation mode fakes the *network* block only. A demo needs a
+# plausible public IP and a residential PTR record -- a localhost address
+# on the projector proves nothing -- but it must not fake the device
+# block: those three fields describe the laptop actually on stage, the
+# audience can see it, and the mock reported "macOS 15.1 (Sequoia)" to
+# every presenter regardless of what they were running.
+_PRESENTATION_NETWORK = {
     "client_ip": "198.51.100.42",
     "reverse_dns": "pool-198-51-100-42.nycmny.fios.verizon.net",
     "geo_info": "New York, NY [US-EAST]",
-    "user_agent": "Chrome 128 / macOS Sequoia 15.1",
-    "os_family": "macOS 15.1 (Sequoia)",
-    "browser_engine": "Blink / V8",
-    "accept_lang": "en-US, en;q=0.9",
-    "referrer": "Direct / None",
-    "dnt_status": "DNT: 0 (Not Set)",
-    "network_note": "",
+    "network_note": "🎭 Presentation mode — sample network identity.",
 }
 
 
@@ -363,42 +372,13 @@ def _cached_ip_lookup(ip):
     return client_context.lookup(ip)
 
 
-def _parse_user_agent(raw_ua):
-    """(display string, OS family, engine) from a User-Agent header."""
-    raw_ua = raw_ua or ""
-    if not raw_ua:
-        return ("Not disclosed", "Unknown OS", "Unknown Engine")
-    if "Mac" in raw_ua:
-        os_family = "macOS"
-    elif "Windows" in raw_ua:
-        os_family = "Windows"
-    elif "Android" in raw_ua:
-        os_family = "Android"
-    elif "Linux" in raw_ua:
-        os_family = "Linux"
-    else:
-        os_family = "Unknown OS"
-    # Order matters: every Chrome UA also contains "Safari", and Edge's
-    # contains both plus "Edg".
-    if "Firefox" in raw_ua:
-        engine = "Gecko"
-    elif "Chrome" in raw_ua or "Chromium" in raw_ua:
-        engine = "Blink / V8"
-    elif "Safari" in raw_ua:
-        engine = "WebKit"
-    else:
-        engine = "Unknown Engine"
-    return (raw_ua[:60], os_family, engine)
-
-
 def _connection_telemetry(lookup_fn=None):
     """Everything the network/device/session columns render.
 
     Split out of render() so it can be tested without a browser: it takes
     only headers and st.context, and returns strings.
     """
-    if st.session_state.get("presentation_mode"):
-        return dict(_PRESENTATION_TELEMETRY)
+    presenting = bool(st.session_state.get("presentation_mode"))
 
     try:
         headers = st.context.headers or {}
@@ -406,11 +386,18 @@ def _connection_telemetry(lookup_fn=None):
         _log.exception("st.context.headers unavailable")
         headers = {}
 
-    ctx = client_context.describe(headers, lookup_fn=lookup_fn or _cached_ip_lookup)
-    status = ctx["status"]
+    if presenting:
+        # Empty headers, so describe() short-circuits without a lookup:
+        # the network block is sampled below, and spending quota on an
+        # address we are about to overwrite would display nothing.
+        ctx = client_context.describe({})
+        status = "ok"
+    else:
+        ctx = client_context.describe(headers, lookup_fn=lookup_fn or _cached_ip_lookup)
+        status = ctx["status"]
 
-    raw_ua = headers.get("User-Agent") or headers.get("user-agent") or ""
-    user_agent, os_family, browser_engine = _parse_user_agent(raw_ua)
+    # Real headers even in presentation mode: this is the machine on stage.
+    user_agent, os_family, browser_engine = client_context.device_profile(headers)
 
     accept_lang = headers.get("Accept-Language") or headers.get("accept-language") or ""
     if not accept_lang:
@@ -437,7 +424,7 @@ def _connection_telemetry(lookup_fn=None):
     if ctx["location"] and browser_tz:
         geo_info = f"{ctx['location']} · {browser_tz}"
 
-    return {
+    telemetry = {
         "client_ip": ctx["client_ip"] or "Not forwarded (local request)",
         "reverse_dns": ctx.get("hostname") or "No PTR record",
         "geo_info": geo_info,
@@ -449,6 +436,9 @@ def _connection_telemetry(lookup_fn=None):
         "dnt_status": dnt_status,
         "network_note": _NETWORK_NOTES.get(status, ""),
     }
+    if presenting:
+        telemetry.update(_PRESENTATION_NETWORK)
+    return telemetry
 
 
 def render(brokers_df):
@@ -469,12 +459,13 @@ def render(brokers_df):
     # Always read fresh profile state (not stale from input widget cache)
     profile = profile_state.get_profile(st.session_state)
 
-    # Deliberately not the profile's name. The dossier's subject is whoever
-    # is being investigated -- in a demo, the seeded persona -- and greeting
-    # the reader with that name reads as though the tool has confused the
-    # two. A fixed role label also keeps any real operator's name off a
-    # screen that gets projected and screenshotted.
-    st.markdown(f"## **{OPERATOR_GREETING}**")
+    # The active target profile's first name, lowercased -- the seeded demo
+    # persona renders as "hello, jane". Nothing here is hardcoded: on a live
+    # install this is whoever the operator entered on the Identity Profile
+    # page, which for a self-service run is themselves.
+    first_name = _greeting_name(profile)
+    if first_name:
+        st.markdown(f"## **hello, {first_name}**")
 
     # --- Combined Telemetry & Harvest Vector Card ---
     with st.container(border=True):
