@@ -243,20 +243,54 @@ hr {{ border: 0; height: 1px; background: linear-gradient(90deg,
 [data-testid="stSidebar"] [data-testid="stPageLink"] a:hover {{
   background: rgba(212,175,55,.08);
 }}
-/* st.logo draws the shield here; give it room rather than scaling it down */
+/* st.logo draws the shield here; give it room rather than scaling it down.
+   position:relative is what the collapse button below anchors against --
+   without it the button would pin to the viewport, not the rail.
+   The right padding reserves that corner so a wide logo cannot slide
+   under the button. */
 [data-testid="stSidebarHeader"] {{
+  position: relative !important;
   height: auto !important;
-  min-height: 6.5rem !important;
-  padding: 1.25rem 1rem 0.5rem 1rem !important;
+  min-height: 9.5rem !important;
+  padding: 1.25rem 3rem 0.5rem 1rem !important;
   display: flex !important;
   align-items: center !important;
   justify-content: center !important;
 }}
-[data-testid="stSidebarHeader"] img, [data-testid="stLogo"], [data-testid="stLogo"] img {{
-  max-height: 5.5rem !important;
-  height: 5.0rem !important;
+/* 5.0rem -> 7.5rem, a 150% scale. max-width is the overflow guard: the
+   sidebar is 21rem wide and a logo taller than it is wide would otherwise
+   push the rail out rather than fit inside it. stSidebarLogo and
+   stLogoLink are 1.4x's names for the same element; all three are listed
+   so a version bump degrades to an unscaled logo rather than a broken
+   header. */
+[data-testid="stSidebarHeader"] img,
+[data-testid="stLogo"], [data-testid="stLogo"] img,
+[data-testid="stSidebarLogo"], [data-testid="stSidebarLogo"] img,
+[data-testid="stLogoLink"] img {{
+  max-height: 7.5rem !important;
+  height: 7.5rem !important;
   width: auto !important;
+  max-width: 100% !important;
   object-fit: contain !important;
+}}
+/* The collapse control pinned to the header's top-right corner.
+   z-index clears the enlarged logo: both are in the same stacking
+   context, and a 7.5rem logo centred in the header reaches further
+   towards this corner than the 5rem one did. No pointer-events rule
+   anywhere in this block -- the button has to stay clickable, and
+   pointer-events:none on an ancestor is the usual way that breaks. */
+[data-testid="stSidebarHeader"] [data-testid="stSidebarCollapseButton"] {{
+  position: absolute !important;
+  top: 0.5rem !important;
+  right: 0.5rem !important;
+  margin: 0 !important;
+  z-index: 2 !important;
+}}
+/* The logo is decoration, not a link target, and at 7.5rem it covers most
+   of the header. Letting clicks fall through it means a near-miss on the
+   collapse button does nothing instead of navigating. */
+[data-testid="stSidebarHeader"] [data-testid="stLogoSpacer"] {{
+  pointer-events: none !important;
 }}
 [data-testid="stSidebar"] [data-testid="stRadio"] label p,
 [data-testid="stSidebar"] [data-testid="stPageLink"] a span {{

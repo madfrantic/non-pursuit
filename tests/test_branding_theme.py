@@ -347,3 +347,77 @@ def test_the_four_heading_levels_are_four_different_sizes():
     card_title = css.split("\nh5, h6 {")[1].split("}")[0]
     assert "var(--np-sans)" in card_title
     assert "font-weight: 600" in card_title
+
+
+# --- sidebar header: logo scale and the pinned collapse control -------
+#
+# Measured in real Chrome against the running app (Streamlit 1.62,
+# 1440x900): logo 95x120px inside a 300px sidebar, collapse button at
+# top:8px right:8px of a position:relative header, elementFromPoint over
+# the button resolving to its own icon rather than the logo, and a
+# collapse -> expand round trip returning the sidebar to 300px.
+
+def _rule(css, selector):
+    """The declaration block for `selector`, which must appear once.
+
+    `selector` may include its opening brace -- needed when a bare
+    selector also appears as the prefix of a longer one.
+    """
+    assert css.count(selector) == 1, selector
+    tail = css.split(selector)[1]
+    if not selector.rstrip().endswith("{"):
+        tail = tail.split("{", 1)[1]
+    return tail.split("}")[0]
+
+
+def test_the_sidebar_logo_is_scaled_up_and_cannot_overflow_the_rail():
+    css = theme.css()
+    block = _rule(css, '[data-testid="stLogoLink"] img')
+    assert "height: 7.5rem" in block          # 150% of the previous 5rem
+    assert "max-height: 7.5rem" in block
+    assert "object-fit: contain" in block
+    # The overflow guard. Without it a logo wider than the rail pushes the
+    # sidebar out instead of fitting inside it.
+    assert "max-width: 100%" in block
+    assert "width: auto" in block
+
+
+def test_the_header_can_anchor_an_absolutely_positioned_child():
+    """position:absolute resolves against the nearest positioned
+    ancestor -- without this the collapse button would pin to the
+    viewport rather than to the sidebar header."""
+    block = _rule(theme.css(), '[data-testid="stSidebarHeader"] {')
+    assert "position: relative" in block
+    # Room for the enlarged logo, and a right gutter the button occupies.
+    assert "min-height: 9.5rem" in block
+    assert "padding: 1.25rem 3rem 0.5rem 1rem" in block
+
+
+def test_the_collapse_control_is_pinned_to_the_top_right():
+    css = theme.css()
+    block = _rule(css, '[data-testid="stSidebarHeader"] [data-testid="stSidebarCollapseButton"]')
+    assert "position: absolute" in block
+    assert "top: 0.5rem" in block
+    assert "right: 0.5rem" in block
+    # Above the enlarged logo, which now reaches further into this corner.
+    assert "z-index: 2" in block
+
+
+def test_nothing_makes_the_collapse_control_unclickable():
+    """The failure mode for this layout is a pointer trap: an overlay or
+    an ancestor with pointer-events:none swallowing the click. The
+    button's own block must never disable pointer events, and the only
+    element that does is the decorative logo spacer."""
+    css = theme.css()
+    button_block = _rule(css, '[data-testid="stSidebarHeader"] [data-testid="stSidebarCollapseButton"]')
+    assert "pointer-events" not in button_block
+    assert "display: none" not in button_block
+    assert "visibility: hidden" not in button_block
+
+    spacer = _rule(css, '[data-testid="stSidebarHeader"] [data-testid="stLogoSpacer"]')
+    assert "pointer-events: none" in spacer
+
+    # Streamlit reveals the control on hover by toggling visibility on
+    # this element; a rule of ours forcing it either way would fight that.
+    header_block = _rule(css, '[data-testid="stSidebarHeader"] {')
+    assert "pointer-events" not in header_block
