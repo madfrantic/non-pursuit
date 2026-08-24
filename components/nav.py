@@ -46,7 +46,7 @@ ADMIN_ONLY_SECTIONS = {SECTION_ADMIN}
 
 SECTION_LABELS = {
     SECTION_OSINT: "Deep OSINT",
-    SECTION_ENGINE: config.SOVEREIGN_ENGINE_LABEL,
+    SECTION_ENGINE: config.SOVEREIGN_AGENT_LABEL,
     SECTION_ADMIN: "Owner",
 }
 
@@ -54,7 +54,7 @@ SECTION_LABELS = {
 def section_label(section: str) -> str:
     """Display text for a section key.
 
-    The engine section is the one that moves. "Sovereign Engine" is the
+    The engine section is the one that moves. "Sovereign Agent" is the
     product name and what the online build shows; "Broker agent console"
     names the console that only the separately installed desktop build
     ships, so it appears only when the desktop runtime is active. Showing

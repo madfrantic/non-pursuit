@@ -50,7 +50,7 @@ def setup(title: str, icon: str = "🛡️") -> str:
     # (or refreshing on one) reaches this file without app.py ever having
     # run. Without this, such a session sat on auto-detection and the
     # sidebar named the engine section after the desktop console while the
-    # main app called it Sovereign Engine -- the same session, two names.
+    # main app called it Sovereign Agent -- the same session, two names.
     runtime_mode.apply_startup_default()
     if not vault_gate.require_unlock():
         st.stop()

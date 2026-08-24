@@ -155,8 +155,8 @@ def test_every_entrypoint_opens_on_the_same_runtime():
 
 def test_the_engine_section_is_the_product_name_online():
     runtime_mode.set_runtime_override(runtime_mode.OVERRIDE_CLOUD)
-    assert nav.section_label(nav.SECTION_ENGINE) == config.SOVEREIGN_ENGINE_LABEL
-    assert nav.section_label(nav.SECTION_ENGINE) == "Sovereign Engine"
+    assert nav.section_label(nav.SECTION_ENGINE) == config.SOVEREIGN_AGENT_LABEL
+    assert nav.section_label(nav.SECTION_ENGINE) == "Sovereign Agent"
 
 
 def test_the_old_console_name_survives_only_on_the_desktop_build():

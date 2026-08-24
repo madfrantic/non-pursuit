@@ -97,7 +97,7 @@ palettes and two different product names. They are now one document.
   `app.py`, and one entrypoint seeding the default meant one session with two names
   for the same section.
 - `components/nav.py` — `MPA_SECTIONS` now holds section *keys*, resolved by
-  `section_label()`. The engine section is "Sovereign Engine" online and
+  `section_label()`. The engine section is "Sovereign Agent" online and
   "Broker agent console" on the desktop runtime, which is the only build that
   ships that console.
 - `utils/client_context.py` — the visitor's network identity, shared by the

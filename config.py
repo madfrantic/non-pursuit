@@ -22,11 +22,11 @@ APP_WORDMARK_PATH = "assets/logo_wordmark.png"
 APP_TOPMARK_PATH = APP_LOGO_PATH
 APP_LAYOUT = "wide"
 
-# The agent console's own name. The section is "Sovereign Engine"
+# The agent console's own name. The section is "Sovereign Agent"
 # everywhere the app can actually be reached over the web; the older
 # "Broker agent console" label names the console that only the separately
 # installed desktop build ships, so it appears only on that runtime.
-SOVEREIGN_ENGINE_LABEL = "Sovereign Engine"
+SOVEREIGN_AGENT_LABEL = "Sovereign Agent"
 DESKTOP_CONSOLE_LABEL = "Broker agent console"
 
 # Theme settings — also mirrored in .streamlit/config.toml, which is what
