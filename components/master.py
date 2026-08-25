@@ -572,7 +572,15 @@ def render(brokers_df):
                     usage_metrics.record_event(config.USAGE_METRICS_DB_PATH, usage_metrics.EMAIL_SCAN_RUN)
 
                 st.session_state.osint_findings = asyncio.run(
-                    run_full_osint_sweep(_osint_profile(), passive_only=is_cloud)
+                    run_full_osint_sweep(
+                        _osint_profile(),
+                        # Depth, not on/off: the online runtime now runs
+                        # the curated 52-site list rather than nothing.
+                        passive_only=is_cloud,
+                        # The only real off switch, and only the hosted
+                        # demo build trips it -- see live_scanning_enabled().
+                        footprint_enabled=runtime_mode.live_scanning_enabled(),
+                    )
                 )
                 if is_cloud:
                     my_bar.progress(100, text="Passive recon sweep complete (Heavy scans skipped in Cloud Mode).")
@@ -707,11 +715,25 @@ def render(brokers_df):
             # Social & Platform Footprint section with diagnostics consistent with Email Exposure
             handle_target = profile.get("handle") or (findings.get("profile") or {}).get("handle") or ""
 
+            fp_probed = fp_vector.get("probed") or 0
+            fp_depth = fp_vector.get("depth")
+
             if fp_count > 0 or fp_records:
                 _render_osint_vector(
                     fp_vector, f"👤 Social & Platform Footprint ({fp_count} findings)",
                     key_prefix="footprint", identifier_hint=handle_target,
                 )
+                # How wide the net was. A finding count on its own does
+                # not tell the reader whether it came off 52 platforms or
+                # 678, and that is most of what makes the number mean
+                # something.
+                if fp_probed:
+                    st.caption(f"Live scan of @{handle_target} across {fp_probed} platforms.")
+                    if fp_depth == "fast":
+                        st.caption(
+                            "Online runtime — curated platform list. Switch to 🖥️ Desktop "
+                            "in the sidebar to sweep the full catalogue."
+                        )
                 fp_checks = fp_vector.get("checks", [])
                 if fp_checks and len(fp_checks) > fp_count:
                     with st.expander(f"🔍 Probed platforms log ({fp_count} hits of {len(fp_checks)} platforms checked)"):
@@ -728,13 +750,13 @@ def render(brokers_df):
             # telling the operator to go enter a handle would just set
             # them up for the same empty panel a second time.
             elif fp_vector.get("status") == "skipped":
-                st.markdown("##### 👤 Social & Platform Footprint  ·  `⚪ Not Scanned (Disabled in Cloud)`")
+                st.markdown("##### 👤 Social & Platform Footprint  ·  `⚪ Not Scanned`")
                 st.warning(
-                    "**This is not a clean result — nothing was checked.** The full handle sweep "
-                    "is disabled on the online runtime: it is a heavy outbound scan and this build "
-                    "shares one IP with every other visitor."
+                    "**This is not a clean result — nothing was checked.** Live handle scanning "
+                    "is disabled on the hosted demo build, which serves every visitor from one "
+                    "shared IP."
                 )
-                st.caption("Switch to 🖥️ Desktop runtime in the sidebar to run it for real.")
+                st.caption("A local install scans for real on both runtimes.")
             elif not handle_target:
                 st.markdown("##### 👤 Social & Platform Footprint  ·  `⚪ Not Available`")
                 st.warning("No username / handle provided. Enter your handle on the 👤 Identity Profile page to scan for social platform footprints.")
@@ -743,8 +765,18 @@ def render(brokers_df):
                 st.caption(f"Footprint scan failed for: {handle_target}")
                 st.caption("This could be due to: timeout, rate limits, or network issues. Try again in a moment.")
             else:
+                # A genuine clean result now, not a stand-in for a scan
+                # that never ran -- so it names the number of platforms
+                # it cleared, which is what makes "clean" a claim rather
+                # than an absence.
                 st.markdown("##### 👤 Social & Platform Footprint  ·  `🟢 Clean`")
-                st.caption(f"No exposed accounts found for @{handle_target} across probed platforms.")
+                if fp_probed:
+                    st.caption(
+                        f"No exposed accounts found for @{handle_target} "
+                        f"across {fp_probed} platforms probed."
+                    )
+                else:
+                    st.caption(f"No exposed accounts found for @{handle_target} across probed platforms.")
         with c2:
             st.markdown("##### 🖼️ Public Media & Avatars")
             found_avatars = False

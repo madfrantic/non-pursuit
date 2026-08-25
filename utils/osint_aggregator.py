@@ -44,8 +44,13 @@ def _normalize_result(module: str, result: Any) -> Dict[str, Any]:
             # available in the dedicated Footprint page.
             if module == "footprint":
                 confirmed = footprint_scanner.discoveries(result, confident_only=False)
+                # `probed` is how many platforms were actually contacted.
+                # Without it the UI can report "0 findings" but not
+                # whether that came from 52 checks or 678, which is the
+                # difference between a thin answer and a thorough one.
                 return {"module": module, "status": STATUS_SUCCESS if confirmed else STATUS_EMPTY,
-                        "records": confirmed, "count": len(confirmed)}
+                        "records": confirmed, "count": len(confirmed),
+                        "probed": len(result)}
             if module == "email":
                 findings = email_scanner.exposure_findings(result)
                 return {
@@ -72,13 +77,21 @@ def _normalize_result(module: str, result: Any) -> Dict[str, Any]:
     return normalized
 
 
-async def _run_footprint(handle: str) -> list:
-    """Scan handle across WhatsMyName dataset with resilient error handling."""
+async def _run_footprint(handle: str, deep: bool = True) -> list:
+    """Scan handle across WhatsMyName dataset with resilient error handling.
+
+    `deep` picks the site list: the full catalogue (678 platforms, NSFW
+    excluded) or the curated fast subset (52). Both are real scans that
+    return real findings -- the subset is the same probe against fewer
+    platforms, not a weaker or simulated one. The online runtime takes
+    the subset so that it returns actual results within a few seconds
+    instead of returning nothing at all.
+    """
     if not handle:
         return []
     try:
         dataset, _ = await asyncio.to_thread(wmn_dataset.ensure_dataset, config.WMN_DATASET_PATH, False, config.FOOTPRINT_TIMEOUT_SECONDS)
-        sites = wmn_dataset.select_sites(dataset, deep=True)
+        sites = wmn_dataset.select_sites(dataset, deep=deep)
         results = await footprint_scanner._scan(handle, sites, config.FOOTPRINT_CONCURRENCY, config.FOOTPRINT_TIMEOUT_SECONDS, None, config.FOOTPRINT_PER_HOST_CONCURRENCY)
         # Ensure we always return a list
         return results if isinstance(results, list) else []
@@ -89,15 +102,20 @@ async def _run_footprint(handle: str) -> list:
         _log.error("Footprint scan failed: %s", exc)
         return []  # Return empty list instead of exception object
 
-async def _skipped_footprint() -> Dict[str, Any]:
-    """The handle sweep as reported when the runtime declined to run it.
+
+async def _skipped_footprint(reason: str = "live_scanning_disabled") -> Dict[str, Any]:
+    """The handle sweep as reported when it was never run.
 
     Returned instead of a bare [] so that the "we never looked" case
-    survives all the way to the UI. The sweep is ~3k outbound requests
-    against one handle; that is disabled on the shared online runtime by
-    policy, which is a different thing from the sweep running and finding
-    nothing. Callers must not treat this as a clean result -- there is no
-    result.
+    survives all the way to the UI: an empty list normalises to
+    STATUS_EMPTY, which is indistinguishable from a handle that was swept
+    and came back clean. Callers must not treat this as a clean result --
+    there is no result.
+
+    Reached only on the hosted demo build, where live_scanning_enabled()
+    is False: that host serves many visitors from one IP, so scanning on
+    behalf of a stranger is the thing it must not do. A local install
+    always scans, at one depth or the other.
     """
     return {
         "module": "footprint",
@@ -105,7 +123,8 @@ async def _skipped_footprint() -> Dict[str, Any]:
         "records": [],
         "count": 0,
         "checks": [],
-        "skipped_reason": "passive_only",
+        "probed": 0,
+        "skipped_reason": reason,
     }
 
 
@@ -142,9 +161,27 @@ async def _run_email(email: str) -> Dict[str, Any]:
         return {**empty, "status": STATUS_UNAVAILABLE}
 
 
-async def run_full_osint_sweep(profile_data: Dict[str, Any], passive_only: bool = False) -> Dict[str, Any]:
+async def run_full_osint_sweep(
+    profile_data: Dict[str, Any],
+    passive_only: bool = False,
+    footprint_enabled: bool = True,
+) -> Dict[str, Any]:
     """
     Execute all passive OSINT modules concurrently.
+
+    Two separate footprint knobs, because they used to be one and that
+    conflated "scan less" with "do not scan":
+
+    - `passive_only` picks the *depth*. True runs the curated 52-site
+      list, False the full 678. Both are real scans returning real hits.
+    - `footprint_enabled` is the on/off switch, and False is the only
+      thing that produces STATUS_SKIPPED. It exists for the hosted demo
+      build alone (runtime_mode.live_scanning_enabled()), where probing
+      on behalf of an anonymous visitor from a shared IP is the actual
+      hazard. Previously `passive_only` did both jobs, so every local
+      install sitting in the default online runtime got no footprint
+      results at all -- for a restriction that only ever applied to the
+      shared host.
     """
     full_name = profile_data.get("name", "").strip()
     handle = profile_data.get("handle", "").strip()
@@ -167,15 +204,14 @@ async def run_full_osint_sweep(profile_data: Dict[str, Any], passive_only: bool 
     github_task = scan_github(handle)
     infrastructure_task = scan_infrastructure(domain)
     
-    # In passive-only mode (cloud), we skip the heavy WhatsMyName footprint
-    # scan. It reports STATUS_SKIPPED rather than an empty list: an empty
-    # list is indistinguishable from a handle that was swept and came back
-    # clean, and the dossier duly rendered "🟢 Clean -- No exposed accounts
-    # found" for a scan that never ran. See _skipped_footprint.
-    if passive_only:
+    # Off only where scanning for a stranger is the hazard (the shared
+    # demo host). Everywhere else it runs for real, at the depth
+    # passive_only selects. See _skipped_footprint for why the off case
+    # is a status rather than an empty list.
+    if not footprint_enabled:
         footprint_task = _skipped_footprint()
     else:
-        footprint_task = _run_footprint(handle)
+        footprint_task = _run_footprint(handle, deep=not passive_only)
         
     email_task = _run_email(email)
 
@@ -192,6 +228,11 @@ async def run_full_osint_sweep(profile_data: Dict[str, Any], passive_only: bool 
             raw_results,
         )
     )
+
+    # Which site list actually ran, recorded next to the findings. The
+    # panel says so on screen: "12 findings across 678 platforms" is a
+    # result a reader can weigh, "12 findings" is not.
+    fp_result["depth"] = "fast" if passive_only else "deep"
 
     results = {
         "sec": sec_result,
@@ -259,6 +300,8 @@ async def run_full_osint_sweep(profile_data: Dict[str, Any], passive_only: bool 
                 "status": fp_result.get("status", STATUS_UNAVAILABLE),
                 "records": fp_result.get("records", []),
                 "count": fp_result.get("count", 0),
+                "probed": fp_result.get("probed", 0),
+                "depth": fp_result.get("depth"),
             },
             "email": {
                 "module": "email",

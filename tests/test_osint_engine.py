@@ -336,65 +336,93 @@ class TestFECContributorMatching:
         assert result["screened"] == 3
 
 
-# --- the skipped handle sweep -----------------------------------------
+# --- footprint depth vs. footprint off --------------------------------
+# These were one flag. `passive_only` meant both "scan fewer sites" and
+# "scan nothing", so every local install in the default online runtime
+# got no footprint results at all -- enforcing a restriction that only
+# ever applied to the shared demo host.
 
-def _passive_sweep():
-    """A sweep with every network module stubbed, run passive_only."""
-    empty = {"status": STATUS_EMPTY, "records": [], "count": 0}
-    with patch("osint_aggregator.scan_sec", new=AsyncMock(return_value=empty)), \
-         patch("osint_aggregator.scan_courtlistener", new=AsyncMock(return_value=empty)), \
-         patch("osint_aggregator.scan_fec", new=AsyncMock(return_value=empty)), \
-         patch("osint_aggregator.scan_github", new=AsyncMock(return_value=empty)), \
+_EMPTY = {"status": STATUS_EMPTY, "records": [], "count": 0}
+
+
+def _sweep(footprint_mock, **kwargs):
+    """Run a sweep with every network module stubbed out."""
+    with patch("osint_aggregator.scan_sec", new=AsyncMock(return_value=_EMPTY)), \
+         patch("osint_aggregator.scan_courtlistener", new=AsyncMock(return_value=_EMPTY)), \
+         patch("osint_aggregator.scan_fec", new=AsyncMock(return_value=_EMPTY)), \
+         patch("osint_aggregator.scan_github", new=AsyncMock(return_value=_EMPTY)), \
          patch("osint_aggregator.scan_infrastructure", new=AsyncMock(
              return_value={"status": STATUS_EMPTY, "certificates": [], "domain_info": {}})), \
-         patch("osint_aggregator._run_email", new=AsyncMock(
-             return_value={"module": "email", "status": STATUS_EMPTY,
-                           "records": [], "count": 0, "checks": []})):
-        return run(run_full_osint_sweep(
-            {"name": "Jane Doe", "handle": "janedoe", "domain": "", "state": "NY"},
-            passive_only=True,
-        ))
-
-
-def test_the_online_runtime_reports_the_handle_sweep_as_skipped_not_empty():
-    """The false negative this status exists to prevent.
-
-    passive_only skips the handle sweep entirely. It used to return a
-    bare [], which normalised to STATUS_EMPTY -- indistinguishable from a
-    handle that was swept and came back clean -- and the dossier rendered
-    "🟢 Clean, no exposed accounts found" for a scan that never ran.
-    """
-    sweep = _passive_sweep()
-    assert sweep["footprint"]["status"] == STATUS_SKIPPED
-    assert sweep["footprint"]["status"] != STATUS_EMPTY
-    assert sweep["footprint"]["skipped_reason"] == "passive_only"
-    # Survives into the vectors table the UI actually reads.
-    assert sweep["vectors"]["footprint"]["status"] == STATUS_SKIPPED
-
-
-def test_a_skipped_sweep_is_not_counted_as_an_available_vector():
-    assert _passive_sweep()["summary"]["vectors_available"] == 0
-
-
-def test_the_desktop_runtime_still_reports_a_genuinely_clean_handle_as_empty():
-    """The distinction has to cut both ways -- a real sweep that finds
-    nothing must stay STATUS_EMPTY, or the skipped state means nothing."""
-    empty = {"status": STATUS_EMPTY, "records": [], "count": 0}
-    with patch("osint_aggregator.scan_sec", new=AsyncMock(return_value=empty)), \
-         patch("osint_aggregator.scan_courtlistener", new=AsyncMock(return_value=empty)), \
-         patch("osint_aggregator.scan_fec", new=AsyncMock(return_value=empty)), \
-         patch("osint_aggregator.scan_github", new=AsyncMock(return_value=empty)), \
-         patch("osint_aggregator.scan_infrastructure", new=AsyncMock(
-             return_value={"status": STATUS_EMPTY, "certificates": [], "domain_info": {}})), \
-         patch("osint_aggregator._run_footprint", new=AsyncMock(return_value=[])), \
+         patch("osint_aggregator._run_footprint", footprint_mock), \
          patch("osint_aggregator._run_email", new=AsyncMock(
              return_value={"module": "email", "status": STATUS_EMPTY,
                            "records": [], "count": 0, "checks": []})):
         sweep = run(run_full_osint_sweep(
             {"name": "Jane Doe", "handle": "janedoe", "domain": "", "state": "NY"},
-            passive_only=False,
+            **kwargs,
         ))
+    return sweep
+
+
+def _hit(platform="GitHub"):
+    return {"platform": platform, "confidence": "CONFIRMED",
+            "target_identifier": "janedoe",
+            "profile_url": f"https://example.com/{platform}"}
+
+
+def test_the_online_runtime_scans_for_real_at_the_shallow_depth():
+    """The regression this whole change exists for: passive_only must
+    still produce findings, not an empty panel."""
+    probe = AsyncMock(return_value=[_hit("GitHub"), _hit("Reddit")])
+    sweep = _sweep(probe, passive_only=True)
+
+    assert probe.await_args.kwargs["deep"] is False
+    assert sweep["footprint"]["status"] == STATUS_SUCCESS
+    assert sweep["footprint"]["count"] == 2
+    assert sweep["footprint"]["depth"] == "fast"
+    assert sweep["summary"]["total_exposures"] == 2
+
+
+def test_the_desktop_runtime_scans_the_full_catalogue():
+    probe = AsyncMock(return_value=[_hit()])
+    sweep = _sweep(probe, passive_only=False)
+
+    assert probe.await_args.kwargs["deep"] is True
+    assert sweep["footprint"]["depth"] == "deep"
+
+
+def test_only_disabling_live_scanning_produces_a_skipped_sweep():
+    """STATUS_SKIPPED is now reachable from exactly one condition -- the
+    hosted demo build. If passive_only could reach it again, the online
+    runtime would silently stop returning results."""
+    probe = AsyncMock(return_value=[_hit()])
+    sweep = _sweep(probe, passive_only=True, footprint_enabled=False)
+
+    probe.assert_not_awaited()
+    assert sweep["footprint"]["status"] == STATUS_SKIPPED
+    assert sweep["footprint"]["skipped_reason"] == "live_scanning_disabled"
+    assert sweep["vectors"]["footprint"]["status"] == STATUS_SKIPPED
+    assert sweep["summary"]["vectors_available"] == 0
+
+
+def test_a_real_sweep_that_finds_nothing_is_empty_not_skipped():
+    """The distinction has to cut both ways, or the skipped state means
+    nothing: a scan that ran and cleared the handle is STATUS_EMPTY."""
+    sweep = _sweep(AsyncMock(return_value=[]), passive_only=True)
     assert sweep["footprint"]["status"] == STATUS_EMPTY
+    assert sweep["footprint"]["status"] != STATUS_SKIPPED
+
+
+def test_the_probed_count_survives_to_the_ui():
+    """"0 findings" reads completely differently off 52 platforms than
+    off 678, so the panel needs the denominator."""
+    probed = [_hit("GitHub")] + [
+        {"platform": f"Site{i}", "confidence": "NOT_FOUND"} for i in range(51)
+    ]
+    sweep = _sweep(AsyncMock(return_value=probed), passive_only=True)
+    assert sweep["footprint"]["count"] == 1
+    assert sweep["footprint"]["probed"] == 52
+    assert sweep["vectors"]["footprint"]["probed"] == 52
 
 
 def test_the_dossier_grades_a_skipped_vector_as_not_scanned():
@@ -404,5 +432,4 @@ def test_the_dossier_grades_a_skipped_vector_as_not_scanned():
     skipped = {"module": "footprint", "status": STATUS_SKIPPED, "records": [], "count": 0}
     assert master._osint_status(skipped) == "skipped"
     assert master._OSINT_STATUS_LABELS["skipped"] == "⚪ Not Scanned"
-    # The clean case must still grade clean.
     assert master._osint_status({"status": STATUS_EMPTY, "records": [], "count": 0}) == "low"
