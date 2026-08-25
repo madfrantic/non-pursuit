@@ -368,8 +368,8 @@ hr {{ border: 0; height: 1px; background: linear-gradient(90deg,
 }}
 
 /* ---------- controls ------------------------------------------------ */
-/* Buttons carry whole sentences of instruction ("Save & execute master
-   recon", "Download complete audit trail"). Tracked uppercase mono at
+/* Buttons carry whole sentences of instruction ("Execute master recon",
+   "Download complete audit trail"). Tracked uppercase mono at
    12px made the longest, most important controls in the app the hardest
    thing on the page to read. */
 .stButton > button, .stDownloadButton > button, .stFormSubmitButton > button {{
@@ -386,6 +386,39 @@ hr {{ border: 0; height: 1px; background: linear-gradient(90deg,
 .stFormSubmitButton > button:hover {{
   border-color: var(--np-brass);
   background: rgba(212,175,55,.1);
+}}
+/* Primary buttons are filled with the pinned primaryColor (brass,
+   #D4AF37) and Streamlit paints their label in textColor -- bone,
+   #E8E2D4. That is light-on-light at 1.63:1, under a fifth of the 4.5:1
+   AA minimum, and it hit every primary control in the app: "Execute
+   Master Recon", "Download Intelligence Dossier", "Open Intelligence
+   Dossier", "All data (.json)". Black on brass is 9.99:1.
+
+   Streamlit puts the label inside a nested <p>/<div>, so the colour has
+   to be forced through to the descendants as well -- setting it on the
+   button alone leaves the child element with its inherited bone. */
+[data-testid="stBaseButton-primary"],
+[data-testid="stBaseButton-primaryFormSubmit"] {{
+  color: #000000 !important;
+}}
+[data-testid="stBaseButton-primary"] *,
+[data-testid="stBaseButton-primaryFormSubmit"] * {{
+  color: inherit !important;
+}}
+/* The generic hover rule above drops any button's background to 10%
+   brass. On a secondary button that is a tint over the page; on a
+   primary one it replaces the solid fill with the navy behind it, which
+   would leave the black label at 1.35:1 -- worse than the bug being
+   fixed. Primary keeps its fill on hover and moves the border instead. */
+[data-testid="stBaseButton-primary"]:hover,
+[data-testid="stBaseButton-primary"]:focus,
+[data-testid="stBaseButton-primary"]:active,
+[data-testid="stBaseButton-primaryFormSubmit"]:hover,
+[data-testid="stBaseButton-primaryFormSubmit"]:focus,
+[data-testid="stBaseButton-primaryFormSubmit"]:active {{
+  background: var(--np-brass) !important;
+  border-color: var(--np-bone) !important;
+  color: #000000 !important;
 }}
 [data-testid="stTextInput"] input, [data-testid="stNumberInput"] input,
 [data-testid="stTextArea"] textarea, [data-testid="stDateInput"] input {{

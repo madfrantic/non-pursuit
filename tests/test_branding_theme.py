@@ -421,3 +421,54 @@ def test_nothing_makes_the_collapse_control_unclickable():
     # this element; a rule of ours forcing it either way would fight that.
     header_block = _rule(css, '[data-testid="stSidebarHeader"] {')
     assert "pointer-events" not in header_block
+
+
+# --- primary-button contrast -----------------------------------------
+
+def _contrast(fg, bg):
+    """WCAG 2.x relative-luminance contrast ratio between two hex colours."""
+    def _lum(hex_colour):
+        hex_colour = hex_colour.lstrip("#")
+        channels = [int(hex_colour[i:i + 2], 16) / 255 for i in (0, 2, 4)]
+        channels = [c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4
+                    for c in channels]
+        return 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2]
+    a, b = _lum(fg), _lum(bg)
+    return (max(a, b) + 0.05) / (min(a, b) + 0.05)
+
+
+def test_the_default_primary_button_label_would_be_unreadable():
+    """Why the rule below has to exist.
+
+    Streamlit fills a type="primary" button with primaryColor and paints
+    its label in textColor. Both are pinned in .streamlit/config.toml,
+    and brass-on-bone lands at 1.63:1 -- under a fifth of the 4.5:1 AA
+    floor. If a future palette change ever made that pairing legible on
+    its own, this test fails and the override can be reconsidered.
+    """
+    assert _contrast(theme.BONE, theme.BRASS) < 4.5
+
+
+def test_primary_buttons_are_overridden_to_black_ink():
+    """The fix: black on brass is ~10:1.
+
+    Asserted against the stylesheet rather than a rendered page because
+    the bug is invisible to every other kind of test -- nothing raises
+    when a label is merely unreadable.
+    """
+    css = theme.css()
+    for testid in ("stBaseButton-primary", "stBaseButton-primaryFormSubmit"):
+        assert f'[data-testid="{testid}"]' in css, testid
+    assert _contrast("#000000", theme.BRASS) >= 7.0
+
+
+def test_primary_buttons_keep_their_fill_on_hover():
+    """The generic button hover drops the background to 10% brass. On a
+    primary button that would swap the solid fill for the navy page
+    behind it and strand the black label at 1.35:1 -- so primary must
+    restate its own background in the hover rule."""
+    css = theme.css()
+    hover_block = re.search(
+        r'\[data-testid="stBaseButton-primary"\]:hover.*?\}', css, re.S)
+    assert hover_block, "primary buttons have no hover rule of their own"
+    assert "--np-brass" in hover_block.group(0)

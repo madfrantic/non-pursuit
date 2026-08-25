@@ -729,6 +729,23 @@ elif mode == "📬 Opt-Out Tracker":
     st.title("📈 Campaign tracker")
     st.caption("Every request logged from the other tools shows up here, with its response deadline tracked automatically.")
 
+    # Storage honesty, at the top where it cannot be scrolled past. The
+    # predicate is persistent_storage_enabled(), NOT is_cloud_deployment():
+    # the latter is the sidebar's recon-shape toggle and has no bearing on
+    # where anything is written. Demo mode is what routes db_path() to a
+    # per-session temp file, so it is the only state in which a tracked
+    # deadline really does evaporate -- and warning a desktop user who
+    # merely switched to passive scanning would be false in the other
+    # direction. One st.warning, no container or divider around it: the
+    # amber block is already the loudest element on the page.
+    if not runtime_mode.persistent_storage_enabled():
+        st.warning(
+            "**This campaign is temporary.** Requests logged here live only in this browser "
+            "session and are discarded when you close the tab — nothing is written to disk on "
+            "the hosted build. Export your data before you leave to keep a copy you control.",
+            icon="⚠️",
+        )
+
     with st.expander("Log a request manually", icon="➕"):
         with st.form("manual_log_form"):
             m_broker = st.text_input("Broker / recipient name")
@@ -770,52 +787,67 @@ elif mode == "📬 Opt-Out Tracker":
         c2.metric("Overdue", overdue_count)
         c3.metric("Complete", sum(1 for r in requests_list if r["status"] == "Complete"))
 
-        export_cols = st.columns(4)
         open_requests = [r for r in requests_list if r["status"] != "Complete"]
         # Each download_button returns True only on the run where it was
         # clicked, so these collect into one counter increment rather than
         # four near-identical record_event calls.
         _exported = False
+
+        # Collected as a list so the row allocates exactly as many columns
+        # as there are buttons to put in them. The .ics export is
+        # conditional on there being an open request, and under the old
+        # fixed st.columns(4) its absence left a hole in the middle of the
+        # row rather than closing the row up.
+        #
+        # JSON leads, and is the only primary: it is the sole lossless
+        # format here -- .ics is deadlines, .csv is the requests table,
+        # .pdf is a read-only summary -- so on the ephemeral build it is
+        # the one export that actually preserves a campaign.
+        exports = [
+            {
+                "label": "All data (.json)",
+                "icon": "📥",
+                "data": build_json_export(
+                    requests_list,
+                    exposure_store.get_all_checks(runtime_mode.db_path()),
+                    discovered_accounts.get_all(runtime_mode.db_path()),
+                ),
+                "file_name": "non_pursuit_data_export.json",
+                "mime": "application/json",
+                "type": "primary",
+                "help": "Everything tracked in this app -- campaign requests and self-search history -- as one portable file you control.",
+            },
+        ]
         if open_requests:
-            _exported |= export_cols[0].download_button(
-                "Calendar (.ics)",
-                icon="📅",
-                data=build_ics(requests_list),
-                file_name="non_pursuit_deadlines.ics",
-                mime="text/calendar",
-                width="stretch",
+            exports.append({
+                "label": "Calendar (.ics)",
+                "icon": "📅",
+                "data": build_ics(requests_list),
+                "file_name": "non_pursuit_deadlines.ics",
+                "mime": "text/calendar",
+            })
+        exports.append({
+            "label": "Requests (.csv)",
+            "icon": "📋",
+            "data": build_csv_export(requests_list),
+            "file_name": "non_pursuit_requests.csv",
+            "mime": "text/csv",
+            "help": "Just the campaign requests table, for opening in a spreadsheet.",
+        })
+        exports.append({
+            "label": "Report (.pdf)",
+            "icon": "📄",
+            "data": build_pdf_export(requests_list, exposure_store.get_all_checks(runtime_mode.db_path())),
+            "file_name": "non_pursuit_report.pdf",
+            "mime": "application/pdf",
+            "help": "A readable summary to hand to someone else -- an attorney, a family member helping out.",
+        })
+
+        for _column, _spec in zip(st.columns(len(exports)), exports):
+            _exported |= _column.download_button(
+                _spec["label"], width="stretch",
+                **{k: v for k, v in _spec.items() if k != "label"},
             )
-        _exported |= export_cols[1].download_button(
-            "All data (.json)",
-            icon="📥",
-            data=build_json_export(
-                requests_list,
-                exposure_store.get_all_checks(runtime_mode.db_path()),
-                discovered_accounts.get_all(runtime_mode.db_path()),
-            ),
-            file_name="non_pursuit_data_export.json",
-            mime="application/json",
-            width="stretch",
-            help="Everything tracked in this app -- campaign requests and self-search history -- as one portable file you control.",
-        )
-        _exported |= export_cols[2].download_button(
-            "Requests (.csv)",
-            icon="📋",
-            data=build_csv_export(requests_list),
-            file_name="non_pursuit_requests.csv",
-            mime="text/csv",
-            width="stretch",
-            help="Just the campaign requests table, for opening in a spreadsheet.",
-        )
-        _exported |= export_cols[3].download_button(
-            "Report (.pdf)",
-            icon="📄",
-            data=build_pdf_export(requests_list, exposure_store.get_all_checks(runtime_mode.db_path())),
-            file_name="non_pursuit_report.pdf",
-            mime="application/pdf",
-            width="stretch",
-            help="A readable summary to hand to someone else -- an attorney, a family member helping out.",
-        )
         if _exported:
             usage_metrics.record_event(config.USAGE_METRICS_DB_PATH, usage_metrics.EXPORT_DOWNLOADED)
 

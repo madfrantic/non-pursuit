@@ -3,7 +3,7 @@ import asyncio
 from typing import Any, Dict
 
 from applog import get_logger
-from osint import STATUS_SUCCESS, STATUS_UNAVAILABLE, STATUS_EMPTY
+from osint import STATUS_SUCCESS, STATUS_UNAVAILABLE, STATUS_EMPTY, STATUS_SKIPPED
 from osint.sec import scan_sec
 from osint.courtlistener import scan_courtlistener
 from osint.fec import scan_fec
@@ -89,6 +89,26 @@ async def _run_footprint(handle: str) -> list:
         _log.error("Footprint scan failed: %s", exc)
         return []  # Return empty list instead of exception object
 
+async def _skipped_footprint() -> Dict[str, Any]:
+    """The handle sweep as reported when the runtime declined to run it.
+
+    Returned instead of a bare [] so that the "we never looked" case
+    survives all the way to the UI. The sweep is ~3k outbound requests
+    against one handle; that is disabled on the shared online runtime by
+    policy, which is a different thing from the sweep running and finding
+    nothing. Callers must not treat this as a clean result -- there is no
+    result.
+    """
+    return {
+        "module": "footprint",
+        "status": STATUS_SKIPPED,
+        "records": [],
+        "count": 0,
+        "checks": [],
+        "skipped_reason": "passive_only",
+    }
+
+
 async def _run_email(email: str) -> Dict[str, Any]:
     """Scan email through passive OSINT vectors with resilient error handling.
 
@@ -147,11 +167,13 @@ async def run_full_osint_sweep(profile_data: Dict[str, Any], passive_only: bool 
     github_task = scan_github(handle)
     infrastructure_task = scan_infrastructure(domain)
     
-    # In passive-only mode (cloud), we skip the heavy WhatsMyName footprint scan
+    # In passive-only mode (cloud), we skip the heavy WhatsMyName footprint
+    # scan. It reports STATUS_SKIPPED rather than an empty list: an empty
+    # list is indistinguishable from a handle that was swept and came back
+    # clean, and the dossier duly rendered "🟢 Clean -- No exposed accounts
+    # found" for a scan that never ran. See _skipped_footprint.
     if passive_only:
-        async def _mock_footprint():
-            return []
-        footprint_task = _mock_footprint()
+        footprint_task = _skipped_footprint()
     else:
         footprint_task = _run_footprint(handle)
         

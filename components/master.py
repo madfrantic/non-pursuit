@@ -36,6 +36,10 @@ _OSINT_STATUS_LABELS = {
     "medium": "🟡 Medium",
     "low": "🟢 Low",
     "unavailable": "⚪ Unavailable",
+    # A module the runtime declined to run. Without its own label a
+    # skipped vector fell through to "🟢 Low", which is the false
+    # negative this status exists to prevent.
+    "skipped": "⚪ Not Scanned",
 }
 
 def _greeting_name(profile):
@@ -103,6 +107,10 @@ def _osint_profile():
 def _osint_status(result):
     if result.get("status") == "unavailable":
         return "unavailable"
+    # Before the count test below: a skipped module has a count of 0 and
+    # would otherwise be graded "low", i.e. clean.
+    if result.get("status") == "skipped":
+        return "skipped"
     count = result.get("count", result.get("cert_count", 0))
     if count > 3:
         return "high"
@@ -178,7 +186,16 @@ def _render_osint_records(result, key_prefix="", identifier_hint="", limit=None)
                     "vector", "category", "filing_type", "filing_date", "date", "court", "docket_number", "repository", "recipient", "amount", "issuer", "registrar", "target_identifier", "reason", "breach", "description"
                 ) if record.get(key)
             )
-            confidence = record.get("confidence")
+            # Sources disagree on case. The live scanners emit "CONFIRMED"
+            # (holehe_scanner, email_scanner, footprint_scanner all define
+            # the verdicts as uppercase constants); the presentation
+            # fixtures in utils/presentation_mode.py spell every row
+            # "confirmed". Both the badge lookup and the `actionable` test
+            # below were case-sensitive, so every mock finding rendered
+            # stripped of its verdict badge AND of its worklist button --
+            # a populated panel that looked inert. Normalising here fixes
+            # all sources at once rather than editing one fixture file.
+            confidence = str(record.get("confidence") or "").upper()
             badge = _OSINT_CONFIDENCE_BADGES.get(confidence)
             with st.container(border=True):
                 st.markdown(f"**{label}**" + (f" · {badge}" if badge else ""))
@@ -533,7 +550,7 @@ def render(brokers_df):
     email_valid = profile.get("email", "").strip() and "@" in profile.get("email", "")
 
     # Execution button or automatic trigger from profile save
-    trigger_recon = st.button("⚡ Execute Master Recon", type="primary", use_container_width=True)
+    trigger_recon = st.button("📄 Generate Dossier", type="primary", use_container_width=True)
     if not trigger_recon and st.session_state.get("profile_saved_auto_scan"):
         trigger_recon = True
         st.session_state.profile_saved_auto_scan = False
@@ -592,7 +609,7 @@ def render(brokers_df):
                     "Your profile is complete. Run the recon sweep to build the dossier — "
                     "email exposures, platform footprint, and public records in one pass."
                 )
-                st.caption("Use **⚡ Execute Master Recon** above to begin.")
+                st.caption("Use **📄 Generate Dossier** above to begin.")
         return
 
     summary = findings.get("summary", {})
@@ -625,15 +642,28 @@ def render(brokers_df):
     if "summary" in findings and isinstance(findings["summary"], dict):
         findings["summary"]["total_exposures"] = total_exposure
     
+    # The same false negative the footprint panel below guards against,
+    # in metric form: a skipped sweep leaves fp_count at 0, which
+    # _severity grades "🟢 Low / Clean" -- a clean bill of health for
+    # handles nothing ever looked at. An em dash reports the count as
+    # unknown, which is what it is.
+    fp_skipped = fp_vector.get("status") == "skipped"
+    handles_value = "—" if fp_skipped else fp_count
+    handles_tier = ("⚪", "Not scanned") if fp_skipped else _severity(fp_count, 2)
+    # The headline metric sums seven vectors, so a skipped one makes it an
+    # undercount -- and "🟢 Low / Clean" is the most reassuring thing on
+    # the page to be wrong about. It reports the scan as partial instead.
+    score_tier = ("⚪", "Partial scan") if fp_skipped else _severity(total_exposure, 2)
+
     # One severity vocabulary across all four tiles. Severity rides in the
     # delta slot with delta_color="off" so it reads as a neutral label --
     # Streamlit's default green/red arrows would say "improving/worsening",
     # which is not what a standing exposure count means.
     c1, c2, c3, c4 = st.columns(4)
     for column, label, value, tier in (
-        (c1, "Exposure score", total_exposure, _severity(total_exposure, 2)),
+        (c1, "Exposure score", total_exposure, score_tier),
         (c2, "Email exposures", email_count, _severity(email_count, 1)),
-        (c3, "Exposed handles", fp_count, _severity(fp_count, 2)),
+        (c3, "Exposed handles", handles_value, handles_tier),
         # Deletion targets is a workload, not a risk -- how many brokers are
         # on file to demand against. It gets a count and no severity colour.
         (c4, "Deletion targets", len(brokers_df), None),
@@ -692,6 +722,19 @@ def render(brokers_df):
                                 chk_conf = chk.get("confidence", "UNKNOWN")
                                 chk_icon = "🟢" if chk_conf in ("CONFIRMED", "POSSIBLE") else "⚪"
                                 st.caption(f"{chk_icon} **{chk_plat}**: `{chk_conf}`")
+            # Checked before the handle branch, and before the clean
+            # branch below, because when the runtime declined to run the
+            # sweep that is the whole reason there is nothing here --
+            # telling the operator to go enter a handle would just set
+            # them up for the same empty panel a second time.
+            elif fp_vector.get("status") == "skipped":
+                st.markdown("##### 👤 Social & Platform Footprint  ·  `⚪ Not Scanned (Disabled in Cloud)`")
+                st.warning(
+                    "**This is not a clean result — nothing was checked.** The full handle sweep "
+                    "is disabled on the online runtime: it is a heavy outbound scan and this build "
+                    "shares one IP with every other visitor."
+                )
+                st.caption("Switch to 🖥️ Desktop runtime in the sidebar to run it for real.")
             elif not handle_target:
                 st.markdown("##### 👤 Social & Platform Footprint  ·  `⚪ Not Available`")
                 st.warning("No username / handle provided. Enter your handle on the 👤 Identity Profile page to scan for social platform footprints.")
@@ -759,7 +802,7 @@ def render(brokers_df):
             st.markdown("##### 📧 Email & Identity Exposure  ·  `⚪ Not Scanned`")
             st.caption(
                 f"No sweep has run for {DEMO_TARGET_EMAIL} yet — press "
-                "**⚡ Execute Master Recon** above, or enter your own address "
+                "**📄 Generate Dossier** above, or enter your own address "
                 "on the 👤 Identity Profile page."
             )
         elif email_vector.get("status") == "unavailable":

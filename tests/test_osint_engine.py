@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, patch
 import aiohttp
 import pytest
 
-from osint import STATUS_EMPTY, STATUS_SUCCESS, STATUS_UNAVAILABLE
+from osint import STATUS_EMPTY, STATUS_SKIPPED, STATUS_SUCCESS, STATUS_UNAVAILABLE
 from osint import courtlistener, fec, github, infrastructure, sec
 from osint_aggregator import run_full_osint_sweep
 
@@ -334,3 +334,75 @@ class TestFECContributorMatching:
         result = self._scan(raw)
         assert result["count"] == len(result["records"]) == 2
         assert result["screened"] == 3
+
+
+# --- the skipped handle sweep -----------------------------------------
+
+def _passive_sweep():
+    """A sweep with every network module stubbed, run passive_only."""
+    empty = {"status": STATUS_EMPTY, "records": [], "count": 0}
+    with patch("osint_aggregator.scan_sec", new=AsyncMock(return_value=empty)), \
+         patch("osint_aggregator.scan_courtlistener", new=AsyncMock(return_value=empty)), \
+         patch("osint_aggregator.scan_fec", new=AsyncMock(return_value=empty)), \
+         patch("osint_aggregator.scan_github", new=AsyncMock(return_value=empty)), \
+         patch("osint_aggregator.scan_infrastructure", new=AsyncMock(
+             return_value={"status": STATUS_EMPTY, "certificates": [], "domain_info": {}})), \
+         patch("osint_aggregator._run_email", new=AsyncMock(
+             return_value={"module": "email", "status": STATUS_EMPTY,
+                           "records": [], "count": 0, "checks": []})):
+        return run(run_full_osint_sweep(
+            {"name": "Jane Doe", "handle": "janedoe", "domain": "", "state": "NY"},
+            passive_only=True,
+        ))
+
+
+def test_the_online_runtime_reports_the_handle_sweep_as_skipped_not_empty():
+    """The false negative this status exists to prevent.
+
+    passive_only skips the handle sweep entirely. It used to return a
+    bare [], which normalised to STATUS_EMPTY -- indistinguishable from a
+    handle that was swept and came back clean -- and the dossier rendered
+    "🟢 Clean, no exposed accounts found" for a scan that never ran.
+    """
+    sweep = _passive_sweep()
+    assert sweep["footprint"]["status"] == STATUS_SKIPPED
+    assert sweep["footprint"]["status"] != STATUS_EMPTY
+    assert sweep["footprint"]["skipped_reason"] == "passive_only"
+    # Survives into the vectors table the UI actually reads.
+    assert sweep["vectors"]["footprint"]["status"] == STATUS_SKIPPED
+
+
+def test_a_skipped_sweep_is_not_counted_as_an_available_vector():
+    assert _passive_sweep()["summary"]["vectors_available"] == 0
+
+
+def test_the_desktop_runtime_still_reports_a_genuinely_clean_handle_as_empty():
+    """The distinction has to cut both ways -- a real sweep that finds
+    nothing must stay STATUS_EMPTY, or the skipped state means nothing."""
+    empty = {"status": STATUS_EMPTY, "records": [], "count": 0}
+    with patch("osint_aggregator.scan_sec", new=AsyncMock(return_value=empty)), \
+         patch("osint_aggregator.scan_courtlistener", new=AsyncMock(return_value=empty)), \
+         patch("osint_aggregator.scan_fec", new=AsyncMock(return_value=empty)), \
+         patch("osint_aggregator.scan_github", new=AsyncMock(return_value=empty)), \
+         patch("osint_aggregator.scan_infrastructure", new=AsyncMock(
+             return_value={"status": STATUS_EMPTY, "certificates": [], "domain_info": {}})), \
+         patch("osint_aggregator._run_footprint", new=AsyncMock(return_value=[])), \
+         patch("osint_aggregator._run_email", new=AsyncMock(
+             return_value={"module": "email", "status": STATUS_EMPTY,
+                           "records": [], "count": 0, "checks": []})):
+        sweep = run(run_full_osint_sweep(
+            {"name": "Jane Doe", "handle": "janedoe", "domain": "", "state": "NY"},
+            passive_only=False,
+        ))
+    assert sweep["footprint"]["status"] == STATUS_EMPTY
+
+
+def test_the_dossier_grades_a_skipped_vector_as_not_scanned():
+    """_osint_status counts records, and a skipped module has none -- so
+    without its own branch it graded "low", the green/clean tier."""
+    from components import master
+    skipped = {"module": "footprint", "status": STATUS_SKIPPED, "records": [], "count": 0}
+    assert master._osint_status(skipped) == "skipped"
+    assert master._OSINT_STATUS_LABELS["skipped"] == "⚪ Not Scanned"
+    # The clean case must still grade clean.
+    assert master._osint_status({"status": STATUS_EMPTY, "records": [], "count": 0}) == "low"
