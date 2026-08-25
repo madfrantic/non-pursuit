@@ -1,0 +1,741 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NON-PURSUIT — Case File</title>
+<style>
+/* ============================================================
+   NON-PURSUIT — DEMO DAY DECK
+   70s Special Investigations Unit / classified dossier
+   ============================================================ */
+
+:root{
+  --navy:      #0B1325;   
+  --slate:     #152238;   
+  --slate-hi:  #1D2E4A;
+  --brass:     #D4AF37;   
+  --brass-dim: #8A7328;
+  --bone:      #E8E2D4;
+  --bone-dim:  #9AA3B2;
+  --evidence:  #FF3B30;   
+  --ink:       #060A14;
+
+  --serif: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua",
+           Georgia, "Times New Roman", serif;
+  --mono:  "Courier New", Courier, "Nimbus Mono PS", monospace;
+
+  --ease: cubic-bezier(.22,.61,.36,1);
+}
+
+*{ box-sizing:border-box; margin:0; padding:0; }
+
+html,body{
+  height:100%;
+  background:var(--ink);
+  color:var(--bone);
+  font-family:var(--serif);
+  overflow:hidden;
+  -webkit-font-smoothing:antialiased;
+}
+
+#deck{
+  position:fixed; inset:0;
+  background:
+    radial-gradient(120% 90% at 50% 0%,  #16233C 0%, var(--navy) 45%, #060A14 100%),
+    var(--navy);
+}
+
+.slide{
+  position:absolute; inset:0;
+  display:flex; flex-direction:column;
+  align-items:center; justify-content:center;
+  padding:clamp(28px,6vh,72px) clamp(28px,7vw,120px);
+  opacity:0; visibility:hidden;
+  transform:translate3d(0,26px,0) scale(.994);
+  transition:opacity .62s var(--ease), transform .78s var(--ease), visibility 0s linear .78s;
+  will-change:opacity, transform;
+}
+.slide.active{
+  opacity:1; visibility:visible;
+  transform:translate3d(0,0,0) scale(1);
+  transition:opacity .62s var(--ease), transform .78s var(--ease), visibility 0s linear 0s;
+  z-index:2;
+}
+.slide.leaving{ transform:translate3d(0,-22px,0) scale(.988); }
+
+.wrap{ width:min(1180px,100%); }
+
+.rv{
+  opacity:0;
+  transform:translate3d(0,18px,0);
+  transition:opacity .7s var(--ease), transform .7s var(--ease);
+}
+.slide.live .rv{ opacity:1; transform:translate3d(0,0,0); }
+.slide.live .rv{ transition-delay:calc(var(--d,0) * 1ms); }
+
+.typed{
+  font-family:var(--mono);
+  font-size:clamp(11px,1.15vw,15px);
+  letter-spacing:.34em;
+  text-transform:uppercase;
+  color:var(--brass);
+  min-height:1.6em;
+  white-space:nowrap;
+  overflow:hidden;
+  text-shadow:0 0 14px rgba(212,175,55,.32);
+}
+.typed .caret{
+  display:inline-block;
+  width:.62em; height:1.05em;
+  margin-left:.16em;
+  background:var(--brass);
+  vertical-align:-.16em;
+  animation:blink 1.05s steps(1) infinite;
+  box-shadow:0 0 12px rgba(212,175,55,.6);
+}
+@keyframes blink{ 0%,49%{opacity:1} 50%,100%{opacity:0} }
+
+.rule{
+  height:1px; width:100%;
+  background:linear-gradient(90deg, var(--brass) 0%, rgba(212,175,55,.16) 55%, transparent 100%);
+  margin:22px 0 30px;
+  transform-origin:left center;
+}
+.slide.live .rule{ animation:draw .9s var(--ease) .2s both; }
+@keyframes draw{ from{transform:scaleX(0)} to{transform:scaleX(1)} }
+
+.label{
+  font-family:var(--mono);
+  font-size:clamp(10px,.86vw,12px);
+  letter-spacing:.3em;
+  text-transform:uppercase;
+  color:var(--bone-dim);
+}
+.label b{ color:var(--brass); font-weight:400; }
+
+h1{
+  font-family:var(--serif);
+  font-weight:400;
+  font-size:clamp(58px,10.6vw,178px);
+  line-height:.9;
+  letter-spacing:.015em;
+  color:var(--brass);
+  text-shadow:0 2px 0 rgba(0,0,0,.5), 0 0 62px rgba(212,175,55,.22);
+}
+h2{
+  font-family:var(--serif);
+  font-weight:400;
+  font-size:clamp(34px,5.1vw,74px);
+  line-height:1.02;
+  letter-spacing:.005em;
+  color:var(--bone);
+}
+.body{
+  font-family:var(--serif);
+  font-size:clamp(15px,1.32vw,20px);
+  line-height:1.62;
+  color:var(--bone-dim);
+  max-width:56ch;
+}
+
+#s1 .wrap{ text-align:left; }
+#s1 h1 span{ display:block; }
+.tagline{
+  font-family:var(--serif);
+  font-size:clamp(22px,3.1vw,46px);
+  color:var(--bone);
+  margin-top:26px;
+  letter-spacing:.01em;
+}
+.stamp{
+  position:absolute;
+  right:clamp(28px,7vw,120px);
+  top:clamp(70px,16vh,170px);
+  border:2px solid rgba(255,59,48,.62);
+  color:rgba(255,59,48,.78);
+  font-family:var(--mono);
+  font-size:clamp(11px,1.1vw,15px);
+  letter-spacing:.24em;
+  padding:11px 17px;
+  transform:rotate(-9deg);
+  text-transform:uppercase;
+  box-shadow:0 0 26px rgba(255,59,48,.12) inset;
+}
+
+.hero-metric{
+  font-family:var(--serif);
+  font-size:clamp(110px,20vw,300px);
+  line-height:.94;
+  color:var(--evidence);
+  letter-spacing:-.02em;
+  text-shadow:0 0 78px rgba(255,59,48,.30), 0 3px 0 rgba(0,0,0,.55);
+  font-variant-numeric:tabular-nums;
+}
+.hero-metric sup{
+  font-size:.34em; vertical-align:.72em; margin-left:.04em; letter-spacing:0;
+}
+.metric-cap{
+  font-family:var(--mono);
+  font-size:clamp(12px,1.22vw,17px);
+  letter-spacing:.3em;
+  text-transform:uppercase;
+  color:var(--bone);
+  margin-top:22px;
+}
+.stat-row{
+  display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(190px,1fr));
+  gap:1px;
+  margin-top:42px;
+  background:rgba(212,175,55,.16);
+  border:1px solid rgba(212,175,55,.16);
+}
+.stat{
+  background:var(--slate);
+  padding:20px 22px;
+}
+.stat .n{
+  font-family:var(--serif);
+  font-size:clamp(28px,3.3vw,46px);
+  color:var(--brass);
+  line-height:1;
+  font-variant-numeric:tabular-nums;
+}
+.stat .t{
+  font-family:var(--mono);
+  font-size:clamp(9.5px,.82vw,11.5px);
+  letter-spacing:.2em;
+  text-transform:uppercase;
+  color:var(--bone-dim);
+  margin-top:10px;
+  line-height:1.5;
+}
+
+.versus{
+  display:grid;
+  grid-template-columns:1fr auto 1fr;
+  align-items:stretch;
+  gap:clamp(18px,3vw,46px);
+  margin-top:8px;
+}
+.col{
+  border:1px solid rgba(212,175,55,.2);
+  background:linear-gradient(180deg, rgba(21,34,56,.92), rgba(11,19,37,.92));
+  padding:clamp(20px,2.4vw,34px);
+}
+.col.dead{
+  border-color:rgba(154,163,178,.2);
+  background:linear-gradient(180deg, rgba(16,22,36,.7), rgba(8,12,22,.7));
+}
+.col h3{
+  font-family:var(--mono);
+  font-weight:400;
+  font-size:clamp(11px,1.05vw,14px);
+  letter-spacing:.26em;
+  text-transform:uppercase;
+  margin-bottom:18px;
+}
+.col.dead h3{ color:var(--bone-dim); }
+.col.live h3{ color:var(--brass); }
+.col ul{ list-style:none; }
+.col li{
+  font-family:var(--serif);
+  font-size:clamp(15px,1.42vw,21px);
+  line-height:1.45;
+  padding:11px 0 11px 24px;
+  border-bottom:1px solid rgba(255,255,255,.05);
+  position:relative;
+}
+.col li:last-child{ border-bottom:0; }
+.col li::before{
+  position:absolute; left:0; top:11px;
+  font-family:var(--mono);
+  font-size:.8em;
+}
+.col.dead li{ color:var(--bone-dim); }
+.col.dead li::before{ content:"×"; color:rgba(255,59,48,.7); }
+.col.live li{ color:var(--bone); }
+.col.live li::before{ content:"▸"; color:var(--brass); }
+.vs{
+  display:flex; align-items:center; justify-content:center;
+  font-family:var(--mono);
+  font-size:clamp(11px,1vw,13px);
+  letter-spacing:.22em;
+  color:var(--brass-dim);
+  writing-mode:vertical-rl;
+  text-orientation:mixed;
+}
+.statute{
+  margin-top:34px;
+  border-left:3px solid var(--brass);
+  background:rgba(212,175,55,.06);
+  padding:18px 24px;
+  display:flex; flex-wrap:wrap; align-items:baseline; gap:16px 26px;
+}
+.statute .code{
+  font-family:var(--mono);
+  font-size:clamp(15px,1.62vw,24px);
+  letter-spacing:.12em;
+  color:var(--brass);
+  text-shadow:0 0 20px rgba(212,175,55,.3);
+}
+.statute .gloss{
+  font-family:var(--serif);
+  font-size:clamp(14px,1.28vw,19px);
+  color:var(--bone-dim);
+  flex:1 1 24ch; min-width:0;
+}
+.clock{
+  flex:0 0 auto;
+  font-family:var(--mono);
+  font-size:clamp(12px,1.1vw,15px);
+  letter-spacing:.2em;
+  color:var(--evidence);
+  margin-left:auto;
+  white-space:nowrap;
+}
+
+#s4 .wrap{ display:flex; flex-direction:column; align-items:center; }
+.reveal-head{ text-align:center; margin-bottom:clamp(14px,2.4vh,26px); }
+.frame{
+  position:relative;
+  width:min(980px,88vw);
+  height:min(60vh,760px);
+  overflow:hidden;
+  background:var(--ink);
+  border:1px solid rgba(212,175,55,.42);
+  box-shadow:
+    0 0 0 1px rgba(0,0,0,.6),
+    0 0 60px rgba(212,175,55,.18),
+    0 0 150px rgba(212,175,55,.10),
+    0 40px 90px rgba(0,0,0,.6);
+}
+.slide.live .frame{ animation:glow 5.5s ease-in-out infinite alternate; }
+@keyframes glow{
+  from{ box-shadow:0 0 0 1px rgba(0,0,0,.6), 0 0 48px rgba(212,175,55,.14), 0 0 130px rgba(212,175,55,.07), 0 40px 90px rgba(0,0,0,.6); }
+  to  { box-shadow:0 0 0 1px rgba(0,0,0,.6), 0 0 78px rgba(212,175,55,.30), 0 0 190px rgba(212,175,55,.16), 0 40px 90px rgba(0,0,0,.6); }
+}
+
+.frame::before,.frame::after{
+  content:""; position:absolute; width:26px; height:26px; z-index:10;
+  border:2px solid var(--brass); pointer-events:none;
+}
+.frame::before{ top:8px; left:8px; border-right:0; border-bottom:0; }
+.frame::after { bottom:8px; right:8px; border-left:0; border-top:0; }
+
+.caption{
+  font-family:var(--mono);
+  font-size:clamp(10px,.9vw,12.5px);
+  letter-spacing:.26em; text-transform:uppercase;
+  color:var(--bone-dim);
+  margin-top:16px; text-align:center;
+}
+
+.road{
+  display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(240px,1fr));
+  gap:clamp(16px,2.4vw,34px);
+  margin-top:clamp(30px,4.6vh,52px);
+}
+.node{
+  border-top:2px solid var(--brass);
+  padding-top:20px;
+  position:relative;
+}
+.node::before{
+  content:""; position:absolute; top:-7px; left:0;
+  width:12px; height:12px; background:var(--brass);
+  box-shadow:0 0 18px rgba(212,175,55,.7);
+}
+.node .ph{
+  font-family:var(--mono); font-size:clamp(9.5px,.84vw,11.5px);
+  letter-spacing:.28em; text-transform:uppercase; color:var(--brass-dim);
+}
+.node .ttl{
+  font-family:var(--serif); font-size:clamp(21px,2.1vw,31px);
+  color:var(--bone); margin:10px 0 12px; line-height:1.16;
+}
+.node .txt{
+  font-family:var(--serif); font-size:clamp(14px,1.18vw,17px);
+  line-height:1.56; color:var(--bone-dim);
+}
+.closer{
+  margin-top:clamp(30px,5vh,56px);
+  font-family:var(--serif); font-style:italic;
+  font-size:clamp(20px,2.5vw,38px);
+  color:var(--brass);
+  text-shadow:0 0 40px rgba(212,175,55,.2);
+}
+
+.hud{
+  position:fixed; z-index:40;
+  font-family:var(--mono);
+  font-size:clamp(9.5px,.82vw,11.5px);
+  letter-spacing:.26em; text-transform:uppercase;
+  color:rgba(154,163,178,.62);
+  pointer-events:none;
+  user-select:none;
+}
+#hud-tl{ top:clamp(20px,3.2vh,34px); left:clamp(28px,7vw,120px); }
+#hud-tr{ top:clamp(20px,3.2vh,34px); right:clamp(28px,7vw,120px); text-align:right; }
+#hud-bl{ bottom:clamp(20px,3.2vh,34px); left:clamp(28px,7vw,120px); }
+#hud-br{ bottom:clamp(20px,3.2vh,34px); right:clamp(28px,7vw,120px); display:flex; align-items:center; gap:10px; }
+#hud-tl b, #hud-tr b, #hud-br b{ color:var(--brass); font-weight:400; }
+.dots{ display:flex; gap:7px; }
+.dot{
+  width:22px; height:2px; background:rgba(154,163,178,.26);
+  transition:background .4s var(--ease), box-shadow .4s var(--ease);
+}
+.dot.on{ background:var(--brass); box-shadow:0 0 12px rgba(212,175,55,.7); }
+#hint{
+  transition:opacity .8s var(--ease);
+  animation:pulse 2.6s ease-in-out infinite;
+}
+#hint.gone{ opacity:0; }
+@keyframes pulse{ 0%,100%{opacity:.42} 50%{opacity:.92} }
+
+.fx{ position:fixed; inset:0; pointer-events:none; z-index:60; }
+
+#scanlines{
+  background:repeating-linear-gradient(
+    180deg,
+    rgba(0,0,0,.36) 0px,
+    rgba(0,0,0,.36) 1px,
+    transparent 1px,
+    transparent 3px);
+  opacity:.55;
+  mix-blend-mode:multiply;
+}
+#rollbar{
+  background:linear-gradient(180deg, transparent, rgba(212,175,55,.055) 45%, rgba(255,255,255,.045) 50%, rgba(212,175,55,.055) 55%, transparent);
+  height:34%;
+  animation:roll 9s linear infinite;
+  will-change:transform;
+}
+@keyframes roll{
+  from{ transform:translate3d(0,-140%,0); }
+  to  { transform:translate3d(0,420%,0); }
+}
+#grain{
+  opacity:.15;
+  mix-blend-mode:overlay;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='220' height='220' filter='url(%23n)' opacity='.55'/%3E%3C/svg%3E");
+  animation:jitter .5s steps(3) infinite;
+}
+@keyframes jitter{
+  0%  { transform:translate3d(0,0,0); }
+  33% { transform:translate3d(-1.5%,1%,0); }
+  66% { transform:translate3d(1%,-1.5%,0); }
+  100%{ transform:translate3d(0,0,0); }
+}
+#vignette{
+  background:radial-gradient(120% 100% at 50% 45%, transparent 42%, rgba(0,0,0,.42) 78%, rgba(0,0,0,.86) 100%);
+}
+#flicker{
+  background:rgba(212,175,55,.02);
+  animation:flick 6.5s steps(1) infinite;
+}
+@keyframes flick{
+  0%,96%{ opacity:.35 } 97%{ opacity:.9 } 98%{ opacity:.2 } 99%{ opacity:.75 } 100%{ opacity:.35 }
+}
+
+@media (max-width:820px){
+  .versus{ grid-template-columns:1fr; }
+  .vs{ writing-mode:horizontal-tb; padding:6px 0; }
+  .stamp{ display:none; }
+}
+@media (prefers-reduced-motion:reduce){
+  *{ animation-duration:.01ms !important; animation-iteration-count:1 !important;
+     transition-duration:.12s !important; }
+}
+</style>
+</head>
+<body>
+
+<div id="deck">
+
+  <!-- ============ 01 — THE HOOK / ABOUT ME ============ -->
+  <section class="slide" id="s1">
+    <div class="stamp rv" style="--d:900">Case No. 1798-105</div>
+    <div class="wrap">
+      <div class="typed" data-type="&gt; INITIALIZING SECURE SESSION..."></div>
+      <div class="rule"></div>
+      <h1 class="rv" style="--d:340"><span>NON-</span><span>PURSUIT</span></h1>
+      <div class="tagline rv" style="--d:640">non-pursuit. the sovereign agent</div>
+      <div class="label rv" style="--d:820">
+        <br>OPERATOR: <b>JOHN CUENTAS</b> &nbsp;·&nbsp; AI OBJECTIVE: Building local, autonomous compliance systems
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 02 — THE GRIFT / PROBLEM STATEMENT ============ -->
+  <section class="slide" id="s2">
+    <div class="wrap">
+      <div class="typed" data-type="&gt; QUERYING BROKER REGISTRY // THE PROBLEM"></div>
+      <div class="rule"></div>
+      <div class="hero-metric rv" style="--d:280"><span data-count="99">0</span><sup>%</sup></div>
+      <div class="metric-cap rv" style="--d:420">Opt-out requests abandoned before completion</div>
+      <p class="body rv" style="--d:560; margin-top:22px">
+        <b>Target Audience: Everyday citizens.</b> The removal industry is built on fatigue. Every broker runs its own form, its own
+        verification loop, its own quiet re-listing. Give up once and you are back on the
+        market — and someone bills you monthly to watch it happen.
+      </p>
+      <div class="stat-row rv" style="--d:700">
+        <div class="stat"><div class="n"><span data-count="3">0</span>–<span data-count="4">0</span> MO</div>
+          <div class="t">Typical window before<br>scrubbed records reappear</div></div>
+        <div class="stat"><div class="n"><span data-count="30">0</span> DAYS</div>
+          <div class="t">Self-reported broker<br>processing time</div></div>
+        <div class="stat"><div class="n">$<span data-count="180">0</span>/YR</div>
+          <div class="t">Subscription cost of<br>renting your own privacy</div></div>
+        <div class="stat"><div class="n">∞</div>
+          <div class="t">Re-exposure cycles<br>sold back to you</div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 03 — THE ENGINE / SOLUTION & METRICS ============ -->
+  <section class="slide" id="s3">
+    <div class="wrap">
+      <div class="typed" data-type="&gt; LOADING ENFORCEMENT ENGINE // THE SOLUTION"></div>
+      <div class="rule"></div>
+      <h2 class="rv" style="--d:240">Statutory deadlines<br>beat subscription dashboards.</h2>
+      <div class="versus rv" style="--d:420">
+        <div class="col dead">
+          <h3>Subscription Dashboards</h3>
+          <ul>
+            <li>Requests sent on your behalf — with no legal weight</li>
+            <li>Progress bars instead of obligations</li>
+            <li>Your data mirrored onto their servers</li>
+            <li>Cancel, and the removals stop</li>
+          </ul>
+        </div>
+        <div class="vs">VERSUS</div>
+        <div class="col live">
+          <h3>Non-Pursuit</h3>
+          <ul>
+            <li>Binding deletion demands in your own name</li>
+            <li>A 45-day statutory clock the broker must answer</li>
+            <li>Runs locally — nothing leaves your machine</li>
+            <li><b>Metric: $180 saved/yr, 0 exposure</b></li>
+          </ul>
+        </div>
+      </div>
+      <div class="statute rv" style="--d:640">
+        <span class="code">CCPA § 1798.105</span>
+        <span class="gloss">Right to deletion — the business <em>shall</em> delete and direct its service providers to do the same.</span>
+        <span class="clock">▮ CLOCK: <span data-count="45">0</span> DAYS</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 04 — THE REVEAL / LIVE DEMO ============ -->
+  <section class="slide" id="s4">
+    <div class="wrap">
+      <div class="reveal-head">
+        <div class="typed" data-type="&gt; DECRYPTING EVIDENCE FILE 04 // LIVE DEMO"></div>
+      </div>
+      <div class="frame rv" style="--d:300">
+        <iframe width="100%" height="100%" style="position:absolute; top:0; left:0; z-index:5;" src="https://www.youtube.com/embed/pFBVIdp1SiY" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+      </div>
+      <div class="caption rv" style="--d:560">
+        Exhibit A &nbsp;·&nbsp; public_demo.mp4 &nbsp;·&nbsp; live build, local runtime
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 05 — THE FUTURE / ADOPTION ============ -->
+  <section class="slide" id="s5">
+    <div class="wrap">
+      <div class="typed" data-type="&gt; PROJECTING CASE TRAJECTORY // ADOPTION & ROADMAP"></div>
+      <div class="rule"></div>
+      <h2 class="rv" style="--d:220">The docket ahead.</h2>
+      <div class="road">
+        <div class="node rv" style="--d:420">
+          <div class="ph">Phase 01 — Testing</div>
+          <div class="ttl">Initial User Rollout</div>
+          <div class="txt">Testing the statutory letter engine with a core group of high-risk users to refine the 45-day enforcement tracking.</div>
+        </div>
+        <div class="node rv" style="--d:560">
+          <div class="ph">Phase 02 — Features</div>
+          <div class="ttl">CA DROP Program</div>
+          <div class="txt">Integrate directly as an authorized agent under California's Delete Request and Opt-out Platform for single-click sweeps.</div>
+        </div>
+        <div class="node rv" style="--d:700">
+          <div class="ph">Phase 03 — Scale</div>
+          <div class="ttl">Open-Source API</div>
+          <div class="txt">Release the compliance engine as a public library — making the broker registry, deadline math, and letter compiling accessible to all.</div>
+        </div>
+      </div>
+      <div class="closer rv" style="--d:880">Stop renting your privacy. Start enforcing it.</div>
+      <div class="label rv" style="--d:1000"><br><b>NON-PURSUIT</b> &nbsp;·&nbsp; the sovereign agent</div>
+    </div>
+  </section>
+
+</div>
+
+<!-- ---------- HUD ---------- -->
+<div class="hud" id="hud-tl">NON-PURSUIT &nbsp;//&nbsp; <b>CLASSIFIED DOSSIER</b></div>
+<div class="hud" id="hud-tr">FILE <b id="file-no">01</b> / 05</div>
+<div class="hud" id="hud-bl"><span id="stamp-time">--:--:--</span> &nbsp;·&nbsp; SIU TERMINAL 7</div>
+<div class="hud" id="hud-br">
+  <span id="hint">[ → ] ADVANCE</span>
+  <div class="dots" id="dots"></div>
+</div>
+
+<!-- ---------- FX layers ---------- -->
+<div class="fx" id="grain"></div>
+<div class="fx" id="scanlines"></div>
+<div class="fx" id="rollbar"></div>
+<div class="fx" id="flicker"></div>
+<div class="fx" id="vignette"></div>
+
+<script>
+(function(){
+  "use strict";
+
+  var slides  = Array.prototype.slice.call(document.querySelectorAll('.slide'));
+  var dotsBox = document.getElementById('dots');
+  var fileNo  = document.getElementById('file-no');
+  var hint    = document.getElementById('hint');
+  var reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var idx = 0, busy = false, touched = false;
+
+  /* ---- progress dots ---- */
+  slides.forEach(function(_, i){
+    var d = document.createElement('div');
+    d.className = 'dot';
+    dotsBox.appendChild(d);
+  });
+  var dots = Array.prototype.slice.call(dotsBox.children);
+
+  /* ---- typewriter ---- */
+  function type(el){
+    if(!el) return;
+    var raw = el.getAttribute('data-type') || '';
+    var tmp = document.createElement('div');
+    tmp.innerHTML = raw;
+    var text = tmp.textContent;
+
+    if(el._timer) clearInterval(el._timer);
+    el.textContent = '';
+    var caret = document.createElement('span');
+    caret.className = 'caret';
+    el.appendChild(caret);
+
+    if(reduced){ el.insertBefore(document.createTextNode(text), caret); return; }
+
+    var i = 0;
+    el._timer = setInterval(function(){
+      if(i >= text.length){ clearInterval(el._timer); el._timer = null; return; }
+      el.insertBefore(document.createTextNode(text.charAt(i++)), caret);
+    }, 26);
+  }
+
+  /* ---- number roll-up ---- */
+  function countUp(el){
+    var target = parseFloat(el.getAttribute('data-count'));
+    if(isNaN(target)) return;
+    if(reduced){ el.textContent = target; return; }
+    if(el._raf) cancelAnimationFrame(el._raf);
+    var dur = 1150, t0 = null;
+    function step(ts){
+      if(t0 === null) t0 = ts;
+      var p = Math.min((ts - t0) / dur, 1);
+      var e = 1 - Math.pow(1 - p, 4);           
+      el.textContent = Math.round(target * e);
+      if(p < 1){ el._raf = requestAnimationFrame(step); }
+      else { el.textContent = target; el._raf = null; }
+    }
+    el._raf = requestAnimationFrame(step);
+  }
+
+  /* ---- slide activation ---- */
+  function show(next, dir){
+    if(busy || next === idx || next < 0 || next >= slides.length) return;
+    busy = true;
+
+    var cur = slides[idx];
+    cur.classList.remove('live');
+    cur.classList.add('leaving');
+    cur.classList.remove('active');
+
+    idx = next;
+    var el = slides[idx];
+    el.classList.remove('leaving');
+    void el.offsetWidth;
+    el.classList.add('active');
+
+    requestAnimationFrame(function(){
+      requestAnimationFrame(function(){
+        el.classList.add('live');
+        type(el.querySelector('.typed'));
+        el.querySelectorAll('[data-count]').forEach(countUp);
+      });
+    });
+
+    dots.forEach(function(d,i){ d.classList.toggle('on', i === idx); });
+    fileNo.textContent = ('0' + (idx + 1)).slice(-2);
+
+    setTimeout(function(){ cur.classList.remove('leaving'); busy = false; }, 480);
+  }
+
+  function next(){ show(idx + 1, 1); }
+  function prev(){ show(idx - 1, -1); }
+
+  /* ---- input ---- */
+  document.addEventListener('keydown', function(e){
+    var k = e.key;
+    if(k === 'ArrowRight' || k === 'ArrowDown' || k === 'PageDown' || k === ' ' || k === 'Enter'){
+      e.preventDefault(); dismissHint(); next();
+    } else if(k === 'ArrowLeft' || k === 'ArrowUp' || k === 'PageUp' || k === 'Backspace'){
+      e.preventDefault(); dismissHint(); prev();
+    } else if(k === 'Home'){ e.preventDefault(); show(0); }
+    else if(k === 'End'){ e.preventDefault(); show(slides.length - 1); }
+    else if(k === 'f' || k === 'F'){
+      e.preventDefault();
+      if(document.fullscreenElement){ document.exitFullscreen(); }
+      else if(document.documentElement.requestFullscreen){ document.documentElement.requestFullscreen(); }
+    } else if(/^[1-5]$/.test(k)){ e.preventDefault(); dismissHint(); show(parseInt(k,10) - 1); }
+  });
+
+  document.addEventListener('click', function(e){
+    dismissHint();
+    (e.clientX < window.innerWidth * 0.22) ? prev() : next();
+  });
+
+  var tx = null;
+  document.addEventListener('touchstart', function(e){ tx = e.changedTouches[0].clientX; }, {passive:true});
+  document.addEventListener('touchend', function(e){
+    if(tx === null) return;
+    var dx = e.changedTouches[0].clientX - tx;
+    if(Math.abs(dx) > 46){ dismissHint(); (dx < 0) ? next() : prev(); }
+    tx = null;
+  }, {passive:true});
+
+  function dismissHint(){
+    if(touched) return;
+    touched = true;
+    hint.classList.add('gone');
+  }
+
+  function tick(){
+    var d = new Date();
+    var p = function(n){ return ('0' + n).slice(-2); };
+    document.getElementById('stamp-time').textContent =
+      d.getFullYear() + '-' + p(d.getMonth()+1) + '-' + p(d.getDate()) + '  ' +
+      p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds());
+  }
+  tick(); setInterval(tick, 1000);
+
+  slides[0].classList.add('active');
+  dots[0].classList.add('on');
+  requestAnimationFrame(function(){
+    slides[0].classList.add('live');
+    type(slides[0].querySelector('.typed'));
+    slides[0].querySelectorAll('[data-count]').forEach(countUp);
+  });
+})();
+</script>
+</body>
+</html>
