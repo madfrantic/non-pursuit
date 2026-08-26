@@ -8,8 +8,8 @@ import os
 import subprocess
 import shutil
 
-# Use BIO_ME02.pdf as requested
-PDF_PATH = "/home/b0t/Documents/PURSUIT/BIO_ME02.pdf"
+# Use BIO_ME05.pdf as requested
+PDF_PATH = "/home/b0t/Documents/PURSUIT/BIO_ME05.pdf"
 
 os.makedirs("assets/slides", exist_ok=True)
 os.makedirs("docs/assets/slides", exist_ok=True)
@@ -33,6 +33,17 @@ for idx, f in enumerate(raw_files, 1):
         os.rename(src, dst)
     shutil.copy2(dst, os.path.join("docs/assets/slides", f"slide-{idx:02d}.png"))
 
+# Ensure no extra slides beyond the extracted count remain
+for dir_path in ["assets/slides", "docs/assets/slides"]:
+    for f in os.listdir(dir_path):
+        if f.endswith(".png") and f.startswith("slide-"):
+            try:
+                num = int(f.replace("slide-", "").replace(".png", ""))
+                if num > len(raw_files):
+                    os.remove(os.path.join(dir_path, f))
+            except ValueError:
+                pass
+
 num_pdf_slides = len(raw_files)
 print(f"Extracted {num_pdf_slides} slides from {PDF_PATH}")
 
@@ -40,9 +51,9 @@ for logo in ["assets/logo_shield.png", "assets/logo_wordmark.png"]:
     if os.path.exists(logo):
         shutil.copy2(logo, os.path.join("docs", logo))
 
-video_slide_num = num_pdf_slides + 2
-app_slide_num = num_pdf_slides + 3
-total_deck_slides = app_slide_num
+video_slide_num = num_pdf_slides + 2  # Slide 09
+app_slide_num = num_pdf_slides + 3    # Slide 10
+total_deck_slides = app_slide_num      # 10 Total Slides
 
 html_template = f"""<!DOCTYPE html>
 <html lang="en">
