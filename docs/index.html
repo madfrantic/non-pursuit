@@ -277,6 +277,15 @@ html, body {
   letter-spacing: 0.08em;
 }
 
+.dossier-footer a {
+  color: inherit;
+  text-decoration: underline;
+}
+
+.dossier-footer a:hover {
+  color: var(--crimson);
+}
+
 /* Video Card Slide */
 .video-card {
   width: 100%;
@@ -296,14 +305,14 @@ html, body {
 .video-bar {
   background: #0F172A;
   border-bottom: 2px solid #1E293B;
-  padding: clamp(10px, 1.6vh, 16px) clamp(16px, 2vw, 28px);
+  padding: clamp(10px, 1.5vh, 15px) clamp(16px, 2vw, 26px);
   display: flex;
   align-items: center;
   justify-content: space-between;
   font-family: var(--mono);
-  font-size: clamp(13px, 1.3vw, 17px);
+  font-size: clamp(13px, 1.25vw, 16px);
   font-weight: 700;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.06em;
 }
 
 .video-bar .title {
@@ -313,16 +322,47 @@ html, body {
   gap: 12px;
 }
 
+.video-bar-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.video-nav-tab {
+  color: #94A3B8;
+  text-decoration: none;
+  background: #1E293B;
+  border: 1px solid #334155;
+  padding: 6px 14px;
+  border-radius: 4px;
+  font-size: clamp(11px, 1.05vw, 13px);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  transition: all 0.2s ease;
+  cursor: pointer;
+}
+
+.video-nav-tab:hover {
+  color: #FFF;
+  background: #334155;
+}
+
+.video-nav-tab.active {
+  color: #000;
+  background: var(--brass-light);
+  border-color: var(--brass-light);
+}
+
 .video-bar .ext-btn {
   color: #FFF;
   text-decoration: none;
   background: #DC2626;
   border: 1px solid #EF4444;
-  padding: 6px 18px;
+  padding: 6px 16px;
   border-radius: 4px;
-  font-size: clamp(12px, 1.1vw, 15px);
+  font-size: clamp(11px, 1.05vw, 13px);
   font-weight: 800;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.06em;
   transition: all 0.2s ease;
 }
 
@@ -520,6 +560,7 @@ html, body {
   #hud-bl { left: 12px; bottom: 10px; }
   #hud-br { right: 12px; bottom: 10px; }
   .intro-cards-row { grid-template-columns: 1fr; }
+  .video-bar { flex-direction: column; align-items: flex-start; gap: 8px; }
 }
 </style>
 </head>
@@ -645,17 +686,21 @@ html, body {
     </div>
   </section>
 
-  <!-- Slide 11: YouTube Video Demo -->
+  <!-- Slide 11: Official Demo Video -->
   <section class="slide" id="s11">
     <div class="video-card">
       <div class="video-bar">
         <div class="title">
           <span>📹</span>
-          <span>NON-PURSUIT // OFFICIAL DEMO VIDEO (youtu.be/V5qqb-L7ack)</span>
+          <span>DEMO VIDEO // NON-PURSUIT</span>
         </div>
-        <a href="https://youtu.be/V5qqb-L7ack" target="_blank" rel="noopener noreferrer" class="ext-btn">
-          ↗ Open on YouTube
-        </a>
+        <div class="video-bar-actions">
+          <span class="video-nav-tab active">▶ 1. Demo Video</span>
+          <a href="javascript:showSlide(11)" class="video-nav-tab">🎓 2. App Tutorial →</a>
+          <a href="https://youtu.be/V5qqb-L7ack" target="_blank" rel="noopener noreferrer" class="ext-btn">
+            ↗ Open on YouTube
+          </a>
+        </div>
       </div>
       <div class="video-body">
         <iframe 
@@ -668,8 +713,35 @@ html, body {
     </div>
   </section>
 
-  <!-- Slide 12: Live Streamlit App Launch & Call To Action -->
+  <!-- Slide 12: App Tutorial Video -->
   <section class="slide" id="s12">
+    <div class="video-card">
+      <div class="video-bar">
+        <div class="title">
+          <span>🎓</span>
+          <span>APP TUTORIAL // HOW NON-PURSUIT WORKS</span>
+        </div>
+        <div class="video-bar-actions">
+          <a href="javascript:showSlide(10)" class="video-nav-tab">← 📹 1. Demo Video</a>
+          <span class="video-nav-tab active">▶ 2. App Tutorial</span>
+          <a href="https://youtu.be/hFP6orcBl3I" target="_blank" rel="noopener noreferrer" class="ext-btn">
+            ↗ Open on YouTube
+          </a>
+        </div>
+      </div>
+      <div class="video-body">
+        <iframe 
+          src="https://www.youtube.com/embed/hFP6orcBl3I?rel=0" 
+          title="Non-Pursuit App Tutorial"
+          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" 
+          allowfullscreen>
+        </iframe>
+      </div>
+    </div>
+  </section>
+
+  <!-- Slide 13: Live Streamlit App Launch & Call To Action -->
+  <section class="slide" id="s13">
     <div class="cta-card">
       <div class="stamp green">STATUS: LIVE IN PRODUCTION</div>
       <h1 class="cta-title">non-pursuit. the sovereign engine</h1>
@@ -683,7 +755,9 @@ html, body {
       <div class="cta-links-row">
         <a href="https://non-pursuit.streamlit.app/" target="_blank">🌐 Live Streamlit App</a>
         <span>·</span>
-        <a href="https://youtu.be/V5qqb-L7ack" target="_blank">📹 YouTube Video Demo</a>
+        <a href="https://youtu.be/V5qqb-L7ack" target="_blank">📹 Demo Video</a>
+        <span>·</span>
+        <a href="https://youtu.be/hFP6orcBl3I" target="_blank">🎓 App Tutorial</a>
         <span>·</span>
         <a href="https://github.com/madfrantic/non-pursuit" target="_blank">💻 GitHub Repository</a>
         <span>·</span>
@@ -702,7 +776,7 @@ html, body {
 
 <div class="hud" id="hud-tr">
   <a href="https://non-pursuit.streamlit.app/" target="_blank" class="app-link">🚀 Open Live App</a>
-  <span>SLIDE <b id="slide-no">01</b> / <span id="total-slides">12</span></span>
+  <span>SLIDE <b id="slide-no">01</b> / <span id="total-slides">13</span></span>
 </div>
 
 <div class="hud" id="hud-bl">DEMO DAY // CUNY LaGCC &amp; PURSUIT</div>
