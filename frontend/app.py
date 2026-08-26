@@ -18,7 +18,7 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-API_DEFAULT = "http://127.0.0.1:8000"
+API_DEFAULT = "http://127.0.0.1:8001"
 REQUEST_TIMEOUT = (8, 300)
 HIGH_CONFIDENCE = 70.0
 
