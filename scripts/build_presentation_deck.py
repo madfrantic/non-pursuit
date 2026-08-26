@@ -2,19 +2,21 @@
 """
 Non-Pursuit Presentation Deck Generator
 Projector-optimized, ultra-legible, high-contrast slides
-Built from BIO_ME02.pdf + Dual Video Showcase (Demo & Tutorial) + Live App CTA
+Features Dual Side-by-Side Videos (Demo & Tutorial) on the Video Slide
 """
 import os
 import subprocess
 import shutil
 
+# Check if BIO_ME02.pdf or BIO_ME05.pdf is preferred
 PDF_PATH = "/home/b0t/Documents/PURSUIT/BIO_ME02.pdf"
+if not os.path.exists(PDF_PATH):
+    PDF_PATH = "/home/b0t/Documents/PURSUIT/BIO_ME05.pdf"
 
-# 1. Clean and re-extract slides from BIO_ME02.pdf
 os.makedirs("assets/slides", exist_ok=True)
 os.makedirs("docs/assets/slides", exist_ok=True)
 
-# Remove existing slide images
+# Clean existing PNGs
 for f in os.listdir("assets/slides"):
     if f.endswith(".png"):
         os.remove(os.path.join("assets/slides", f))
@@ -25,7 +27,6 @@ for f in os.listdir("docs/assets/slides"):
 # Render PDF pages to PNG
 subprocess.run(["pdftoppm", "-png", "-r", "150", PDF_PATH, "assets/slides/slide"], check=True)
 
-# Rename to consistent slide-01.png, slide-02.png etc.
 raw_files = sorted([f for f in os.listdir("assets/slides") if f.endswith(".png")])
 for idx, f in enumerate(raw_files, 1):
     src = os.path.join("assets/slides", f)
@@ -35,16 +36,14 @@ for idx, f in enumerate(raw_files, 1):
     shutil.copy2(dst, os.path.join("docs/assets/slides", f"slide-{idx:02d}.png"))
 
 num_pdf_slides = len(raw_files)
-print(f"Extracted and formatted {num_pdf_slides} slides from {PDF_PATH}")
+print(f"Extracted {num_pdf_slides} slides from {PDF_PATH}")
 
-# Copy logos if present
 for logo in ["assets/logo_shield.png", "assets/logo_wordmark.png"]:
     if os.path.exists(logo):
         shutil.copy2(logo, os.path.join("docs", logo))
 
-video1_slide_num = num_pdf_slides + 2
-video2_slide_num = num_pdf_slides + 3
-app_slide_num    = num_pdf_slides + 4
+video_slide_num = num_pdf_slides + 2
+app_slide_num = num_pdf_slides + 3
 total_deck_slides = app_slide_num
 
 html_template = f"""<!DOCTYPE html>
@@ -98,7 +97,7 @@ html, body {{
 .slide {{
   position: absolute; inset: 0;
   display: flex; flex-direction: column; align-items: center; justify-content: center;
-  padding: clamp(40px, 5vh, 70px) clamp(20px, 3vw, 40px);
+  padding: clamp(35px, 4.5vh, 65px) clamp(20px, 3vw, 40px);
   opacity: 0; visibility: hidden;
   transform: translate3d(0, 10px, 0) scale(0.99);
   transition: opacity .35s var(--ease), transform .4s var(--ease), visibility 0s linear .4s;
@@ -112,7 +111,6 @@ html, body {{
   z-index: 2;
 }}
 
-/* Slide image container for BIO_ME02.pdf slides */
 .slide-img-box {{
   width: 100%; height: 100%;
   max-width: 1440px; max-height: 86vh;
@@ -129,7 +127,7 @@ html, body {{
   box-shadow: 0 20px 60px rgba(0,0,0,0.9), 0 0 35px rgba(212,175,55,0.08);
 }}
 
-/* Projector-Optimized Dossier Card (BIO_ME Aesthetic) */
+/* Projector-Optimized Dossier Card */
 .dossier-card {{
   width: 100%;
   max-width: 1360px;
@@ -152,7 +150,6 @@ html, body {{
   background-size: 32px 32px;
 }}
 
-/* Dossier Header */
 .dossier-header {{
   display: flex;
   justify-content: space-between;
@@ -178,7 +175,6 @@ html, body {{
   margin-top: 2px;
 }}
 
-/* Classified Stamp */
 .stamp {{
   font-family: var(--mono);
   font-weight: 900;
@@ -203,7 +199,6 @@ html, body {{
   background: rgba(5,150,105,0.04);
 }}
 
-/* Large Projector-Legible Main Section */
 .intro-hero {{
   margin: clamp(16px, 2.5vh, 28px) 0;
 }}
@@ -235,7 +230,6 @@ html, body {{
   border-radius: 2px;
 }}
 
-/* Big Impact Cards Layout */
 .intro-cards-row {{
   display: grid;
   grid-template-columns: 1.6fr 1fr;
@@ -312,7 +306,6 @@ html, body {{
   color: #D1D5DB;
 }}
 
-/* Dossier Footer */
 .dossier-footer {{
   border-top: 2px solid #000;
   padding-top: clamp(10px, 1.5vh, 16px);
@@ -326,107 +319,98 @@ html, body {{
   letter-spacing: 0.08em;
 }}
 
-.dossier-footer a {{
-  color: inherit;
-  text-decoration: underline;
-}}
-
-.dossier-footer a:hover {{
-  color: var(--crimson);
-}}
-
-/* Video Card Slide */
-.video-card {{
+/* Dual Video Showcase Layout (Side-by-Side on the Video Slide) */
+.dual-video-wrapper {{
   width: 100%;
-  max-width: 1360px;
-  max-height: 86vh;
-  aspect-ratio: 16/9;
+  max-width: 1440px;
+  height: min(84vh, 720px);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}}
+
+.dual-video-header {{
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: #0C1222;
+  border: 2px solid #1E293B;
+  border-radius: 4px;
+  padding: 10px 20px;
+  font-family: var(--mono);
+  font-size: clamp(12px, 1.2vw, 15px);
+  font-weight: 700;
+  color: var(--brass-light);
+}}
+
+.dual-video-grid {{
+  flex: 1;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  min-height: 0;
+}}
+
+.video-box-card {{
   background: #080C16;
-  border: 3px solid #1E293B;
+  border: 2.5px solid #1E293B;
   border-radius: 6px;
-  box-shadow: 0 24px 70px rgba(0,0,0,0.95), 0 0 45px rgba(212,175,55,0.15);
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  position: relative;
+  box-shadow: 0 16px 50px rgba(0,0,0,0.9), 0 0 30px rgba(212,175,55,0.1);
 }}
 
-.video-bar {{
+.video-box-bar {{
   background: #0F172A;
-  border-bottom: 2px solid #1E293B;
-  padding: clamp(10px, 1.5vh, 15px) clamp(16px, 2vw, 26px);
+  border-bottom: 1.5px solid #1E293B;
+  padding: 8px 16px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   font-family: var(--mono);
-  font-size: clamp(13px, 1.25vw, 16px);
-  font-weight: 700;
-  letter-spacing: 0.06em;
+  font-size: clamp(11px, 1.1vw, 14px);
+  font-weight: 800;
 }}
 
-.video-bar .title {{
+.video-box-bar .tag-demo {{
   color: var(--brass-light);
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
 }}
 
-.video-bar-actions {{
+.video-box-bar .tag-tutorial {{
+  color: #38BDF8;
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
 }}
 
-.video-nav-tab {{
-  color: #94A3B8;
+.video-box-bar .ext-link {{
+  color: #FFF;
   text-decoration: none;
   background: #1E293B;
   border: 1px solid #334155;
-  padding: 6px 14px;
-  border-radius: 4px;
-  font-size: clamp(11px, 1.05vw, 13px);
+  padding: 4px 10px;
+  border-radius: 3px;
+  font-size: 11px;
   font-weight: 700;
-  letter-spacing: 0.06em;
-  transition: all 0.2s ease;
-  cursor: pointer;
-}}
-
-.video-nav-tab:hover {{
-  color: #FFF;
-  background: #334155;
-}}
-
-.video-nav-tab.active {{
-  color: #000;
-  background: var(--brass-light);
-  border-color: var(--brass-light);
-}}
-
-.video-bar .ext-btn {{
-  color: #FFF;
-  text-decoration: none;
-  background: #DC2626;
-  border: 1px solid #EF4444;
-  padding: 6px 16px;
-  border-radius: 4px;
-  font-size: clamp(11px, 1.05vw, 13px);
-  font-weight: 800;
-  letter-spacing: 0.06em;
   transition: all 0.2s ease;
 }}
 
-.video-bar .ext-btn:hover {{
-  background: #B91C1C;
-  transform: scale(1.03);
+.video-box-bar .ext-link:hover {{
+  background: var(--crimson);
+  border-color: var(--crimson);
 }}
 
-.video-body {{
+.video-box-frame {{
   flex: 1;
   position: relative;
   background: #000;
 }}
 
-.video-body iframe {{
+.video-box-frame iframe {{
   width: 100%;
   height: 100%;
   border: none;
@@ -533,7 +517,7 @@ html, body {{
   border-color: var(--crimson);
 }}
 
-/* Chrome HUD (Projector High-Legibility) */
+/* Chrome HUD */
 .hud {{
   position: fixed; z-index: 40;
   font-family: var(--mono);
@@ -601,7 +585,8 @@ html, body {{
 #prev-btn {{ left: 16px; }}
 #next-btn {{ right: 16px; }}
 
-@media (max-width: 768px) {{
+@media (max-width: 900px) {{
+  .dual-video-grid {{ grid-template-columns: 1fr; }}
   .nav-arrow {{ display: none; }}
   .hud {{ font-size: 9px; }}
   #hud-tl {{ left: 12px; top: 10px; }}
@@ -609,7 +594,6 @@ html, body {{
   #hud-bl {{ left: 12px; bottom: 10px; }}
   #hud-br {{ right: 12px; bottom: 10px; }}
   .intro-cards-row {{ grid-template-columns: 1fr; }}
-  .video-bar {{ flex-direction: column; align-items: flex-start; gap: 8px; }}
 }}
 </style>
 </head>
@@ -686,7 +670,7 @@ slide_items = []
 for i in range(1, num_pdf_slides + 1):
     slide_num = i + 1
     slide_path = f"assets/slides/slide-{i:02d}.png"
-    slide_items.append(f"""  <!-- Slide {slide_num:02d}: BIO_ME02.pdf Page {i:02d} -->
+    slide_items.append(f"""  <!-- Slide {slide_num:02d}: PDF Slide Page {i:02d} -->
   <section class="slide" id="s{slide_num}">
     <div class="slide-img-box">
       <img src="{slide_path}" alt="Non-Pursuit Presentation Slide {i}">
@@ -697,56 +681,56 @@ html_template += "\n".join(slide_items)
 
 html_template += f"""
 
-  <!-- Slide {video1_slide_num:02d}: Official Demo Video -->
-  <section class="slide" id="s{video1_slide_num}">
-    <div class="video-card">
-      <div class="video-bar">
-        <div class="title">
-          <span>📹</span>
-          <span>DEMO VIDEO // NON-PURSUIT</span>
-        </div>
-        <div class="video-bar-actions">
-          <span class="video-nav-tab active">▶ 1. Demo Video</span>
-          <a href="javascript:showSlide({video2_slide_num - 1})" class="video-nav-tab">🎓 2. App Tutorial →</a>
-          <a href="https://youtu.be/V5qqb-L7ack" target="_blank" rel="noopener noreferrer" class="ext-btn">
-            ↗ Open on YouTube
-          </a>
-        </div>
+  <!-- Slide {video_slide_num:02d}: Dual Video Showcase (Demo Video + App Tutorial) -->
+  <section class="slide" id="s{video_slide_num}">
+    <div class="dual-video-wrapper">
+      <div class="dual-video-header">
+        <div>📹 NON-PURSUIT // VIDEO SHOWCASE &amp; TUTORIAL</div>
+        <div>OFFICIAL DEMO + FULL APP WALKTHROUGH</div>
       </div>
-      <div class="video-body">
-        <iframe 
-          src="https://www.youtube.com/embed/V5qqb-L7ack?rel=0" 
-          title="Non-Pursuit Demo Video"
-          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" 
-          allowfullscreen>
-        </iframe>
-      </div>
-    </div>
-  </section>
+      
+      <div class="dual-video-grid">
+        <!-- Video 1: Official Demo Video -->
+        <div class="video-box-card">
+          <div class="video-box-bar">
+            <div class="tag-demo">
+              <span>▶</span>
+              <span>1. DEMO VIDEO (3 MIN)</span>
+            </div>
+            <a href="https://youtu.be/V5qqb-L7ack" target="_blank" rel="noopener noreferrer" class="ext-link">
+              ↗ youtu.be/V5qqb-L7ack
+            </a>
+          </div>
+          <div class="video-box-frame">
+            <iframe 
+              src="https://www.youtube.com/embed/V5qqb-L7ack?rel=0" 
+              title="Non-Pursuit Official Demo Video"
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" 
+              allowfullscreen>
+            </iframe>
+          </div>
+        </div>
 
-  <!-- Slide {video2_slide_num:02d}: App Tutorial Video -->
-  <section class="slide" id="s{video2_slide_num}">
-    <div class="video-card">
-      <div class="video-bar">
-        <div class="title">
-          <span>🎓</span>
-          <span>APP TUTORIAL // HOW NON-PURSUIT WORKS</span>
+        <!-- Video 2: App Tutorial & Walkthrough -->
+        <div class="video-box-card">
+          <div class="video-box-bar">
+            <div class="tag-tutorial">
+              <span>🎓</span>
+              <span>2. APP TUTORIAL &amp; WALKTHROUGH</span>
+            </div>
+            <a href="https://youtu.be/hFP6orcBl3I" target="_blank" rel="noopener noreferrer" class="ext-link">
+              ↗ youtu.be/hFP6orcBl3I
+            </a>
+          </div>
+          <div class="video-box-frame">
+            <iframe 
+              src="https://www.youtube.com/embed/hFP6orcBl3I?rel=0" 
+              title="Non-Pursuit App Tutorial & Walkthrough"
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" 
+              allowfullscreen>
+            </iframe>
+          </div>
         </div>
-        <div class="video-bar-actions">
-          <a href="javascript:showSlide({video1_slide_num - 1})" class="video-nav-tab">← 📹 1. Demo Video</a>
-          <span class="video-nav-tab active">▶ 2. App Tutorial</span>
-          <a href="https://youtu.be/hFP6orcBl3I" target="_blank" rel="noopener noreferrer" class="ext-btn">
-            ↗ Open on YouTube
-          </a>
-        </div>
-      </div>
-      <div class="video-body">
-        <iframe 
-          src="https://www.youtube.com/embed/hFP6orcBl3I?rel=0" 
-          title="Non-Pursuit App Tutorial"
-          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" 
-          allowfullscreen>
-        </iframe>
       </div>
     </div>
   </section>
@@ -893,4 +877,4 @@ for dst in destinations:
         f.write(html_template)
     print(f"Wrote {dst}")
 
-print(f"Successfully generated all presentation files with {total_deck_slides} total slides (BIO_ME02.pdf + Dual Videos)!")
+print(f"Successfully generated dual-video deck with {total_deck_slides} total slides!")

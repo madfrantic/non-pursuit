@@ -49,7 +49,7 @@ html, body {
 .slide {
   position: absolute; inset: 0;
   display: flex; flex-direction: column; align-items: center; justify-content: center;
-  padding: clamp(40px, 5vh, 70px) clamp(20px, 3vw, 40px);
+  padding: clamp(35px, 4.5vh, 65px) clamp(20px, 3vw, 40px);
   opacity: 0; visibility: hidden;
   transform: translate3d(0, 10px, 0) scale(0.99);
   transition: opacity .35s var(--ease), transform .4s var(--ease), visibility 0s linear .4s;
@@ -63,7 +63,6 @@ html, body {
   z-index: 2;
 }
 
-/* Slide image container for BIO_ME02.pdf slides */
 .slide-img-box {
   width: 100%; height: 100%;
   max-width: 1440px; max-height: 86vh;
@@ -80,7 +79,7 @@ html, body {
   box-shadow: 0 20px 60px rgba(0,0,0,0.9), 0 0 35px rgba(212,175,55,0.08);
 }
 
-/* Projector-Optimized Dossier Card (BIO_ME Aesthetic) */
+/* Projector-Optimized Dossier Card */
 .dossier-card {
   width: 100%;
   max-width: 1360px;
@@ -103,7 +102,6 @@ html, body {
   background-size: 32px 32px;
 }
 
-/* Dossier Header */
 .dossier-header {
   display: flex;
   justify-content: space-between;
@@ -129,7 +127,6 @@ html, body {
   margin-top: 2px;
 }
 
-/* Classified Stamp */
 .stamp {
   font-family: var(--mono);
   font-weight: 900;
@@ -154,7 +151,6 @@ html, body {
   background: rgba(5,150,105,0.04);
 }
 
-/* Large Projector-Legible Main Section */
 .intro-hero {
   margin: clamp(16px, 2.5vh, 28px) 0;
 }
@@ -186,7 +182,6 @@ html, body {
   border-radius: 2px;
 }
 
-/* Big Impact Cards Layout */
 .intro-cards-row {
   display: grid;
   grid-template-columns: 1.6fr 1fr;
@@ -263,7 +258,6 @@ html, body {
   color: #D1D5DB;
 }
 
-/* Dossier Footer */
 .dossier-footer {
   border-top: 2px solid #000;
   padding-top: clamp(10px, 1.5vh, 16px);
@@ -277,107 +271,98 @@ html, body {
   letter-spacing: 0.08em;
 }
 
-.dossier-footer a {
-  color: inherit;
-  text-decoration: underline;
-}
-
-.dossier-footer a:hover {
-  color: var(--crimson);
-}
-
-/* Video Card Slide */
-.video-card {
+/* Dual Video Showcase Layout (Side-by-Side on the Video Slide) */
+.dual-video-wrapper {
   width: 100%;
-  max-width: 1360px;
-  max-height: 86vh;
-  aspect-ratio: 16/9;
+  max-width: 1440px;
+  height: min(84vh, 720px);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.dual-video-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: #0C1222;
+  border: 2px solid #1E293B;
+  border-radius: 4px;
+  padding: 10px 20px;
+  font-family: var(--mono);
+  font-size: clamp(12px, 1.2vw, 15px);
+  font-weight: 700;
+  color: var(--brass-light);
+}
+
+.dual-video-grid {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  min-height: 0;
+}
+
+.video-box-card {
   background: #080C16;
-  border: 3px solid #1E293B;
+  border: 2.5px solid #1E293B;
   border-radius: 6px;
-  box-shadow: 0 24px 70px rgba(0,0,0,0.95), 0 0 45px rgba(212,175,55,0.15);
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  position: relative;
+  box-shadow: 0 16px 50px rgba(0,0,0,0.9), 0 0 30px rgba(212,175,55,0.1);
 }
 
-.video-bar {
+.video-box-bar {
   background: #0F172A;
-  border-bottom: 2px solid #1E293B;
-  padding: clamp(10px, 1.5vh, 15px) clamp(16px, 2vw, 26px);
+  border-bottom: 1.5px solid #1E293B;
+  padding: 8px 16px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   font-family: var(--mono);
-  font-size: clamp(13px, 1.25vw, 16px);
-  font-weight: 700;
-  letter-spacing: 0.06em;
+  font-size: clamp(11px, 1.1vw, 14px);
+  font-weight: 800;
 }
 
-.video-bar .title {
+.video-box-bar .tag-demo {
   color: var(--brass-light);
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
 }
 
-.video-bar-actions {
+.video-box-bar .tag-tutorial {
+  color: #38BDF8;
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
 }
 
-.video-nav-tab {
-  color: #94A3B8;
+.video-box-bar .ext-link {
+  color: #FFF;
   text-decoration: none;
   background: #1E293B;
   border: 1px solid #334155;
-  padding: 6px 14px;
-  border-radius: 4px;
-  font-size: clamp(11px, 1.05vw, 13px);
+  padding: 4px 10px;
+  border-radius: 3px;
+  font-size: 11px;
   font-weight: 700;
-  letter-spacing: 0.06em;
-  transition: all 0.2s ease;
-  cursor: pointer;
-}
-
-.video-nav-tab:hover {
-  color: #FFF;
-  background: #334155;
-}
-
-.video-nav-tab.active {
-  color: #000;
-  background: var(--brass-light);
-  border-color: var(--brass-light);
-}
-
-.video-bar .ext-btn {
-  color: #FFF;
-  text-decoration: none;
-  background: #DC2626;
-  border: 1px solid #EF4444;
-  padding: 6px 16px;
-  border-radius: 4px;
-  font-size: clamp(11px, 1.05vw, 13px);
-  font-weight: 800;
-  letter-spacing: 0.06em;
   transition: all 0.2s ease;
 }
 
-.video-bar .ext-btn:hover {
-  background: #B91C1C;
-  transform: scale(1.03);
+.video-box-bar .ext-link:hover {
+  background: var(--crimson);
+  border-color: var(--crimson);
 }
 
-.video-body {
+.video-box-frame {
   flex: 1;
   position: relative;
   background: #000;
 }
 
-.video-body iframe {
+.video-box-frame iframe {
   width: 100%;
   height: 100%;
   border: none;
@@ -484,7 +469,7 @@ html, body {
   border-color: var(--crimson);
 }
 
-/* Chrome HUD (Projector High-Legibility) */
+/* Chrome HUD */
 .hud {
   position: fixed; z-index: 40;
   font-family: var(--mono);
@@ -552,7 +537,8 @@ html, body {
 #prev-btn { left: 16px; }
 #next-btn { right: 16px; }
 
-@media (max-width: 768px) {
+@media (max-width: 900px) {
+  .dual-video-grid { grid-template-columns: 1fr; }
   .nav-arrow { display: none; }
   .hud { font-size: 9px; }
   #hud-tl { left: 12px; top: 10px; }
@@ -560,7 +546,6 @@ html, body {
   #hud-bl { left: 12px; bottom: 10px; }
   #hud-br { right: 12px; bottom: 10px; }
   .intro-cards-row { grid-template-columns: 1fr; }
-  .video-bar { flex-direction: column; align-items: flex-start; gap: 8px; }
 }
 </style>
 </head>
@@ -631,117 +616,117 @@ html, body {
   </section>
 
   <!-- Slides 02-10: BIO_ME02.pdf Pages 01-09 -->
-  <!-- Slide 02: BIO_ME02.pdf Page 01 -->
+  <!-- Slide 02: PDF Slide Page 01 -->
   <section class="slide" id="s2">
     <div class="slide-img-box">
       <img src="assets/slides/slide-01.png" alt="Non-Pursuit Presentation Slide 1">
     </div>
   </section>
-  <!-- Slide 03: BIO_ME02.pdf Page 02 -->
+  <!-- Slide 03: PDF Slide Page 02 -->
   <section class="slide" id="s3">
     <div class="slide-img-box">
       <img src="assets/slides/slide-02.png" alt="Non-Pursuit Presentation Slide 2">
     </div>
   </section>
-  <!-- Slide 04: BIO_ME02.pdf Page 03 -->
+  <!-- Slide 04: PDF Slide Page 03 -->
   <section class="slide" id="s4">
     <div class="slide-img-box">
       <img src="assets/slides/slide-03.png" alt="Non-Pursuit Presentation Slide 3">
     </div>
   </section>
-  <!-- Slide 05: BIO_ME02.pdf Page 04 -->
+  <!-- Slide 05: PDF Slide Page 04 -->
   <section class="slide" id="s5">
     <div class="slide-img-box">
       <img src="assets/slides/slide-04.png" alt="Non-Pursuit Presentation Slide 4">
     </div>
   </section>
-  <!-- Slide 06: BIO_ME02.pdf Page 05 -->
+  <!-- Slide 06: PDF Slide Page 05 -->
   <section class="slide" id="s6">
     <div class="slide-img-box">
       <img src="assets/slides/slide-05.png" alt="Non-Pursuit Presentation Slide 5">
     </div>
   </section>
-  <!-- Slide 07: BIO_ME02.pdf Page 06 -->
+  <!-- Slide 07: PDF Slide Page 06 -->
   <section class="slide" id="s7">
     <div class="slide-img-box">
       <img src="assets/slides/slide-06.png" alt="Non-Pursuit Presentation Slide 6">
     </div>
   </section>
-  <!-- Slide 08: BIO_ME02.pdf Page 07 -->
+  <!-- Slide 08: PDF Slide Page 07 -->
   <section class="slide" id="s8">
     <div class="slide-img-box">
       <img src="assets/slides/slide-07.png" alt="Non-Pursuit Presentation Slide 7">
     </div>
   </section>
-  <!-- Slide 09: BIO_ME02.pdf Page 08 -->
+  <!-- Slide 09: PDF Slide Page 08 -->
   <section class="slide" id="s9">
     <div class="slide-img-box">
       <img src="assets/slides/slide-08.png" alt="Non-Pursuit Presentation Slide 8">
     </div>
   </section>
-  <!-- Slide 10: BIO_ME02.pdf Page 09 -->
+  <!-- Slide 10: PDF Slide Page 09 -->
   <section class="slide" id="s10">
     <div class="slide-img-box">
       <img src="assets/slides/slide-09.png" alt="Non-Pursuit Presentation Slide 9">
     </div>
   </section>
 
-  <!-- Slide 11: Official Demo Video -->
+  <!-- Slide 11: Dual Video Showcase (Demo Video + App Tutorial) -->
   <section class="slide" id="s11">
-    <div class="video-card">
-      <div class="video-bar">
-        <div class="title">
-          <span>📹</span>
-          <span>DEMO VIDEO // NON-PURSUIT</span>
-        </div>
-        <div class="video-bar-actions">
-          <span class="video-nav-tab active">▶ 1. Demo Video</span>
-          <a href="javascript:showSlide(11)" class="video-nav-tab">🎓 2. App Tutorial →</a>
-          <a href="https://youtu.be/V5qqb-L7ack" target="_blank" rel="noopener noreferrer" class="ext-btn">
-            ↗ Open on YouTube
-          </a>
-        </div>
+    <div class="dual-video-wrapper">
+      <div class="dual-video-header">
+        <div>📹 NON-PURSUIT // VIDEO SHOWCASE &amp; TUTORIAL</div>
+        <div>OFFICIAL DEMO + FULL APP WALKTHROUGH</div>
       </div>
-      <div class="video-body">
-        <iframe 
-          src="https://www.youtube.com/embed/V5qqb-L7ack?rel=0" 
-          title="Non-Pursuit Demo Video"
-          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" 
-          allowfullscreen>
-        </iframe>
+      
+      <div class="dual-video-grid">
+        <!-- Video 1: Official Demo Video -->
+        <div class="video-box-card">
+          <div class="video-box-bar">
+            <div class="tag-demo">
+              <span>▶</span>
+              <span>1. DEMO VIDEO (3 MIN)</span>
+            </div>
+            <a href="https://youtu.be/V5qqb-L7ack" target="_blank" rel="noopener noreferrer" class="ext-link">
+              ↗ youtu.be/V5qqb-L7ack
+            </a>
+          </div>
+          <div class="video-box-frame">
+            <iframe 
+              src="https://www.youtube.com/embed/V5qqb-L7ack?rel=0" 
+              title="Non-Pursuit Official Demo Video"
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" 
+              allowfullscreen>
+            </iframe>
+          </div>
+        </div>
+
+        <!-- Video 2: App Tutorial & Walkthrough -->
+        <div class="video-box-card">
+          <div class="video-box-bar">
+            <div class="tag-tutorial">
+              <span>🎓</span>
+              <span>2. APP TUTORIAL &amp; WALKTHROUGH</span>
+            </div>
+            <a href="https://youtu.be/hFP6orcBl3I" target="_blank" rel="noopener noreferrer" class="ext-link">
+              ↗ youtu.be/hFP6orcBl3I
+            </a>
+          </div>
+          <div class="video-box-frame">
+            <iframe 
+              src="https://www.youtube.com/embed/hFP6orcBl3I?rel=0" 
+              title="Non-Pursuit App Tutorial & Walkthrough"
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" 
+              allowfullscreen>
+            </iframe>
+          </div>
+        </div>
       </div>
     </div>
   </section>
 
-  <!-- Slide 12: App Tutorial Video -->
+  <!-- Slide 12: Live Streamlit App Launch & Call To Action -->
   <section class="slide" id="s12">
-    <div class="video-card">
-      <div class="video-bar">
-        <div class="title">
-          <span>🎓</span>
-          <span>APP TUTORIAL // HOW NON-PURSUIT WORKS</span>
-        </div>
-        <div class="video-bar-actions">
-          <a href="javascript:showSlide(10)" class="video-nav-tab">← 📹 1. Demo Video</a>
-          <span class="video-nav-tab active">▶ 2. App Tutorial</span>
-          <a href="https://youtu.be/hFP6orcBl3I" target="_blank" rel="noopener noreferrer" class="ext-btn">
-            ↗ Open on YouTube
-          </a>
-        </div>
-      </div>
-      <div class="video-body">
-        <iframe 
-          src="https://www.youtube.com/embed/hFP6orcBl3I?rel=0" 
-          title="Non-Pursuit App Tutorial"
-          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" 
-          allowfullscreen>
-        </iframe>
-      </div>
-    </div>
-  </section>
-
-  <!-- Slide 13: Live Streamlit App Launch & Call To Action -->
-  <section class="slide" id="s13">
     <div class="cta-card">
       <div class="stamp green">STATUS: LIVE IN PRODUCTION</div>
       <h1 class="cta-title">non-pursuit. the sovereign engine</h1>
@@ -776,7 +761,7 @@ html, body {
 
 <div class="hud" id="hud-tr">
   <a href="https://non-pursuit.streamlit.app/" target="_blank" class="app-link">🚀 Open Live App</a>
-  <span>SLIDE <b id="slide-no">01</b> / <span id="total-slides">13</span></span>
+  <span>SLIDE <b id="slide-no">01</b> / <span id="total-slides">12</span></span>
 </div>
 
 <div class="hud" id="hud-bl">DEMO DAY // CUNY LaGCC &amp; PURSUIT</div>
