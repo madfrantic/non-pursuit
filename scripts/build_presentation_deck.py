@@ -8,10 +8,10 @@ import os
 import subprocess
 import shutil
 
-# Check if BIO_ME02.pdf or BIO_ME05.pdf is preferred
-PDF_PATH = "/home/b0t/Documents/PURSUIT/BIO_ME02.pdf"
+# Use newest BIO_ME05.pdf created today
+PDF_PATH = "/home/b0t/Documents/PURSUIT/BIO_ME05.pdf"
 if not os.path.exists(PDF_PATH):
-    PDF_PATH = "/home/b0t/Documents/PURSUIT/BIO_ME05.pdf"
+    PDF_PATH = "/home/b0t/Documents/PURSUIT/BIO_ME02.pdf"
 
 os.makedirs("assets/slides", exist_ok=True)
 os.makedirs("docs/assets/slides", exist_ok=True)
