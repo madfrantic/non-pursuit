@@ -267,8 +267,10 @@ def parse_certificate(der: bytes) -> dict:
     except x509.ExtensionNotFound:
         san = []
 
-    not_after = _as_utc(cert.not_valid_after_utc)
-    not_before = _as_utc(cert.not_valid_before_utc)
+    not_after_raw = getattr(cert, "not_valid_after_utc", None) or getattr(cert, "not_valid_after", None)
+    not_before_raw = getattr(cert, "not_valid_before_utc", None) or getattr(cert, "not_valid_before", None)
+    not_after = _as_utc(not_after_raw)
+    not_before = _as_utc(not_before_raw)
     now = datetime.now(timezone.utc)
 
     subject_org = _attr(cert.subject, x509.oid.NameOID.ORGANIZATION_NAME)
