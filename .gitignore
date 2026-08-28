@@ -59,3 +59,8 @@ data/evidence/
 data/vault.salt
 data/vault.verifier
 data/*.bak.*
+
+# Local demo/render media. 157MB of clips, frames and screen captures that
+# accumulated in the repo root. Never belongs in git -- committing video is how
+# .git reached 134MB in the first place.
+media_archive/
