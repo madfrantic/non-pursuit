@@ -1,0 +1,406 @@
+"""
+Which build is this -- the local production utility, or the hosted demo?
+
+Non-Pursuit ships in two shapes from one codebase. Locally it's the real
+tool: everything persists to data/tracker.db, browser automation drives a
+real Chrome, and scans hit real platforms. Hosted (a class demo, a
+container on someone else's server) none of that is safe -- a shared
+server has no business holding one visitor's PII where the next visitor
+can reach it, headed Chrome can't launch in a container at all, and a
+live scan would send the audience's handles out from one shared IP that
+gets rate-limited for the trouble.
+
+The switch is the NON_PURSUIT_DEMO_MODE environment variable, read once
+per call so a test can flip it without reimporting anything. Streamlit
+Community Cloud has no environment-variable UI -- it offers a secrets
+editor and nothing else -- so the same key is also honoured from
+st.secrets. Without that fallback a Community Cloud deployment would find
+no env var, conclude it was a local install, and hand every visitor the
+same persistent tracker.db while running live scans from the shared
+platform IP. The failure is silent, which is why the fallback is here
+rather than in a deployment checklist.
+
+Why per-session temp files rather than the ":memory:" the obvious
+implementation reaches for: every store module opens a fresh
+sqlite3.connect() per operation, and each connection to ":memory:" gets
+its own private empty database. Writes appear to succeed and then vanish
+-- verified, not assumed. A process-wide shared in-memory database would
+fix the vanishing but leak records between visitors, which is worse than
+the bug. A uniquely-named temp file per Streamlit session gets real
+isolation, survives the sequential connections the stores actually make,
+and needs no changes to the stores themselves -- they already take
+db_path as an argument.
+"""
+import os
+import tempfile
+import uuid
+from pathlib import Path
+
+import config
+
+DEMO_ENV_VAR = "NON_PURSUIT_DEMO_MODE"
+DEPLOYMENT_ENV_VAR = "DEPLOYMENT_ENV"
+_TRUTHY = {"1", "true", "yes", "on"}
+
+SESSION_DB_PREFIX = "np_session_"
+
+# --- manual runtime override -----------------------------------------
+# A presenter demoing the app needs to show how the UI adapts between the
+# desktop build and the restricted cloud build without restarting the
+# process under a different environment variable. The override below is
+# that switch, and it is deliberately narrow: it steers only which
+# *deployment shape* the UI describes (desktop vs cloud). It cannot turn
+# demo mode on or off, because demo mode decides where PII is written and
+# whether a shared host runs a real scan -- neither of which should ever
+# be reachable from a widget in a visitor's browser.
+OVERRIDE_AUTO = "auto"
+OVERRIDE_DESKTOP = "desktop"
+OVERRIDE_CLOUD = "cloud"
+
+_VALID_OVERRIDES = {OVERRIDE_AUTO, OVERRIDE_DESKTOP, OVERRIDE_CLOUD}
+_OVERRIDE_STATE_KEY = "runtime_override"
+_EXPLICIT_STATE_KEY = "runtime_override_explicit"
+_fallback_override = OVERRIDE_AUTO
+_fallback_explicit = False
+
+# --- the shape a fresh session opens in -------------------------------
+# The desktop build is a separate install: it needs a local Python, a
+# local Chrome for Playwright to drive, and a writable data/ directory.
+# A browser arriving at this app has none of that guaranteed, so the
+# honest opening position is the online build -- passive recon that works
+# everywhere -- with desktop offered as a deliberate switch rather than an
+# assumption. Auto-detection stays exactly as it was and is what the
+# "Auto-detect" option hands control back to; this only decides which
+# option a session that has chosen nothing yet starts on.
+STARTUP_DEFAULT_OVERRIDE = OVERRIDE_CLOUD
+_STARTUP_APPLIED_KEY = "_runtime_startup_default_applied"
+
+
+def get_runtime_override() -> str:
+    """Retrieve runtime override from session state, defaulting to auto."""
+    import streamlit as st
+    if hasattr(st, "session_state") and _OVERRIDE_STATE_KEY in st.session_state:
+        return st.session_state[_OVERRIDE_STATE_KEY]
+    return _fallback_override
+
+
+def override_is_explicit() -> bool:
+    """True when the current override came from someone picking it.
+
+    The startup default (see apply_startup_default) also writes an
+    override, and the badge must not describe that as "manually forced" --
+    nobody forced anything, the session simply has not been switched off
+    the shape it opened in.
+    """
+    import streamlit as st
+    if hasattr(st, "session_state") and _EXPLICIT_STATE_KEY in st.session_state:
+        return bool(st.session_state[_EXPLICIT_STATE_KEY])
+    return _fallback_explicit
+
+
+def set_runtime_override(mode: str, explicit: bool = True) -> None:
+    """Set manual runtime override.
+
+    `explicit=False` is for the startup default only -- it steers the same
+    switch without claiming a human threw it.
+    """
+    global _fallback_override, _fallback_explicit
+    import streamlit as st
+    normalized = (mode or OVERRIDE_AUTO).strip().lower()
+    if normalized not in _VALID_OVERRIDES:
+        normalized = OVERRIDE_AUTO
+    marked = bool(explicit) and normalized != OVERRIDE_AUTO
+    if hasattr(st, "session_state"):
+        st.session_state[_OVERRIDE_STATE_KEY] = normalized
+        st.session_state[_EXPLICIT_STATE_KEY] = marked
+    else:
+        _fallback_override = normalized
+        _fallback_explicit = marked
+
+
+def apply_startup_default() -> str:
+    """Open a new session on the online build. Returns the active override.
+
+    Runs once per Streamlit session (and once per process without a
+    runtime), so it seeds the opening position and then never fights the
+    user's own choice on later reruns -- including a deliberate return to
+    "Auto-detect", which must stay auto rather than being reset to cloud
+    on the next widget interaction.
+
+    Deliberately does not touch demo mode or any feature gate; like every
+    other override it steers only the deployment shape the UI describes.
+    """
+    state = _session_state()
+    if state is not None:
+        if state.get(_STARTUP_APPLIED_KEY):
+            return get_runtime_override()
+        state[_STARTUP_APPLIED_KEY] = True
+    else:
+        global _startup_default_applied
+        if _startup_default_applied:
+            return get_runtime_override()
+        _startup_default_applied = True
+    set_runtime_override(STARTUP_DEFAULT_OVERRIDE, explicit=False)
+    return get_runtime_override()
+
+
+_startup_default_applied = False
+
+
+def reset_startup_default() -> None:
+    """Forget that the startup default ran. Only tests need this."""
+    global _startup_default_applied
+    _startup_default_applied = False
+    state = _session_state()
+    if state is not None:
+        state.pop(_STARTUP_APPLIED_KEY, None)
+
+
+def reset_runtime_override() -> None:
+    """Reset override to automatic detection."""
+    global _fallback_override, _fallback_explicit
+    _fallback_override = OVERRIDE_AUTO
+    _fallback_explicit = False
+    import streamlit as st
+    if hasattr(st, "session_state"):
+        for key in (_OVERRIDE_STATE_KEY, _EXPLICIT_STATE_KEY):
+            if key in st.session_state:
+                del st.session_state[key]
+
+def _secret(name: str) -> str | None:
+    """Read a key from st.secrets, or None if there are no secrets at all.
+
+    Accessing st.secrets with no secrets.toml present raises rather than
+    returning empty, and importing streamlit is not free, so both are kept
+    behind this helper and failure is treated as "not set".
+    """
+    try:
+        import streamlit as st
+
+        value = st.secrets.get(name)
+    except Exception:
+        return None
+    return None if value is None else str(value)
+
+
+def is_demo_mode() -> bool:
+    """True when this process is serving the hosted demo build.
+
+    Env var first so a container or a test can set it without a secrets
+    file; st.secrets second so Streamlit Community Cloud, which offers no
+    other way to configure a deployment, can turn the demo build on.
+
+    Intentionally not affected by the runtime override -- see the note
+    above set_runtime_override().
+    """
+    raw = os.getenv(DEMO_ENV_VAR)
+    if raw is None:
+        raw = _secret(DEMO_ENV_VAR)
+    return (raw or "false").strip().lower() in _TRUTHY
+
+def is_cloud_deployment() -> bool:
+    """Check if running in cloud/restricted mode, respecting manual override."""
+    override = get_runtime_override()
+    if override == OVERRIDE_DESKTOP:
+        return False
+    if override == OVERRIDE_CLOUD:
+        return True
+        
+    # Automatic fallback detection
+    if os.getenv("DEPLOYMENT_ENV", "").lower() in ("cloud", "web", "production"):
+        return True
+    if os.getenv("STREAMLIT_SHARING_MODE") is not None:
+        return True
+    return False
+
+
+def is_local_mode() -> bool:
+    """True when running locally on the user's machine."""
+    return not is_cloud_deployment() and not is_demo_mode()
+
+
+def _session_state():
+    """Streamlit's session_state, or None when running outside a script
+    run (pytest, a headless export job). Importing streamlit is cheap and
+    already a hard dependency; what isn't safe is assuming a runtime
+    exists, so callers get None and fall back."""
+    try:
+        import streamlit as st
+
+        _ = st.session_state  # raises if there's no script run context
+        return st.session_state
+    except Exception:
+        return None
+
+
+def new_session_db_path() -> str:
+    """A fresh, uniquely-named temp database path. Public so tests can
+    exercise the demo path without a Streamlit runtime."""
+    name = f"{SESSION_DB_PREFIX}{uuid.uuid4().hex[:8]}.db"
+    return str(Path(tempfile.gettempdir()) / name)
+
+
+def db_path() -> str:
+    """The SQLite file every store should read and write for this
+    request.
+
+    Local mode returns the single durable database. All four of config's
+    *_DB_PATH names point at that same file by design (tracker, exposure,
+    profile and discovered accounts are tables, not separate databases),
+    so one accessor covers every call site.
+
+    Demo mode returns a per-visitor temp file, created once per Streamlit
+    session and remembered in session_state. Without a session (tests,
+    scripts) each call would otherwise hand back a different empty
+    database, so the path is cached on the module instead -- correct for
+    a single-threaded script, and never reached by the multi-visitor
+    server path.
+    """
+    if not is_demo_mode():
+        return config.TRACKER_DB_PATH
+
+    state = _session_state()
+    if state is not None:
+        if "session_db_path" not in state:
+            state["session_db_path"] = new_session_db_path()
+        return state["session_db_path"]
+
+    global _fallback_db_path
+    if _fallback_db_path is None:
+        _fallback_db_path = new_session_db_path()
+    return _fallback_db_path
+
+
+_fallback_db_path = None
+
+
+def reset_fallback_db_path() -> None:
+    """Drop the no-runtime cache. Only tests need this."""
+    global _fallback_db_path
+    _fallback_db_path = None
+
+
+# --- feature gates ----------------------------------------------------
+# Each of these is a thing that is genuinely unsafe or broken on a shared
+# host, rather than merely different. Kept here so the reason lives in one
+# place and the components just ask.
+
+def browser_automation_enabled() -> bool:
+    """Spokeo's auto-search launches a headed Chrome via Playwright. In a
+    container there's no display to launch it into, so demo mode shows the
+    sequence as a narrated preview instead of failing mid-presentation."""
+    return not is_demo_mode()
+
+
+def live_scanning_enabled() -> bool:
+    """A real footprint scan sends ~50 outbound requests. From a shared
+    demo host that's one IP scanning on behalf of strangers -- rate-limited
+    quickly, and it puts an audience member's handle on the wire. Demo mode
+    serves canned matches instead."""
+    return not is_demo_mode()
+
+
+def persistent_storage_enabled() -> bool:
+    """Whether writes survive past this session. Drives the UI copy that
+    tells a demo visitor their data disappears when they close the tab."""
+    return not is_demo_mode()
+
+
+def facial_recognition_enabled() -> bool:
+    """Biometric face matching is off on the hosted build regardless of
+    whether the DeepFace dependency happens to be installed there. A face
+    photo is a more sensitive category of PII than anything else this app
+    touches, and a shared demo host processing one visitor's uploaded face
+    -- even transiently, even without persisting it -- is a risk this app
+    takes nowhere else. Local mode is a single person's own machine
+    running against their own photo; that consent boundary doesn't exist
+    on a hosted container."""
+    return not is_demo_mode()
+
+
+def mode_badge() -> tuple[str, str]:
+    """(label, help text) for the sidebar indicator."""
+    # Demo mode is checked first and is never overridable: when it's on,
+    # the feature gates really are off, so claiming desktop capability
+    # here would be a lie the rest of the app then contradicts.
+    if is_demo_mode():
+        return (
+            "🟡 Demo sandbox mode",
+            "Records live only in your browser session and are discarded when you "
+            "close the tab. Browser automation and live scanning are disabled on "
+            "the hosted build.",
+        )
+
+    suffix = " (manually forced — not auto-detected)" if override_is_explicit() else ""
+    if is_cloud_deployment():
+        return (
+            "☁️ WEB / CLOUD RUNTIME",
+            "Passive OSINT enabled (Gravatar, PGP, CertSpotter). Heavy network sweeps "
+            "disabled to prevent IP limits." + suffix,
+        )
+    return (
+        "🖥️ DESKTOP RUNTIME",
+        "Full active sweeps enabled (700+ site username checks, deep socket scans, "
+        "local export packaging)." + suffix,
+    )
+
+
+def get_capabilities_matrix() -> dict:
+    """Return a capabilities matrix showing which features are enabled/disabled."""
+    if is_cloud_deployment():
+        return {
+            "🟢 Enabled": [
+                "Gravatar/Libravatar lookup",
+                "PGP key server search",
+                "SSL certificate enumeration",
+                "SEC filings search",
+                "FEC campaign contributions",
+                "Court docket lookup",
+                "Data broker identification",
+            ],
+            "🔴 Disabled": [
+                "Full username sweep (700+ sites)",
+                "WhatsMyName active scanning",
+                "Spokeo auto-search (browser)",
+                "Biometric face matching",
+                "Email notification checks",
+            ],
+        }
+    elif is_demo_mode():
+        return {
+            "🟢 Enabled": [
+                "Mock OSINT results (instant)",
+                "Profile entry & storage",
+                "Statutory letter generation",
+                "Session-only data export",
+            ],
+            "🔴 Disabled": [
+                "Live scanning",
+                "Browser automation",
+                "Persistent storage",
+                "Biometric matching",
+            ],
+        }
+    else:
+        return {
+            "🟢 Fully Enabled": [
+                "Full username sweep (700+ sites)",
+                "WhatsMyName active scanning",
+                "Spokeo auto-search (browser)",
+                "Gravatar/Libravatar lookup",
+                "PGP key server search",
+                "SSL certificate enumeration",
+                "SEC filings search",
+                "FEC campaign contributions",
+                "Court docket lookup",
+                "Biometric face matching",
+                "Persistent local storage (SQLite)",
+                "Email notification checks",
+            ],
+            "ℹ️ Notes": [
+                "All data stored locally in data/tracker.db",
+                "Nothing uploaded or shared",
+                "Can handle 700+ concurrent requests",
+                "Supports desktop browser automation",
+            ],
+        }

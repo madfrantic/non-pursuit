@@ -1,0 +1,73 @@
+{
+  "schema_version": "1.0",
+  "generated": "2026-08-22",
+  "source_note": "Probe definitions for utils/broker_probe.py. Contact data (opt-out URL, compliance email) is NOT stored here -- it lives in data/brokers.csv, which carries a per-row last_verified stamp and is the single source of truth. This file only describes HOW to query a broker's public search and how to recognise a hit.",
+  "how_to_enable_a_broker": [
+    "Every broker ships in \"manual\" mode. That is not a placeholder for missing work -- it is the correct default, because a search_template that was never confirmed against the live site produces NO_RECORD for a person who is in fact listed, which is the single most damaging output this tool can emit.",
+    "To enable one: (1) open the broker's public search by hand and note the resulting URL; (2) generalise it into search_template using {first} {last} {name} {city} {state}; (3) record a string that appears ONLY on a results-with-hits page (found_strings) and one that appears ONLY on a no-results page (absent_strings); (4) verify both with utils/broker_probe.verify_template() against a name you know is listed and one you know is not -- the same claimed/unclaimed technique Sherlock and Maigret use per site; (5) set mode to \"query\".",
+    "Do not enable a broker whose protection list is non-empty. Those answer automated GETs with a challenge, and the correct handling is the manual row the registry already produces."
+  ],
+  "brokers": [
+    {
+      "name": "Spokeo",
+      "mode": "manual",
+      "protection": ["cloudflare"],
+      "search_template": "",
+      "found_strings": [],
+      "absent_strings": [],
+      "record_url_pattern": "",
+      "jurisdiction_note": "Registered California data broker. Opt-out requires the record URL.",
+      "handler_note": "utils/spokeo_automation.py already drives this one through a real browser via Playwright, which is what the form-based, Cloudflare-fronted search requires. The probe layer defers to it rather than duplicating it over plain HTTP."
+    },
+    {
+      "name": "MyLife",
+      "mode": "manual",
+      "protection": [],
+      "search_template": "",
+      "found_strings": [],
+      "absent_strings": [],
+      "record_url_pattern": "",
+      "jurisdiction_note": "Accepts CCPA requests by email with subject 'California Privacy Rights Request'."
+    },
+    {
+      "name": "WhitePages",
+      "mode": "manual",
+      "protection": ["waf"],
+      "search_template": "",
+      "found_strings": [],
+      "absent_strings": [],
+      "record_url_pattern": "",
+      "jurisdiction_note": "Suppression request form only; no confirmed compliance email on file."
+    },
+    {
+      "name": "BeenVerified",
+      "mode": "manual",
+      "protection": [],
+      "search_template": "",
+      "found_strings": [],
+      "absent_strings": [],
+      "record_url_pattern": "",
+      "jurisdiction_note": "One opt-out covers other PeopleConnect-owned properties."
+    },
+    {
+      "name": "TruePeopleSearch",
+      "mode": "manual",
+      "protection": ["cloudflare"],
+      "search_template": "",
+      "found_strings": [],
+      "absent_strings": [],
+      "record_url_pattern": "",
+      "jurisdiction_note": "Removal page itself blocks automated access."
+    },
+    {
+      "name": "Nuwber",
+      "mode": "manual",
+      "protection": ["cloudflare"],
+      "search_template": "",
+      "found_strings": [],
+      "absent_strings": [],
+      "record_url_pattern": "",
+      "jurisdiction_note": "Removal page itself blocks automated access."
+    }
+  ]
+}

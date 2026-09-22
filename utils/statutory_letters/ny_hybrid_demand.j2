@@ -1,0 +1,55 @@
+{{ current_date }}
+
+{{ broker_name }}
+
+Re: Demand for Suppression of Consumer Reporting Records and Proof of Data Security Safeguards — N.Y. Gen. Bus. Law Art. 25 (§ 380 et seq.) and N.Y. Gen. Bus. Law § 899-bb
+
+To Whom It May Concern:
+
+I am a resident of the State of New York. I am writing to demand the suppression and deletion of records you maintain concerning me, and — as to any data you decline to delete — proof of the data security safeguards New York law requires you to maintain over it.
+
+I have identified a record containing my personal information on your platform, located at:
+{{ record_url }}
+
+For identification purposes, my information is as follows:
+
+Name: {{ user_name }}
+Location: {{ user_location }}
+Email: {{ user_email }}
+
+PART ONE — CONSUMER REPORTING RECORDS (N.Y. GEN. BUS. LAW ART. 25)
+
+New York's Fair Credit Reporting Act, N.Y. Gen. Bus. Law § 380 et seq., governs consumer reporting agencies operating in this state. To the extent you assemble or evaluate information on consumers for the purpose of furnishing consumer reports to third parties, you are a consumer reporting agency within the meaning of § 380-a(e), and the following obligations attach:
+
+1. Under § 380-d, I request full disclosure of all information in your files concerning me, the sources of that information, and the recipients of any consumer report concerning me furnished within the periods that section specifies.
+
+2. Under § 380-j, I demand the removal of any information your files contain that section prohibits from being reported — including but not limited to records of arrest or criminal charge that did not result in conviction, sealed records, and adverse items that have exceeded the obsolescence periods § 380-j(f) prescribes.
+
+3. I dispute the accuracy and completeness of the record identified above. Under § 380-f, you are required to reinvestigate that disputed information free of charge and to record its current status within thirty (30) days of receiving this notice. If the disputed information is found to be inaccurate, incomplete, or unverifiable, § 380-f requires that it be promptly deleted from my file.
+
+If you contend that you are NOT a consumer reporting agency and that N.Y. Gen. Bus. Law Art. 25 does not apply to you, I request that you state that position in writing. Be advised that such a disclaimer is inconsistent with furnishing my information to third parties for eligibility, screening, or vetting purposes, and I will treat a written disclaimer as a representation that you do not do so.
+
+PART TWO — DATA SECURITY SAFEGUARDS (N.Y. GEN. BUS. LAW § 899-bb)
+
+The New York SHIELD Act, N.Y. Gen. Bus. Law § 899-bb(2), requires any person or business that owns or licenses computerized data including the private information of a New York resident to develop, implement, and maintain reasonable administrative, technical, and physical safeguards to protect that information. This obligation applies to you regardless of whether you are a consumer reporting agency, and regardless of whether you are located in New York.
+
+To the extent you decline to delete any portion of my information, that residual data remains subject to § 899-bb for as long as you hold it. Accordingly, I request written confirmation of the following:
+
+(a) that you maintain a data security program satisfying § 899-bb(2)(b), identifying the administrative, technical, and physical safeguards in place;
+(b) the specific legal or business basis on which you retain each category of my information you decline to delete;
+(c) your retention schedule for that residual data, including the date on which it will be disposed of pursuant to § 899-bb(2)(b)(ii)(C); and
+(d) confirmation that my information has not been subject to a breach requiring notification under § 899-aa, or, if it has, the notice that section requires.
+
+I note that § 899-bb is a data security statute and does not itself create a right of erasure. It is cited here for the safeguard, retention, and disposal duties it imposes on data you continue to hold — not as the basis for the deletion demanded in Part One.
+
+RESPONSE REQUESTED
+
+Please confirm in writing, within thirty (30) days, the disposition of each demand above. The Office of the New York State Attorney General enforces both Art. 25 and § 899-bb, and I reserve the right to file a complaint with that office and to pursue any private right of action available to me under § 380-l or § 380-m.
+
+{% if relational_entities %}
+{{ relational_disassociation_clause }}
+{% endif %}
+
+Sincerely,
+{{ user_name }}
+{{ user_email }}

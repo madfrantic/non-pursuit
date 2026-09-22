@@ -1,0 +1,212 @@
+{
+  "schema_version": "1.0",
+  "generated": "2026-08-21",
+  "source_note": "Static, offline platform registry for the Digital Footprint Matrix. Contains NO live probe logic. Field names for exists/emailrecovery/phoneNumber/others/rateLimit mirror the holehe (github.com/megadose/holehe) module result schema so downstream consumers can read either source without a translation layer. holehe_module records the corresponding upstream module name where one exists; null means holehe has no module for that platform.",
+  "verdicts": {
+    "FOUND": "Matrix rule matched this identifier for this platform.",
+    "NOT_FOUND": "Matrix rule did not match.",
+    "UNSUPPORTED": "Platform does not accept this identifier type (e.g. email-only lookup against a handle)."
+  },
+  "mock_logic": {
+    "description": "Deterministic, reproducible, offline. Two tiers, seeded first: (1) if the normalised identifier appears in seeded_identifiers, ONLY the platform keys listed there resolve FOUND -- this is the demo-control path; (2) otherwise a SHA-256 of 'identifier|platform_key' is folded into a float in [0,1) and compared against that platform's hit_rate. Same input always yields the same matrix. No randomness, no clock dependency, no network.",
+    "hash_input": "{normalised_identifier}|{platform_key}",
+    "hash_algorithm": "sha256",
+    "hash_bytes_used": 8
+  },
+  "seeded_identifiers": {
+    "jane.doe@example.com": {
+      "found": ["github", "x", "medium", "substack", "spotify", "discord", "pinterest"],
+      "note": "Primary showcase identifier -- the demo persona, matching presentation_mode.MOCK_PROFILE. Never seed a real person here: this file ships in the repo."
+    },
+    "nonpursuit": {
+      "found": ["github", "x", "reddit", "mastodon"],
+      "note": "Handle-form showcase identifier."
+    },
+    "demo@example.com": {
+      "found": [],
+      "note": "Clean-sweep case: exercises the all-NOT_FOUND render path."
+    }
+  },
+  "platforms": [
+    {
+      "key": "github",
+      "name": "GitHub",
+      "domain": "github.com",
+      "category": "code",
+      "profile_url": "https://github.com/{account}",
+      "accepts": ["handle", "email"],
+      "holehe_module": "github",
+      "hit_rate": 0.45,
+      "rate_limit": false,
+      "recovery": {"emailrecovery": null, "phoneNumber": null, "others": null}
+    },
+    {
+      "key": "x",
+      "name": "X (Twitter)",
+      "domain": "x.com",
+      "category": "social",
+      "profile_url": "https://x.com/{account}",
+      "accepts": ["handle", "email"],
+      "holehe_module": "twitter",
+      "hit_rate": 0.5,
+      "rate_limit": true,
+      "recovery": {"emailrecovery": "a***@g***.com", "phoneNumber": "+1 ******89", "others": null}
+    },
+    {
+      "key": "reddit",
+      "name": "Reddit",
+      "domain": "reddit.com",
+      "category": "forum",
+      "profile_url": "https://www.reddit.com/user/{account}",
+      "accepts": ["handle"],
+      "holehe_module": null,
+      "hit_rate": 0.4,
+      "rate_limit": false,
+      "recovery": {"emailrecovery": null, "phoneNumber": null, "others": null}
+    },
+    {
+      "key": "medium",
+      "name": "Medium",
+      "domain": "medium.com",
+      "category": "publishing",
+      "profile_url": "https://medium.com/@{account}",
+      "accepts": ["handle", "email"],
+      "holehe_module": null,
+      "hit_rate": 0.3,
+      "rate_limit": false,
+      "recovery": {"emailrecovery": null, "phoneNumber": null, "others": null}
+    },
+    {
+      "key": "substack",
+      "name": "Substack",
+      "domain": "substack.com",
+      "category": "publishing",
+      "profile_url": "https://substack.com/@{account}",
+      "accepts": ["handle", "email"],
+      "holehe_module": null,
+      "hit_rate": 0.25,
+      "rate_limit": false,
+      "recovery": {"emailrecovery": null, "phoneNumber": null, "others": null}
+    },
+    {
+      "key": "instagram",
+      "name": "Instagram",
+      "domain": "instagram.com",
+      "category": "social",
+      "profile_url": "https://www.instagram.com/{account}/",
+      "accepts": ["handle", "email"],
+      "holehe_module": "instagram",
+      "hit_rate": 0.5,
+      "rate_limit": true,
+      "recovery": {"emailrecovery": null, "phoneNumber": "+1 ******47", "others": null}
+    },
+    {
+      "key": "spotify",
+      "name": "Spotify",
+      "domain": "spotify.com",
+      "category": "media",
+      "profile_url": "https://open.spotify.com/user/{account}",
+      "accepts": ["handle", "email"],
+      "holehe_module": "spotify",
+      "hit_rate": 0.35,
+      "rate_limit": false,
+      "recovery": {"emailrecovery": null, "phoneNumber": null, "others": null}
+    },
+    {
+      "key": "pinterest",
+      "name": "Pinterest",
+      "domain": "pinterest.com",
+      "category": "social",
+      "profile_url": "https://www.pinterest.com/{account}/",
+      "accepts": ["handle", "email"],
+      "holehe_module": "pinterest",
+      "hit_rate": 0.3,
+      "rate_limit": false,
+      "recovery": {"emailrecovery": null, "phoneNumber": null, "others": null}
+    },
+    {
+      "key": "discord",
+      "name": "Discord",
+      "domain": "discord.com",
+      "category": "chat",
+      "profile_url": "https://discord.com/users/{account}",
+      "accepts": ["handle", "email"],
+      "holehe_module": "discord",
+      "hit_rate": 0.4,
+      "rate_limit": false,
+      "recovery": {"emailrecovery": null, "phoneNumber": null, "others": null}
+    },
+    {
+      "key": "imgur",
+      "name": "Imgur",
+      "domain": "imgur.com",
+      "category": "media",
+      "profile_url": "https://imgur.com/user/{account}",
+      "accepts": ["handle", "email"],
+      "holehe_module": "imgur",
+      "hit_rate": 0.2,
+      "rate_limit": false,
+      "recovery": {"emailrecovery": null, "phoneNumber": null, "others": null}
+    },
+    {
+      "key": "patreon",
+      "name": "Patreon",
+      "domain": "patreon.com",
+      "category": "commerce",
+      "profile_url": "https://www.patreon.com/{account}",
+      "accepts": ["handle", "email"],
+      "holehe_module": "patreon",
+      "hit_rate": 0.2,
+      "rate_limit": false,
+      "recovery": {"emailrecovery": null, "phoneNumber": null, "others": null}
+    },
+    {
+      "key": "adobe",
+      "name": "Adobe",
+      "domain": "adobe.com",
+      "category": "saas",
+      "profile_url": "https://account.adobe.com/",
+      "accepts": ["email"],
+      "holehe_module": "adobe",
+      "hit_rate": 0.3,
+      "rate_limit": false,
+      "recovery": {"emailrecovery": null, "phoneNumber": null, "others": null}
+    },
+    {
+      "key": "linkedin",
+      "name": "LinkedIn",
+      "domain": "linkedin.com",
+      "category": "professional",
+      "profile_url": "https://www.linkedin.com/in/{account}",
+      "accepts": ["handle", "email"],
+      "holehe_module": null,
+      "hit_rate": 0.45,
+      "rate_limit": true,
+      "recovery": {"emailrecovery": null, "phoneNumber": null, "others": null}
+    },
+    {
+      "key": "twitch",
+      "name": "Twitch",
+      "domain": "twitch.tv",
+      "category": "media",
+      "profile_url": "https://www.twitch.tv/{account}",
+      "accepts": ["handle", "email"],
+      "holehe_module": null,
+      "hit_rate": 0.25,
+      "rate_limit": false,
+      "recovery": {"emailrecovery": null, "phoneNumber": null, "others": null}
+    },
+    {
+      "key": "mastodon",
+      "name": "Mastodon",
+      "domain": "mastodon.social",
+      "category": "social",
+      "profile_url": "https://mastodon.social/@{account}",
+      "accepts": ["handle"],
+      "holehe_module": null,
+      "hit_rate": 0.2,
+      "rate_limit": false,
+      "recovery": {"emailrecovery": null, "phoneNumber": null, "others": null}
+    }
+  ]
+}

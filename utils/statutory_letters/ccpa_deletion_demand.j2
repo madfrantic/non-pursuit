@@ -1,0 +1,34 @@
+{{ current_date }}
+
+{{ broker_name }}
+
+Re: Consumer Request to Delete Personal Information — California Civil Code § 1798.105
+
+To Whom It May Concern:
+
+I am writing to exercise my right to delete personal information under the California Consumer Privacy Act (CCPA), as amended by the California Privacy Rights Act (CPRA), codified at California Civil Code § 1798.105.
+
+I have identified a record containing my personal information on your platform, located at:
+{{ record_url }}
+
+Under Civil Code § 1798.105(a), I am requesting that {{ broker_name }} delete all personal information you have collected about me, and direct any service providers, contractors, or third parties who have received this information from you to do the same.
+
+For identification purposes, my information is as follows:
+
+Name: {{ user_name }}
+Location: {{ user_location }}
+Email: {{ user_email }}
+
+Per Civil Code § 1798.105(c), I request written confirmation of deletion within 45 days of this request. If additional time is required under § 1798.130(a)(2), please notify me within the initial 45-day period along with the reason for the extension.
+
+If your organization is a data broker registered with the California Privacy Protection Agency, please note that I may separately submit this request through the state's Delete Request and Opt-Out Platform (DROP) at privacy.ca.gov. This letter is an independent request made directly under the CCPA and does not waive, and is not waived by, any request submitted through DROP.
+
+Please confirm in writing once this request has been completed.
+
+{% if relational_entities %}
+{{ relational_disassociation_clause }}
+{% endif %}
+
+Sincerely,
+{{ user_name }}
+{{ user_email }}

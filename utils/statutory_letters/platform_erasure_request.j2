@@ -1,0 +1,53 @@
+{{ current_date }}
+
+{{ platform_name }}
+Attn: Privacy Team / Data Protection Officer
+
+Re: Verified request to delete personal data associated with account "{{ account_handle }}"
+
+To Whom It May Concern:
+
+I am the individual identified below. I am writing to request the deletion of the personal data your service holds in connection with the account identified above, and the closure of that account.
+
+ACCOUNT IDENTIFIED
+
+Platform: {{ platform_name }}
+Account handle: {{ account_handle }}
+Profile URL: {{ account_url }}
+
+REQUESTER
+
+Name: {{ user_name }}
+Location: {{ user_location }}
+Email: {{ user_email }}
+
+BASIS FOR THIS REQUEST
+
+{{ statute_basis }}
+
+SCOPE OF THE REQUEST
+
+I request that you:
+
+1. Delete the personal data held in connection with the account identified above, including profile fields, contact details, and any contact or address book data imported from other services;
+2. Close or deactivate the account itself;
+3. Cease any further processing of that data for advertising, profiling, model training, or disclosure to third parties;
+4. Where you have disclosed that data to processors, affiliates, or other recipients, communicate this request to them; and
+5. Confirm what has been deleted and identify anything you decline to delete, together with the legal basis on which you retain it.
+
+I acknowledge that you may be required to retain a limited record of this request itself, and specific records where a legal obligation requires it. I ask that any such retention be identified specifically rather than asserted in general terms.
+
+IDENTITY VERIFICATION
+
+I am willing to complete whatever proportionate verification step you require to establish that I control this account. Please tell me what you need. Under no circumstances should this request be refused for lack of verification without first telling me what verification would satisfy you.
+
+RESPONSE REQUESTED
+
+Please confirm in writing within {{ response_window_days }} days which of the above actions you have taken.
+
+{% if not contact_verified %}
+NOTE ON DELIVERY: This request was addressed using a contact discovered at {{ contact_reason }}. If this is not the correct channel for data-protection requests, please forward it to the team that handles them and tell me the correct address, and I will treat the response window as beginning from the date of this letter.
+{% endif %}
+Sincerely,
+{{ user_name }}
+{{ user_email }}

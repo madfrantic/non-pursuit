@@ -1,0 +1,52 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+dist/
+build/
+*.egg-info/
+
+# Credentials and local configuration
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets.toml
+.streamlit/secrets.toml
+
+# Runtime and personal data
+*.db
+*.sqlite
+*.sqlite3
+*.log
+logs/
+reports/
+output/
+uploads/
+data/evidence/
+data/*.bak.*
+data/vault.salt
+data/vault.verifier
+
+# Downloaded third-party caches
+data/wmn-data.json
+data/sherlock-data.json
+data/maigret-data.json
+data/sites-unified.json
+data/sites.json
+
+# Local tooling and recovery material
+.claude/
+.agents/
+.vscode/
+_RECOVERY_METADATA/
+media_archive/
+
+# OS files
+.DS_Store
+Thumbs.db

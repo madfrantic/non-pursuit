@@ -1,0 +1,51 @@
+{{ current_date }}
+
+{{ broker_name }}
+Attn: Data Protection Officer / Privacy Team
+
+Re: Request for Erasure of Personal Data — Article 17, Regulation (EU) 2016/679 (GDPR)
+
+To the Data Protection Officer:
+
+I am a data subject within the meaning of Article 4(1) of the General Data Protection Regulation. I am writing to exercise my right to erasure ("right to be forgotten") under Article 17 GDPR.
+
+I have identified a record containing my personal data on your platform, located at:
+{{ record_url }}
+
+For identification purposes, my data is as follows:
+
+Name: {{ user_name }}
+Location: {{ user_location }}
+Email: {{ user_email }}
+
+GROUNDS FOR ERASURE
+
+I request erasure under Article 17(1)(c): I hereby object under Article 21(1) to the processing of my personal data. Where you rely on legitimate interests under Article 6(1)(f) — the basis on which data brokers and people-search services typically process personal data — that objection requires you to cease processing unless you can demonstrate compelling legitimate grounds which override my interests, rights and freedoms. Commercial resale of personal data does not meet that threshold.
+
+I further rely on Article 17(1)(a) insofar as my data is no longer necessary for the purpose for which it was collected, and on Article 17(1)(d) insofar as it has been unlawfully processed.
+
+Where you have made this personal data public, Article 17(2) additionally obliges you to take reasonable steps to inform other controllers processing that data that I have requested erasure of all links to, copies of, and replications of it.
+
+ADDITIONAL OBLIGATIONS
+
+Under Article 19, please communicate this erasure to each recipient to whom my personal data has been disclosed, and inform me of those recipients on request.
+
+Under Article 15(1), and to the extent any data is retained, please provide confirmation of the purposes of processing, the categories of personal data concerned, the recipients or categories of recipient, the envisaged retention period, and — pursuant to Article 15(1)(g) — all available information as to the source from which my data was obtained.
+
+Where you refuse this request in whole or in part, Article 12(4) requires you to inform me of the reasons for that refusal.
+
+TIME LIMIT
+
+Article 12(3) requires you to provide information on action taken without undue delay and in any event within one month of receipt of this request. Where that period is extended under Article 12(3), you must inform me of the extension and the reasons for the delay within one month of receipt.
+
+No fee is payable for this request under Article 12(5).
+
+If I do not receive a satisfactory response within the statutory period, I intend to lodge a complaint with the competent supervisory authority under Article 77 and to pursue a judicial remedy under Article 79.
+
+{% if relational_entities %}
+{{ relational_disassociation_clause }}
+{% endif %}
+
+Yours faithfully,
+{{ user_name }}
+{{ user_email }}

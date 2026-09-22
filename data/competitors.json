@@ -1,0 +1,92 @@
+{
+  "schema_version": "1.0",
+  "generated": "2026-08-22",
+  "source_note": "Commercial data-removal services Non-Pursuit is positioned against. IMPORTANT: these figures are secondary desk research carried over from the Privacy Agent coursework scaffold (Documents/PURSUIT/deepseek.py), not scraped or vendor-confirmed. Every row carries its own `confidence` and a `last_updated` that predates this file. Treat the numbers as directional for positioning work and re-check the vendor's current pricing page before citing any of them in a PRD, pitch, or submitted assignment. utils/competitor_analysis.py exposes needs_reverification() for exactly this reason.",
+  "pricing_note": "pricing_unit is preserved as sourced. DeleteMe prices annually and everyone else monthly, so any cross-vendor comparison MUST normalise first -- comparing 129 USD/year against 32 USD/month as bare numbers makes the cheapest option look like the most expensive. competitor_analysis.monthly_range() does the conversion.",
+  "competitors": [
+    {
+      "name": "Optery",
+      "website": "https://optery.com",
+      "pricing_low": 3.99,
+      "pricing_high": 24.99,
+      "pricing_unit": "USD/month",
+      "coverage_min": 60,
+      "coverage_max": 320,
+      "removal_mechanism": "Automated + human escalation; screenshot evidence",
+      "key_features": "Free scan, removal score, custom requests, before/after screenshots",
+      "positioning": "Transparent, evidence-based specialist",
+      "confidence": "Medium",
+      "last_updated": "2025-01-01"
+    },
+    {
+      "name": "Aura",
+      "website": "https://aura.com",
+      "pricing_low": 12.0,
+      "pricing_high": 32.0,
+      "pricing_unit": "USD/month",
+      "coverage_min": null,
+      "coverage_max": null,
+      "removal_mechanism": "Bundled automated opt-outs in security suite",
+      "key_features": "Identity theft, credit monitoring, VPN, password manager, removal included",
+      "positioning": "All-in-one family safety",
+      "confidence": "Medium",
+      "last_updated": "2025-01-01"
+    },
+    {
+      "name": "OneRep",
+      "website": "https://onerep.com",
+      "pricing_low": 8.33,
+      "pricing_high": 15.0,
+      "pricing_unit": "USD/month",
+      "coverage_min": 199,
+      "coverage_max": 199,
+      "removal_mechanism": "Automated opt-out engine, continuous monitoring",
+      "key_features": "Removal dashboard, family plan",
+      "positioning": "Budget automated removal",
+      "confidence": "Medium",
+      "last_updated": "2025-01-01"
+    },
+    {
+      "name": "HelloPrivacy",
+      "website": "https://helloprivacy.com",
+      "pricing_low": 9.99,
+      "pricing_high": 9.99,
+      "pricing_unit": "USD/month",
+      "coverage_min": 100,
+      "coverage_max": null,
+      "removal_mechanism": "Automated with possible manual follow-up",
+      "key_features": "Monthly removal reports",
+      "positioning": "Simple budget option",
+      "confidence": "Low",
+      "last_updated": "2025-01-01"
+    },
+    {
+      "name": "Incogni",
+      "website": "https://incogni.com",
+      "pricing_low": 6.49,
+      "pricing_high": 12.98,
+      "pricing_unit": "USD/month",
+      "coverage_min": 180,
+      "coverage_max": 180,
+      "removal_mechanism": "Fully automated opt-outs, recurring sweeps",
+      "key_features": "Dashboard, progress tracking",
+      "positioning": "Affordable automation",
+      "confidence": "Medium-high",
+      "last_updated": "2025-01-01"
+    },
+    {
+      "name": "DeleteMe",
+      "website": "https://joindeleteme.com",
+      "pricing_low": 129.0,
+      "pricing_high": 329.0,
+      "pricing_unit": "USD/year",
+      "coverage_min": 750,
+      "coverage_max": 750,
+      "removal_mechanism": "Manual white-glove opt-outs by analysts",
+      "key_features": "Quarterly reports, masked contact info, custom removals",
+      "positioning": "Premium white-glove service",
+      "confidence": "Medium",
+      "last_updated": "2025-01-01"
+    }
+  ]
+}
